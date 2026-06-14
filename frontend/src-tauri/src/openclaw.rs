@@ -26,7 +26,7 @@ impl Default for OpenClawConfig {
             enabled: false,
             endpoint: "http://127.0.0.1:8765/meetings/completed".to_string(),
             bearer_token: String::new(),
-            source: "meetily-openclaw".to_string(),
+            source: "ClawScribe".to_string(),
             include_audio_path: false,
         }
     }
