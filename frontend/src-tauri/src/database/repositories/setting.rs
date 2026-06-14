@@ -345,4 +345,55 @@ impl SettingsRepository {
 
         Ok(())
     }
+
+    // ===== OPENAI AUTH CONFIG METHODS =====
+
+    /// Gets OpenAI auth-mode metadata JSON. This intentionally does not return API keys.
+    pub async fn get_openai_auth_config(
+        pool: &SqlitePool,
+    ) -> std::result::Result<Option<String>, sqlx::Error> {
+        let config_json = sqlx::query_scalar(
+            r#"
+            SELECT openAIAuthConfig
+            FROM settings
+            WHERE id = '1'
+            LIMIT 1
+            "#,
+        )
+        .fetch_optional(pool)
+        .await?;
+
+        Ok(config_json)
+    }
+
+    /// Saves OpenAI auth-mode metadata JSON. API keys remain in the legacy key column.
+    pub async fn save_openai_auth_config(
+        pool: &SqlitePool,
+        config_json: &str,
+    ) -> std::result::Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"
+            INSERT INTO settings (id, provider, model, whisperModel, openAIAuthConfig)
+            VALUES ('1', 'openai', 'gpt-4o-2024-11-20', 'large-v3', $1)
+            ON CONFLICT(id) DO UPDATE SET
+                openAIAuthConfig = excluded.openAIAuthConfig
+            "#,
+        )
+        .bind(config_json)
+        .execute(pool)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Clears OpenAI auth-mode metadata without deleting any legacy OpenAI API key.
+    pub async fn clear_openai_auth_config(
+        pool: &SqlitePool,
+    ) -> std::result::Result<(), sqlx::Error> {
+        sqlx::query("UPDATE settings SET openAIAuthConfig = NULL WHERE id = '1'")
+            .execute(pool)
+            .await?;
+
+        Ok(())
+    }
 }
