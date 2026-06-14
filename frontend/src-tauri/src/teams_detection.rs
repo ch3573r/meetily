@@ -373,7 +373,7 @@ fn detection_state(
 ) -> TeamsDetectionState {
     if detected {
         TeamsDetectionState::Detected
-    } else if confidence > 0.0 || !title_requirement_met || threshold == 0.0 {
+    } else if confidence > 0.0 || (threshold == 0.0 && title_requirement_met) {
         TeamsDetectionState::Possible
     } else {
         TeamsDetectionState::NotDetected
