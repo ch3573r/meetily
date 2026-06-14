@@ -52,6 +52,7 @@ pub mod openrouter;
 pub mod parakeet_engine;
 pub mod state;
 pub mod summary;
+pub mod teams_detection;
 pub mod tray;
 pub mod utils;
 pub mod whisper_engine;
@@ -621,6 +622,9 @@ pub fn run() {
             openclaw::get_openclaw_config_status,
             openclaw::save_openclaw_config,
             openclaw::submit_meeting_folder_to_openclaw,
+            // Teams meeting detection commands
+            teams_detection::get_teams_detection_config,
+            teams_detection::get_teams_detection_status,
             // Audio recovery commands (for transcript recovery feature)
             audio::incremental_saver::recover_audio_from_checkpoints,
             audio::incremental_saver::cleanup_checkpoints,
