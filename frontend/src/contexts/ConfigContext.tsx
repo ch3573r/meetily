@@ -99,8 +99,8 @@ const ConfigContext = createContext<ConfigContextType | undefined>(undefined);
 export function ConfigProvider({ children }: { children: ReactNode }) {
   // Model configuration state
   const [modelConfig, setModelConfig] = useState<ModelConfig>({
-    provider: 'ollama',
-    model: 'llama3.2:latest',
+    provider: 'openai',
+    model: 'gpt-4o',
     whisperModel: 'large-v3',
     ollamaEndpoint: null
   });
@@ -175,9 +175,16 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
   const preferencesLoadedRef = useRef(false);
   const isLoadingRef = useRef(false);
 
-  // Load Ollama models (uses saved endpoint, re-runs when endpoint changes after config load)
+  // Load Ollama models only when Ollama is selected. Other providers should not
+  // probe a local Ollama service during startup.
   useEffect(() => {
     const loadModels = async () => {
+      if (modelConfig.provider !== 'ollama') {
+        setModels([]);
+        setError('');
+        return;
+      }
+
       try {
         const endpoint = modelConfig.ollamaEndpoint || null;
         const modelList = await invoke<OllamaModel[]>('get_ollama_models', { endpoint });
@@ -189,7 +196,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
       }
     };
     loadModels();
-  }, [modelConfig.ollamaEndpoint]);
+  }, [modelConfig.provider, modelConfig.ollamaEndpoint]);
 
   // Load transcript configuration on mount
   useEffect(() => {
@@ -367,7 +374,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     claude: ['claude-3-5-sonnet-latest'],
     groq: ['llama-3.3-70b-versatile'],
     openrouter: [],
-    openai: ['gpt-4', 'gpt-4-turbo', 'gpt-3.5-turbo'],
+    openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-4'],
     'builtin-ai': [],
     'custom-openai': [],
     openclaw: ['openclaw-managed'],

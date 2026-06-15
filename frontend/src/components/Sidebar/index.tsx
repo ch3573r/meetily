@@ -65,8 +65,8 @@ const Sidebar: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [showModelSettings, setShowModelSettings] = useState(false);
   const [modelConfig, setModelConfig] = useState<ModelConfig>({
-    provider: 'ollama',
-    model: '',
+    provider: 'openai',
+    model: 'gpt-4o',
     whisperModel: '',
     apiKey: null,
     ollamaEndpoint: null

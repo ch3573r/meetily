@@ -9,10 +9,10 @@ interface UseModelConfigurationProps {
 }
 
 export function useModelConfiguration({ serverAddress }: UseModelConfigurationProps) {
-  // Note: No hardcoded defaults - DB is the source of truth
+  // Transient fallback until the saved DB config loads.
   const [modelConfig, setModelConfig] = useState<ModelConfig>({
-    provider: 'ollama',
-    model: '', // Empty until loaded from DB
+    provider: 'openai',
+    model: 'gpt-4o',
     whisperModel: 'large-v3'
   });
   const [isLoading, setIsLoading] = useState(true);

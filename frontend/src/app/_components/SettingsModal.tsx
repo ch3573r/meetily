@@ -103,12 +103,14 @@ export function SettingsModals({
                         });
                       }}
                     >
+                      <option value="openai">OpenAI API Key</option>
+                      <option value="custom-openai">OpenAI-compatible Endpoint</option>
                       <option value="builtin-ai">Built-in AI</option>
-                      <option value="claude">Claude</option>
-                      <option value="groq">Groq</option>
                       <option value="ollama">Ollama</option>
                       <option value="openrouter">OpenRouter</option>
-                      <option value="openai">OpenAI</option>
+                      <option value="claude">Claude</option>
+                      <option value="groq">Groq</option>
+                      <option value="openclaw">OpenClaw (Optional)</option>
                     </select>
 
                     <select

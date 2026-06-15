@@ -99,7 +99,7 @@ Whether you're a defense consultant, enterprise executive, legal professional, o
 - **AI-Powered Summaries:** Generate summaries of your meetings using powerful language models.
 - **Multi-Platform:** Works on macOS, Windows, and Linux.
 - **Open Source:** Meetily is open source and free to use.
-- **Flexible AI Provider Support:** Choose from Ollama (local), Claude, Groq, OpenRouter, or use your own OpenAI-compatible endpoint.
+- **Flexible AI Provider Support:** Use a direct OpenAI API key, your own OpenAI-compatible endpoint, local models, or other supported providers.
 
 ## Installation
 
@@ -153,7 +153,7 @@ Import existing audio files to generate transcripts, or enhance to re-transcribe
 
 ### 🤖 AI-Powered Summaries
 
-Generate meeting summaries with your choice of AI provider. **Ollama** (local) is recommended, with support for Claude, Groq, OpenRouter, and OpenAI.
+Generate meeting summaries with your choice of AI provider. The distributable path supports a direct OpenAI API key or your own OpenAI-compatible endpoint, with local Ollama/Built-in AI and other providers available when preferred.
 
 <p align="center">
     <img src="docs/summary.png" width="650" style="border-radius: 10px;" alt="Summary generation" />

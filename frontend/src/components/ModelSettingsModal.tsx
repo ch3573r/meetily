@@ -967,14 +967,14 @@ export function ModelSettingsModal({
                 <SelectValue placeholder="Select provider" />
               </SelectTrigger>
               <SelectContent className="max-h-64 overflow-y-auto">
-                <SelectItem value="builtin-ai">Built-in AI (Offline, No API needed)</SelectItem>
-                <SelectItem value="claude">Claude</SelectItem>
+                <SelectItem value="openai">OpenAI API Key</SelectItem>
                 <SelectItem value="custom-openai">OpenAI-compatible Endpoint</SelectItem>
-                <SelectItem value="groq">Groq</SelectItem>
+                <SelectItem value="builtin-ai">Built-in AI (Offline, No API needed)</SelectItem>
                 <SelectItem value="ollama">Ollama</SelectItem>
-                <SelectItem value="openai">OpenAI</SelectItem>
-                <SelectItem value="openclaw">OpenClaw (Optional)</SelectItem>
                 <SelectItem value="openrouter">OpenRouter</SelectItem>
+                <SelectItem value="claude">Claude</SelectItem>
+                <SelectItem value="groq">Groq</SelectItem>
+                <SelectItem value="openclaw">OpenClaw (Optional)</SelectItem>
               </SelectContent>
             </Select>
 

@@ -1,10 +1,11 @@
 # ClawScribe Product Direction
 
-ClawScribe is the product name for this OpenClaw-focused Meetily fork: a
-bot-free Teams meeting recorder that captures the user's local microphone and
-system audio without joining the meeting as a visible participant. The product
-keeps the upstream Meetily local-first recording and transcription base, then
-adds a reliable OpenClaw handoff for post-meeting processing.
+ClawScribe is the product name for this Meetily fork: a bot-free Teams meeting
+recorder that captures the user's local microphone and system audio without
+joining the meeting as a visible participant. The product keeps the upstream
+Meetily local-first recording and transcription base, then makes standalone
+OpenAI API-key and OpenAI-compatible endpoint summarization the default
+distributable path. OpenClaw remains an optional handoff/provider integration.
 
 ## Target Workflow
 
@@ -12,10 +13,10 @@ adds a reliable OpenClaw handoff for post-meeting processing.
    local audio capture.
 2. The recorder writes Meetily-format artifacts such as `metadata.json`,
    `transcripts.json`, and optional local audio paths.
-3. The OpenClaw handoff posts a `meeting.completed` payload to a local or
-   network OpenClaw ingest endpoint.
-4. OpenClaw handles summarization, action extraction, storage, and user
-   notification.
+3. Summary generation runs through the configured standalone provider: direct
+   OpenAI API-key auth, an OpenAI-compatible endpoint, or a local provider.
+4. Optional OpenClaw handoff can post a `meeting.completed` payload to a local
+   or network OpenClaw ingest endpoint for operators who deploy that workflow.
 
 ## Auth Direction
 
@@ -23,18 +24,19 @@ ClawScribe should support OpenAI authentication in the ways operators actually
 need:
 
 - A direct OpenAI API key for simple single-user deployments.
-- An OpenAI-compatible endpoint for gateways such as LiteLLM or OpenClaw-managed
-  model routing.
-- Local-only transcription and deferred OpenClaw processing when no cloud model
+- An OpenAI-compatible endpoint for gateways such as LiteLLM, vendor-hosted
+  model routing, or an optional OpenClaw-managed bridge.
+- Local-only transcription and deferred processing when no cloud model
   credential should live on the recorder.
 
 ## Teams Detection
 
-The near-term product can rely on manual start/stop and OpenClaw handoff. Future
-meeting detection should be added from the logged-in Windows session, not as a
-tenant-level Microsoft Graph dependency. Candidate signals include Teams window
-state, active audio sessions, calendar context, and confidence-scored heuristics
-before automatically starting or stopping a recording.
+The near-term product can rely on manual start/stop and the configured
+standalone summary provider. Future meeting detection should be added from the
+logged-in Windows session, not as a tenant-level Microsoft Graph dependency.
+Candidate signals include Teams window state, active audio sessions, calendar
+context, and confidence-scored heuristics before automatically starting or
+stopping a recording.
 
 ## Implementation Guardrails
 

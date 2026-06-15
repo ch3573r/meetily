@@ -314,10 +314,10 @@ pnpm tauri:dev
 .\scripts\build-windows-release.ps1
 ```
 
-The OpenClaw-focused Windows build is packaged as ClawScribe
+The Windows build is packaged as ClawScribe
 (`net.rismondo.openclaw.clawscribe`) and emits MSI/NSIS artifacts under
 `frontend\src-tauri\target\release\bundle`. See
 [ClawScribe Windows Release](windows-release.md) for the validation-only path,
-feature overrides, signing behavior, and OpenClaw endpoint configuration.
+feature overrides, signing behavior, and optional OpenClaw endpoint configuration.
 
 </details>
