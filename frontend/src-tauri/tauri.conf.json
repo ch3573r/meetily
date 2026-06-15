@@ -85,6 +85,11 @@
             "nsis"
         ],
         "createUpdaterArtifacts": false,
+        "publisher": "OpenClaw",
+        "copyright": "Copyright (c) OpenClaw contributors",
+        "category": "Productivity",
+        "shortDescription": "Windows meeting recorder with OpenClaw handoff.",
+        "longDescription": "ClawScribe records meetings from the Windows user session, produces local transcripts and summaries, and can hand completed meeting artifacts to OpenClaw.",
         "icon": [
             "icons/icon.png",
             "icons/app_icon.icns",
@@ -103,7 +108,20 @@
             "hardenedRuntime": true
         },
         "windows": {
-            "signCommand": "powershell -ExecutionPolicy Bypass -File scripts/sign-windows.ps1 -FilePath %1"
+            "allowDowngrades": false,
+            "signCommand": "powershell -ExecutionPolicy Bypass -File scripts/sign-windows.ps1 -FilePath %1",
+            "wix": {
+                "upgradeCode": "8b6aff03-4baa-5d80-9239-e65d85c288d3"
+            },
+            "nsis": {
+                "installerIcon": "icons/app_icon.ico",
+                "uninstallerIcon": "icons/app_icon.ico",
+                "installMode": "currentUser",
+                "languages": [
+                    "English"
+                ],
+                "startMenuFolder": "ClawScribe"
+            }
         }
     },
     "plugins": {

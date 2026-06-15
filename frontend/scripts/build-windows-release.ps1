@@ -13,12 +13,45 @@ $tauriRoot = Join-Path $frontendRoot "src-tauri"
 
 Set-Location $frontendRoot
 
+function Assert-Command {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$Name
+    )
+
+    if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
+        throw "Missing required command '$Name'. Install it before running the ClawScribe Windows release build."
+    }
+}
+
+function Assert-File {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$Path,
+
+        [Parameter(Mandatory=$true)]
+        [string]$Hint
+    )
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "Missing required file '$Path'. $Hint"
+    }
+}
+
 $isWindowsHost = [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
     [System.Runtime.InteropServices.OSPlatform]::Windows
 )
 if (-not $isWindowsHost) {
     throw "Windows release artifacts must be built on Windows."
 }
+
+Assert-Command "node"
+Assert-Command "pnpm"
+Assert-Command "cargo"
+
+$windowsTarget = "x86_64-pc-windows-msvc"
+$llamaHelperBinary = Join-Path $tauriRoot "binaries\llama-helper-$windowsTarget.exe"
+Assert-File $llamaHelperBinary "Build it from the repository root with 'cargo build -p llama-helper --release --target $windowsTarget', then copy 'target\$windowsTarget\release\llama-helper.exe' to this path."
 
 $env:NEXT_TELEMETRY_DISABLED = "1"
 $env:TAURI_BUNDLE_TARGETS = "msi,nsis"
