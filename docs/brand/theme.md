@@ -35,6 +35,13 @@ Date: 2026-06-15
 | Secondary surface | light blue tint | `#172330` | `bg-secondary` |
 | Accent/positive | `#3fb498` | `#3fb498` | `bg-accent`, green utilities |
 | Focus ring | `#005083` | `#3fb498` | `ring-ring`, `focus:ring-ring` |
+| Sidebar surface | `#ffffff` | near `#0d1821` | `--sidebar` |
+| Sidebar active item | light blue tint | deep blue tint | `--sidebar-active` |
+| Sidebar border | softened light blue | stronger blue-grey | `--sidebar-border` |
+
+The native Tauri window theme must follow the user-selected app theme. The
+window config should not force `Light`; the app syncs the native title bar via
+the `set_native_theme` command when Light, Dark, or System is selected.
 
 ## Legacy Utility Mapping
 

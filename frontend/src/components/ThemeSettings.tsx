@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { Monitor, Moon, Sun } from "lucide-react"
 import {
+  applyNativeThemePreference,
   applyThemePreference,
   getStoredThemePreference,
   setThemePreference,
@@ -36,7 +37,9 @@ const themeOptions: Record<ThemePreference, {
 export function ThemeInitializer() {
   useEffect(() => {
     const applyStoredTheme = () => {
-      applyThemePreference(getStoredThemePreference())
+      const storedPreference = getStoredThemePreference()
+      applyThemePreference(storedPreference)
+      void applyNativeThemePreference(storedPreference)
     }
 
     applyStoredTheme()
@@ -77,6 +80,7 @@ export function ThemeSettings() {
   const handlePreferenceChange = (nextPreference: ThemePreference) => {
     setPreference(nextPreference)
     setThemePreference(nextPreference)
+    void applyNativeThemePreference(nextPreference)
   }
 
   return (

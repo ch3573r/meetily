@@ -118,6 +118,12 @@
     --chart-3: var(--kontron-blue);
     --chart-4: var(--kontron-mid-blue);
     --chart-5: var(--kontron-magenta);
+    --sidebar: 0 0% 100%;
+    --sidebar-foreground: var(--kontron-black-blue);
+    --sidebar-border: 207 33% 78%;
+    --sidebar-hover: 207 33% 92%;
+    --sidebar-active: 207 33% 88%;
+    --sidebar-active-foreground: var(--kontron-primary);
 
     --theme-gray-50: 0 0% 95%;
     --theme-gray-100: 0 0% 92%;
@@ -170,6 +176,12 @@
     --chart-3: 203 100% 58%;
     --chart-4: var(--kontron-mid-blue);
     --chart-5: var(--kontron-magenta);
+    --sidebar: 209 42% 9%;
+    --sidebar-foreground: 204 29% 95%;
+    --sidebar-border: 209 28% 24%;
+    --sidebar-hover: 211 35% 15%;
+    --sidebar-active: 203 53% 18%;
+    --sidebar-active-foreground: 166 54% 76%;
 
     --theme-gray-50: var(--muted);
     --theme-gray-100: 210 26% 17%;

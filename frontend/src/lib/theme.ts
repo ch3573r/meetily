@@ -45,6 +45,17 @@ export function applyThemePreference(preference: ThemePreference): ResolvedTheme
   return resolvedTheme
 }
 
+export async function applyNativeThemePreference(preference: ThemePreference): Promise<void> {
+  if (typeof window === "undefined") return
+
+  try {
+    const { invoke } = await import("@tauri-apps/api/core")
+    await invoke("set_native_theme", { theme: preference })
+  } catch {
+    // Browser previews do not have Tauri's native window API.
+  }
+}
+
 export function setThemePreference(preference: ThemePreference): ResolvedTheme {
   if (typeof window !== "undefined") {
     try {

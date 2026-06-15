@@ -61,7 +61,7 @@ use audio::{list_audio_devices, trigger_audio_permission, AudioDevice};
 use log::{error as log_error, info as log_info};
 use notifications::commands::NotificationManagerState;
 use std::sync::Arc;
-use tauri::{AppHandle, Manager, Runtime};
+use tauri::{AppHandle, Manager, Runtime, Theme};
 use tokio::sync::RwLock;
 
 static RECORDING_FLAG: AtomicBool = AtomicBool::new(false);
@@ -380,6 +380,26 @@ pub fn get_language_preference_internal() -> Option<String> {
     LANGUAGE_PREFERENCE.lock().ok().map(|lang| lang.clone())
 }
 
+#[tauri::command]
+fn set_native_theme(app: AppHandle, theme: String) -> Result<(), String> {
+    let native_theme = match theme.as_str() {
+        "light" => Some(Theme::Light),
+        "dark" => Some(Theme::Dark),
+        "system" => None,
+        other => return Err(format!("Unknown native theme preference: {}", other)),
+    };
+
+    app.set_theme(native_theme);
+
+    if let Some(window) = app.get_webview_window("main") {
+        window
+            .set_theme(native_theme)
+            .map_err(|error| format!("Failed to update native window theme: {}", error))?;
+    }
+
+    Ok(())
+}
+
 pub fn run() {
     log::set_max_level(log::LevelFilter::Info);
 
@@ -533,6 +553,7 @@ pub fn run() {
             start_recording,
             stop_recording,
             is_recording,
+            set_native_theme,
             get_transcription_status,
             read_audio_file,
             save_transcript,

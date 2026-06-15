@@ -462,7 +462,7 @@ const Sidebar: React.FC = () => {
             <TooltipTrigger asChild>
               <button
                 onClick={() => router.push('/')}
-                className={`p-2 rounded-lg transition-colors duration-150 ${isHomePage ? 'bg-secondary text-secondary-foreground' : 'hover:bg-muted'
+                className={`p-2 rounded-lg transition-colors duration-150 ${isHomePage ? 'bg-[hsl(var(--sidebar-active))] text-[hsl(var(--sidebar-active-foreground))]' : 'hover:bg-[hsl(var(--sidebar-hover))]'
                   }`}
               >
                 <Home className="w-5 h-5" />
@@ -497,7 +497,7 @@ const Sidebar: React.FC = () => {
               <TooltipTrigger asChild>
                 <button
                   onClick={() => openImportDialog()}
-                  className="p-2 rounded-lg bg-secondary text-primary transition-colors duration-150 hover:bg-muted"
+                  className="p-2 rounded-lg bg-[hsl(var(--sidebar-active))] text-[hsl(var(--sidebar-active-foreground))] transition-colors duration-150 hover:bg-[hsl(var(--sidebar-hover))]"
                 >
                   <Upload className="w-5 h-5" />
                 </button>
@@ -515,7 +515,7 @@ const Sidebar: React.FC = () => {
                   if (isCollapsed) toggleCollapse();
                   toggleFolder('meetings');
                 }}
-                className={`p-2 rounded-lg transition-colors duration-150 ${isMeetingPage ? 'bg-secondary text-secondary-foreground' : 'hover:bg-muted'
+                className={`p-2 rounded-lg transition-colors duration-150 ${isMeetingPage ? 'bg-[hsl(var(--sidebar-active))] text-[hsl(var(--sidebar-active-foreground))]' : 'hover:bg-[hsl(var(--sidebar-hover))]'
                   }`}
               >
                 <NotebookPen className="w-5 h-5" />
@@ -530,7 +530,7 @@ const Sidebar: React.FC = () => {
             <TooltipTrigger asChild>
               <button
                 onClick={() => router.push('/settings')}
-                className={`p-2 rounded-lg transition-colors duration-150 ${isSettingsPage ? 'bg-secondary text-secondary-foreground' : 'hover:bg-muted'
+                className={`p-2 rounded-lg transition-colors duration-150 ${isSettingsPage ? 'bg-[hsl(var(--sidebar-active))] text-[hsl(var(--sidebar-active-foreground))]' : 'hover:bg-[hsl(var(--sidebar-hover))]'
                   }`}
               >
                 <Settings className="w-5 h-5" />
@@ -570,8 +570,8 @@ const Sidebar: React.FC = () => {
         <div
           className={`flex items-center transition-all duration-150 group ${item.type === 'folder' && depth === 0
             ? 'p-3 text-lg font-semibold h-10 mx-3 mt-3 rounded-lg'
-            : `px-3 py-2 my-0.5 rounded-md text-sm ${isActive ? 'bg-secondary text-primary font-medium' :
-              hasTranscriptMatch ? 'bg-yellow-50' : 'hover:bg-muted'
+            : `px-3 py-2 my-0.5 rounded-md text-sm ${isActive ? 'bg-[hsl(var(--sidebar-active))] text-[hsl(var(--sidebar-active-foreground))] font-medium' :
+              hasTranscriptMatch ? 'bg-yellow-50' : 'hover:bg-[hsl(var(--sidebar-hover))]'
             } cursor-pointer`
             }`}
           style={item.type === 'folder' && depth === 0 ? {} : { paddingLeft }}
@@ -613,8 +613,8 @@ const Sidebar: React.FC = () => {
                     <File className="w-3.5 h-3.5 text-muted-foreground" />
                   </div>
                 ) : (
-                  <div className="flex-shrink-0 flex items-center justify-center w-6 h-6 rounded-full mr-2 bg-secondary">
-                    <Plus className="w-3.5 h-3.5 text-primary" />
+                  <div className="flex-shrink-0 flex items-center justify-center w-6 h-6 rounded-full mr-2 bg-[hsl(var(--sidebar-active))]">
+                    <Plus className="w-3.5 h-3.5 text-[hsl(var(--sidebar-active-foreground))]" />
                   </div>
                 )}
                 <span className="flex-1 break-words">{item.title}</span>
@@ -625,7 +625,7 @@ const Sidebar: React.FC = () => {
                         e.stopPropagation();
                         handleEditStart(item.id, item.title);
                       }}
-                      className="p-1 rounded-md hover:bg-secondary hover:text-primary flex-shrink-0"
+                      className="p-1 rounded-md hover:bg-[hsl(var(--sidebar-active))] hover:text-[hsl(var(--sidebar-active-foreground))] flex-shrink-0"
                       aria-label="Edit meeting title"
                     >
                       <Pencil className="w-4 h-4" />
@@ -667,7 +667,7 @@ const Sidebar: React.FC = () => {
       {/* Floating collapse button */}
       <button
         onClick={toggleCollapse}
-        className="absolute -right-6 top-20 z-50 rounded-full border bg-card p-1 shadow-lg hover:bg-muted"
+        className="absolute -right-6 top-20 z-50 rounded-full border border-[hsl(var(--sidebar-border))] bg-[hsl(var(--sidebar))] p-1 shadow-lg hover:bg-[hsl(var(--sidebar-hover))]"
         style={{ transform: 'translateX(50%)' }}
       >
         {isCollapsed ? (
@@ -678,7 +678,7 @@ const Sidebar: React.FC = () => {
       </button>
 
       <div
-        className={`h-screen bg-card border-r shadow-sm flex flex-col transition-all duration-300 ${isCollapsed ? 'w-16' : 'w-64'
+        className={`h-screen bg-[hsl(var(--sidebar))] text-[hsl(var(--sidebar-foreground))] border-r border-[hsl(var(--sidebar-border))] shadow-sm flex flex-col transition-all duration-300 ${isCollapsed ? 'w-16' : 'w-64'
           }`}
       >
         {/*  Header with traffic light spacing */}
@@ -727,7 +727,7 @@ const Sidebar: React.FC = () => {
             {!isCollapsed && (
               <div
                 onClick={() => router.push('/')}
-                className="p-3 text-lg font-semibold items-center hover:bg-muted h-10 flex mx-3 mt-3 rounded-lg cursor-pointer"
+                className="p-3 text-lg font-semibold items-center hover:bg-[hsl(var(--sidebar-hover))] h-10 flex mx-3 mt-3 rounded-lg cursor-pointer"
               >
                 <Home className="w-4 h-4 mr-2" />
                 <span>Home</span>
@@ -775,7 +775,7 @@ const Sidebar: React.FC = () => {
         {/* Footer */}
         {!isCollapsed && (
 
-          <div className="flex-shrink-0 p-2 border-t border-border">
+          <div className="flex-shrink-0 p-2 border-t border-[hsl(var(--sidebar-border))]">
             <button
               onClick={handleRecordingToggle}
               disabled={isRecording}
@@ -797,7 +797,7 @@ const Sidebar: React.FC = () => {
             {betaFeatures.importAndRetranscribe && (
               <button
                 onClick={() => openImportDialog()}
-                className="w-full flex items-center justify-center px-3 py-2 mt-1 text-sm font-medium text-primary bg-secondary hover:bg-muted rounded-lg transition-colors shadow-sm"
+                className="w-full flex items-center justify-center px-3 py-2 mt-1 text-sm font-medium text-[hsl(var(--sidebar-active-foreground))] bg-[hsl(var(--sidebar-active))] hover:bg-[hsl(var(--sidebar-hover))] rounded-lg transition-colors shadow-sm"
               >
                 <Upload className="w-4 h-4 mr-2" />
                 <span>Import Audio</span>
@@ -806,7 +806,7 @@ const Sidebar: React.FC = () => {
 
             <button
               onClick={() => router.push('/settings')}
-              className="w-full flex items-center justify-center px-3 py-1.5 mt-1 mb-1 text-sm font-medium text-secondary-foreground bg-secondary hover:bg-muted rounded-lg transition-colors shadow-sm"
+              className="w-full flex items-center justify-center px-3 py-1.5 mt-1 mb-1 text-sm font-medium text-[hsl(var(--sidebar-active-foreground))] bg-[hsl(var(--sidebar-active))] hover:bg-[hsl(var(--sidebar-hover))] rounded-lg transition-colors shadow-sm"
             >
               <Settings className="w-4 h-4 mr-2" />
               <span>Settings</span>
