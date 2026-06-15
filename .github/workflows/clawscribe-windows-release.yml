@@ -158,9 +158,11 @@ jobs:
           $artifactFiles = @()
           $artifactFiles += Get-ChildItem -Path (Join-Path $bundleRoot "msi\*.msi") -ErrorAction SilentlyContinue
           $artifactFiles += Get-ChildItem -Path (Join-Path $bundleRoot "nsis\*.exe") -ErrorAction SilentlyContinue
+          $resolvedBundleRoot = (Resolve-Path -LiteralPath $bundleRoot).Path
           $checksumLines = foreach ($artifact in $artifactFiles | Sort-Object FullName) {
             $hash = Get-FileHash -Algorithm SHA256 -LiteralPath $artifact.FullName
-            "$($hash.Hash.ToLowerInvariant())  $($artifact.Name)"
+            $relativePath = [System.IO.Path]::GetRelativePath($resolvedBundleRoot, $artifact.FullName).Replace("\", "/")
+            "$($hash.Hash.ToLowerInvariant())  $relativePath"
           }
           $checksumLines | Set-Content -LiteralPath (Join-Path $bundleRoot "SHA256SUMS.txt") -Encoding ascii
           $metadata = @(
