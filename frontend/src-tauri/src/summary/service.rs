@@ -6,10 +6,15 @@ use crate::summary::codex_provider::{provider_from_app, CodexMeetingProcessReque
 use crate::summary::language_detection::detect_summary_language;
 use crate::summary::llm_client::LLMProvider;
 use crate::summary::metadata::read_detected_summary_language_from_metadata;
+use crate::summary::openai_provider::{
+    config_from_custom_openai, config_from_openai_api_key, OpenAICompatibleMeetingProcessRequest,
+    OpenAICompatibleProcessingProvider,
+};
 use crate::summary::processor::{
     extract_meeting_name_from_markdown, generate_meeting_summary, language_name_from_code,
 };
 use crate::summary::templates::{self, Template};
+use crate::summary::CustomOpenAIConfig;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
@@ -332,6 +337,7 @@ impl SummaryService {
             provider,
             LLMProvider::Ollama
                 | LLMProvider::BuiltInAI
+                | LLMProvider::OpenAICompatible
                 | LLMProvider::CustomOpenAI
                 | LLMProvider::OpenClaw
                 | LLMProvider::Codex
@@ -500,6 +506,171 @@ impl SummaryService {
 
         if let Some(code) = &detected_summary_language {
             info!("📝 Detected transcript summary language: {}", code);
+        }
+
+        if matches!(
+            provider,
+            LLMProvider::OpenAI
+                | LLMProvider::OpenAICompatible
+                | LLMProvider::CustomOpenAI
+                | LLMProvider::OpenClaw
+        ) {
+            if cancellation_token.is_cancelled() {
+                Self::cleanup_cancellation_token(&meeting_id);
+                if let Err(db_err) =
+                    SummaryProcessesRepository::update_process_cancelled(&pool, &meeting_id).await
+                {
+                    error!(
+                        "Failed to update DB status to cancelled for {}: {}",
+                        meeting_id, db_err
+                    );
+                }
+                return;
+            }
+
+            let meeting_metadata = MeetingsRepository::get_meeting_metadata(&pool, &meeting_id)
+                .await
+                .ok()
+                .flatten();
+            let output_dir = meeting_metadata
+                .as_ref()
+                .and_then(|m| m.folder_path.as_ref())
+                .filter(|p| !p.trim().is_empty())
+                .map(PathBuf::from);
+            let meeting_title = meeting_metadata.map(|m| m.title);
+
+            let provider_config = match provider {
+                LLMProvider::CustomOpenAI => {
+                    match SettingsRepository::get_custom_openai_config(&pool).await {
+                        Ok(Some(config)) => config_from_custom_openai(config),
+                        Ok(None) => {
+                            let err_msg = "OpenAI-compatible provider selected but no endpoint configuration found";
+                            Self::update_process_failed(&pool, &meeting_id, err_msg).await;
+                            return;
+                        }
+                        Err(e) => {
+                            let err_msg =
+                                format!("Failed to retrieve OpenAI-compatible config: {}", e);
+                            Self::update_process_failed(&pool, &meeting_id, &err_msg).await;
+                            return;
+                        }
+                    }
+                }
+                LLMProvider::OpenAICompatible => {
+                    match SettingsRepository::get_custom_openai_config(&pool).await {
+                        Ok(Some(config)) => config_from_custom_openai(config),
+                        Ok(None) => {
+                            let api_key = match SettingsRepository::get_api_key(&pool, "openai")
+                                .await
+                            {
+                                Ok(key) => key,
+                                Err(e) => {
+                                    let err_msg =
+                                        format!("Failed to retrieve OpenAI API key: {}", e);
+                                    Self::update_process_failed(&pool, &meeting_id, &err_msg).await;
+                                    return;
+                                }
+                            };
+                            if api_key.as_deref().unwrap_or("").trim().is_empty() {
+                                let err_msg = "OpenAI-compatible provider requires an OpenAI API key or a configured OpenAI-compatible endpoint";
+                                Self::update_process_failed(&pool, &meeting_id, err_msg).await;
+                                return;
+                            }
+                            config_from_openai_api_key(api_key, model_name.clone())
+                        }
+                        Err(e) => {
+                            let err_msg =
+                                format!("Failed to retrieve OpenAI-compatible config: {}", e);
+                            Self::update_process_failed(&pool, &meeting_id, &err_msg).await;
+                            return;
+                        }
+                    }
+                }
+                LLMProvider::OpenAI => {
+                    config_from_openai_api_key(Some(final_api_key.clone()), model_name.clone())
+                }
+                LLMProvider::OpenClaw => config_from_custom_openai(CustomOpenAIConfig {
+                    endpoint: custom_openai_endpoint.clone().unwrap_or_default(),
+                    api_key: Some(final_api_key.clone()),
+                    model: model_name.clone(),
+                    timeout_seconds: None,
+                    organization: None,
+                    project: None,
+                    max_tokens: None,
+                    temperature: None,
+                    top_p: None,
+                }),
+                _ => unreachable!("provider checked above"),
+            };
+
+            let result = match OpenAICompatibleProcessingProvider::new(provider_config) {
+                Ok(openai_provider) => {
+                    openai_provider
+                        .process_meeting(
+                            OpenAICompatibleMeetingProcessRequest {
+                                meeting_id: meeting_id.clone(),
+                                meeting_title,
+                                transcript: text.clone(),
+                                output_dir,
+                            },
+                            Some(&cancellation_token),
+                        )
+                        .await
+                }
+                Err(e) => Err(e),
+            };
+
+            let duration = start_time.elapsed().as_secs_f64();
+            Self::cleanup_cancellation_token(&meeting_id);
+
+            match result {
+                Ok(api_result) => {
+                    info!(
+                        "✓ OpenAI-compatible provider processed meeting_id: {}. Duration: {:.2}s",
+                        meeting_id, duration
+                    );
+                    let result_json = serde_json::json!({
+                        "markdown": strip_title_if_present(&api_result.markdown),
+                        "structured_meeting_output": api_result.structured_output,
+                        "openai_compatible": {
+                            "output_json_path": api_result.output_json_path,
+                            "notes_markdown_path": api_result.notes_markdown_path,
+                            "follow_up_email_path": api_result.follow_up_email_path,
+                            "processing_log_path": api_result.processing_log_path,
+                        }
+                    });
+                    if let Err(e) = SummaryProcessesRepository::update_process_completed(
+                        &pool,
+                        &meeting_id,
+                        result_json,
+                        1,
+                        duration,
+                    )
+                    .await
+                    {
+                        error!(
+                            "Failed to save OpenAI-compatible process for {}: {}",
+                            meeting_id, e
+                        );
+                    }
+                }
+                Err(e) => {
+                    if e.contains("cancelled") {
+                        if let Err(db_err) =
+                            SummaryProcessesRepository::update_process_cancelled(&pool, &meeting_id)
+                                .await
+                        {
+                            error!(
+                                "Failed to update DB status to cancelled for {}: {}",
+                                meeting_id, db_err
+                            );
+                        }
+                    } else {
+                        Self::update_process_failed(&pool, &meeting_id, &e).await;
+                    }
+                }
+            }
+            return;
         }
 
         if provider == LLMProvider::Codex {

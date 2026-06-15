@@ -19,6 +19,13 @@ pub struct CustomOpenAIConfig {
     pub api_key: Option<String>,
     /// Model identifier to use (e.g., "gpt-4", "llama-3-70b", "mistral-7b")
     pub model: String,
+    /// Request timeout in seconds (optional)
+    #[serde(rename = "timeoutSeconds")]
+    pub timeout_seconds: Option<u64>,
+    /// Optional OpenAI organization header
+    pub organization: Option<String>,
+    /// Optional OpenAI project header
+    pub project: Option<String>,
     /// Maximum tokens for completion (optional)
     #[serde(rename = "maxTokens")]
     pub max_tokens: Option<i32>,
@@ -34,6 +41,7 @@ pub mod commands;
 pub(crate) mod language_detection;
 pub mod llm_client;
 pub(crate) mod metadata;
+pub mod openai_provider;
 pub mod processor;
 pub mod service;
 pub mod summary_engine;
@@ -61,15 +69,19 @@ pub use commands::{
 };
 
 pub use codex_provider::{
-    __cmd__codex_check_installation, __cmd__codex_get_config, __cmd__codex_login_browser,
-    __cmd__codex_login_device, __cmd__codex_logout, __cmd__codex_process_meeting,
-    __cmd__codex_save_config, __cmd__codex_test_processing,
-    __tauri_command_name_codex_check_installation, __tauri_command_name_codex_get_config,
+    __cmd__codex_browse_for_binary, __cmd__codex_check_installation,
+    __cmd__codex_find_automatically, __cmd__codex_get_config, __cmd__codex_login_browser,
+    __cmd__codex_login_device, __cmd__codex_logout, __cmd__codex_prepare_install_command,
+    __cmd__codex_process_meeting, __cmd__codex_save_config, __cmd__codex_test_processing,
+    __tauri_command_name_codex_browse_for_binary, __tauri_command_name_codex_check_installation,
+    __tauri_command_name_codex_find_automatically, __tauri_command_name_codex_get_config,
     __tauri_command_name_codex_login_browser, __tauri_command_name_codex_login_device,
-    __tauri_command_name_codex_logout, __tauri_command_name_codex_process_meeting,
-    __tauri_command_name_codex_save_config, __tauri_command_name_codex_test_processing,
-    codex_check_installation, codex_get_config, codex_login_browser, codex_login_device,
-    codex_logout, codex_process_meeting, codex_save_config, codex_test_processing,
+    __tauri_command_name_codex_logout, __tauri_command_name_codex_prepare_install_command,
+    __tauri_command_name_codex_process_meeting, __tauri_command_name_codex_save_config,
+    __tauri_command_name_codex_test_processing, codex_browse_for_binary, codex_check_installation,
+    codex_find_automatically, codex_get_config, codex_login_browser, codex_login_device,
+    codex_logout, codex_prepare_install_command, codex_process_meeting, codex_save_config,
+    codex_test_processing,
 };
 
 // Re-export template commands

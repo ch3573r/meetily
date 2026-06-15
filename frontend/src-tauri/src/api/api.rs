@@ -1194,6 +1194,9 @@ pub async fn api_save_custom_openai_config<R: Runtime>(
     max_tokens: Option<i32>,
     temperature: Option<f32>,
     top_p: Option<f32>,
+    timeout_seconds: Option<u64>,
+    organization: Option<String>,
+    project: Option<String>,
 ) -> Result<serde_json::Value, String> {
     log_info!(
         "api_save_custom_openai_config called: endpoint='{}', model='{}'",
@@ -1230,11 +1233,19 @@ pub async fn api_save_custom_openai_config<R: Runtime>(
             return Err("Max tokens must be at least 1".to_string());
         }
     }
+    if let Some(seconds) = timeout_seconds {
+        if seconds < 5 {
+            return Err("Timeout must be at least 5 seconds".to_string());
+        }
+    }
 
     let config = CustomOpenAIConfig {
         endpoint: endpoint.trim().to_string(),
         api_key: api_key.filter(|k| !k.trim().is_empty()),
         model: model.trim().to_string(),
+        timeout_seconds,
+        organization: organization.filter(|value| !value.trim().is_empty()),
+        project: project.filter(|value| !value.trim().is_empty()),
         max_tokens,
         temperature,
         top_p,
@@ -1298,6 +1309,12 @@ pub async fn api_test_custom_openai_connection<R: Runtime>(
     endpoint: String,
     api_key: Option<String>,
     model: String,
+    max_tokens: Option<i32>,
+    temperature: Option<f32>,
+    top_p: Option<f32>,
+    timeout_seconds: Option<u64>,
+    organization: Option<String>,
+    project: Option<String>,
 ) -> Result<serde_json::Value, String> {
     log_info!(
         "api_test_custom_openai_connection called: endpoint='{}', model='{}'",
@@ -1305,117 +1322,77 @@ pub async fn api_test_custom_openai_connection<R: Runtime>(
         &model
     );
 
-    // Validate endpoint URL format
-    if !endpoint.starts_with("http://") && !endpoint.starts_with("https://") {
-        return Err("Endpoint must start with http:// or https://".to_string());
+    let config = CustomOpenAIConfig {
+        endpoint,
+        api_key,
+        model,
+        timeout_seconds,
+        organization,
+        project,
+        max_tokens,
+        temperature,
+        top_p,
+    };
+    let provider_config = crate::summary::openai_provider::config_from_custom_openai(config);
+    let provider =
+        crate::summary::openai_provider::OpenAICompatibleProcessingProvider::new(provider_config)?;
+    let status = provider.test_connection().await?;
+    if status.success {
+        Ok(serde_json::json!({
+            "status": "success",
+            "message": status.message,
+            "http_status": 200
+        }))
+    } else {
+        Err(status.message)
     }
+}
 
-    // Build the URL - append /chat/completions to the base endpoint
-    let url = format!("{}/chat/completions", endpoint.trim_end_matches('/'));
-
-    // Create a minimal test request
-    let test_request = serde_json::json!({
-        "model": model,
-        "messages": [
-            {
-                "role": "user",
-                "content": "Hi"
-            }
-        ],
-        "max_tokens": 5
-    });
-
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
-
-    let mut request = client
-        .post(&url)
-        .header("Content-Type", "application/json")
-        .json(&test_request);
-
-    // Add authorization if API key provided
-    if let Some(key) = api_key.filter(|k| !k.trim().is_empty()) {
-        request = request.header("Authorization", format!("Bearer {}", key));
-    }
-
-    match request.send().await {
-        Ok(response) => {
-            let status = response.status();
-            let response_text = response.text().await.unwrap_or_default();
-
-            if status.is_success() {
-                // Parse response as JSON to verify it's a valid OpenAI-compatible response
-                match serde_json::from_str::<serde_json::Value>(&response_text) {
-                    Ok(json) => {
-                        // Verify the response has the expected OpenAI structure
-                        if let Some(choices) = json.get("choices") {
-                            if let Some(choices_array) = choices.as_array() {
-                                if !choices_array.is_empty() {
-                                    // Verify the first choice has the required message structure
-                                    if let Some(first_choice) = choices_array.get(0) {
-                                        // Check if message.content field exists (can be empty string)
-                                        let has_message_structure = first_choice
-                                            .get("message")
-                                            .and_then(|m| {
-                                                m.get("content")
-                                                    .or_else(|| m.get("reasoning_content"))
-                                            })
-                                            .is_some();
-
-                                        if has_message_structure {
-                                            log_info!("✅ Custom OpenAI connection test successful - response validated");
-                                            return Ok(serde_json::json!({
-                                                "status": "success",
-                                                "message": "Connection successful and response validated",
-                                                "http_status": status.as_u16()
-                                            }));
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // Response was 200 but doesn't match OpenAI format
-                        log_warn!(
-                            "⚠️ Endpoint returned 200 but response doesn't match OpenAI format: {}",
-                            response_text
-                        );
-                        Err("Endpoint is reachable but doesn't appear to be OpenAI-compatible. Response is missing 'choices' array or 'message.content' / 'message.reasoning_content' field.".to_string())
-                    }
-                    Err(e) => {
-                        log_warn!(
-                            "⚠️ Endpoint returned 200 but response is not valid JSON: {}",
-                            e
-                        );
-                        Err(format!(
-                            "Endpoint is reachable but returned invalid JSON: {}. Response: {}",
-                            e, response_text
-                        ))
-                    }
-                }
-            } else {
-                log_warn!(
-                    "⚠️ Custom OpenAI connection test failed with status {}: {}",
-                    status,
-                    response_text
-                );
-                Err(format!(
-                    "Connection failed with status {}: {}",
-                    status, response_text
-                ))
-            }
-        }
-        Err(e) => {
-            log_error!("❌ Custom OpenAI connection test failed: {}", e);
-            if e.is_timeout() {
-                Err("Connection timed out. Please check the endpoint URL.".to_string())
-            } else if e.is_connect() {
-                Err("Could not connect to endpoint. Please verify the URL is correct and the server is running.".to_string())
-            } else {
-                Err(format!("Connection failed: {}", e))
-            }
-        }
-    }
+#[tauri::command]
+pub async fn api_test_custom_openai_processing<R: Runtime>(
+    _app: AppHandle<R>,
+    endpoint: String,
+    api_key: Option<String>,
+    model: String,
+    max_tokens: Option<i32>,
+    temperature: Option<f32>,
+    top_p: Option<f32>,
+    timeout_seconds: Option<u64>,
+    organization: Option<String>,
+    project: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let config = CustomOpenAIConfig {
+        endpoint,
+        api_key,
+        model,
+        timeout_seconds,
+        organization,
+        project,
+        max_tokens,
+        temperature,
+        top_p,
+    };
+    let provider_config = crate::summary::openai_provider::config_from_custom_openai(config);
+    let provider =
+        crate::summary::openai_provider::OpenAICompatibleProcessingProvider::new(provider_config)?;
+    let output_dir = std::env::temp_dir().join("clawscribe-openai-compatible-test");
+    let result = provider
+        .process_meeting(
+            crate::summary::openai_provider::OpenAICompatibleMeetingProcessRequest {
+                meeting_id: "clawscribe-openai-compatible-test".to_string(),
+                meeting_title: Some("ClawScribe OpenAI-compatible test".to_string()),
+                transcript: "[00:00] Alice: We will send the release checklist today.\n[00:05] Bob: I will review the installer by tomorrow.".to_string(),
+                output_dir: Some(output_dir),
+            },
+            None,
+        )
+        .await?;
+    Ok(serde_json::json!({
+        "status": "success",
+        "message": "Test meeting processed successfully",
+        "outputJsonPath": result.output_json_path,
+        "notesMarkdownPath": result.notes_markdown_path,
+        "followUpEmailPath": result.follow_up_email_path,
+        "processingLogPath": result.processing_log_path
+    }))
 }

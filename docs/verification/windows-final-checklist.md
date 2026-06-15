@@ -23,7 +23,13 @@ Tester:
 Machine:
 Windows version:
 ClawScribe commit:
+ClawScribe version:
+Upstream base version:
+Build date:
 Installer source:
+Artifact link:
+SHA256SUMS link:
+BUILD-METADATA contents:
 Installer format: MSI / NSIS / dev build
 Teams desktop version:
 Edge version:
@@ -67,6 +73,7 @@ Notes:
 - Confirm the displayed version matches the candidate release.
 - Confirm upstream attribution says it is based on Meetily Community Edition
   and does not present this build as an official upstream Meetily release.
+- Confirm the candidate metadata preserves upstream base version `0.4.0`.
 - Confirm links open externally and do not break the app session.
 - Confirm the About content is readable in light and dark mode.
 
@@ -75,6 +82,8 @@ Result:
 ```text
 Pass/Fail:
 Displayed version:
+Build metadata version:
+Build metadata upstream base version:
 Unexpected strings:
 Notes:
 ```
@@ -105,7 +114,7 @@ OpenAI login path is Codex-managed login; the direct fallback is OpenAI Platform
 API-key auth.
 
 - Open model/provider settings.
-- Confirm `Codex / ChatGPT login` exposes OpenAI login via Codex.
+- Confirm `Advanced: Codex runtime` exposes OpenAI login via Codex.
 - Confirm OpenAI direct auth asks for an OpenAI Platform API key, not ChatGPT web
   login.
 - Confirm any OpenAI OAuth/PKCE text is clearly marked unsupported for direct
@@ -230,6 +239,22 @@ Notes:
 
 ## Artifacts
 
+For installer artifact bundles, verify checksums before installing:
+
+```powershell
+cd <downloaded-artifact-root>
+Get-Content .\SHA256SUMS.txt | ForEach-Object {
+    $parts = $_ -split '\s+', 2
+    if ((Get-FileHash -Algorithm SHA256 -LiteralPath $parts[1]).Hash.ToLowerInvariant() -ne $parts[0]) {
+        throw "Checksum mismatch: $($parts[1])"
+    }
+}
+Get-Content .\BUILD-METADATA.txt
+```
+
+Confirm `BUILD-METADATA.txt` includes product `ClawScribe`, the candidate
+version, upstream base version `0.4.0`, build commit, and UTC build date.
+
 Inspect the completed recording folder.
 
 Required core artifacts:
@@ -260,6 +285,8 @@ Result:
 
 ```text
 Pass/Fail:
+Installer checksum verified:
+Build metadata verified:
 Artifacts present:
 Secrets observed:
 Notes:

@@ -1,10 +1,11 @@
 use serde::{Deserialize, Serialize};
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager, Runtime};
+use tauri_plugin_dialog::DialogExt;
 use tokio::process::Command;
 use tokio::time::timeout;
 use uuid::Uuid;
@@ -13,6 +14,8 @@ const DEFAULT_CODEX_MODEL: &str = "gpt-5.1-codex";
 const DEFAULT_CODEX_TIMEOUT_SECONDS: u64 = 600;
 const TEST_PROMPT: &str = "Reply exactly with CLASCRIBE_CODEX_OK.";
 const TEST_EXPECTED: &str = "CLASCRIBE_CODEX_OK";
+const CODEX_APP_DETECTED_CLI_MISSING: &str =
+    "Codex app detected, but the command-line runtime required for automated processing was not found.";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
@@ -64,6 +67,9 @@ pub struct CodexInstallationStatus {
     pub codex_home: String,
     pub codex_home_mode: CodexHomeMode,
     pub auth_status: Option<String>,
+    #[serde(default)]
+    pub desktop_app_detected: bool,
+    pub install_command: Option<String>,
     pub message: String,
 }
 
@@ -75,6 +81,24 @@ pub struct CodexCommandStatus {
     pub stdout: String,
     pub stderr: String,
     pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexInstallCommand {
+    pub label: String,
+    pub shell: String,
+    pub command: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexInstallRepairPlan {
+    pub requires_confirmation: bool,
+    pub docs_url: String,
+    pub message: String,
+    pub recommended: CodexInstallCommand,
+    pub alternatives: Vec<CodexInstallCommand>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -169,7 +193,7 @@ fn default_codex_timeout_seconds() -> u64 {
 }
 
 fn default_processing_provider() -> String {
-    "api-key".to_string()
+    "openai-compatible".to_string()
 }
 
 impl Default for CodexProviderConfig {
@@ -207,7 +231,7 @@ impl CodexProviderConfig {
         if self.use_existing_user_codex_session {
             CodexHomeMode::ExistingUserCodexSession
         } else {
-            self.codex_home_mode.clone()
+            CodexHomeMode::ClawscribeIsolated
         }
     }
 
@@ -262,6 +286,8 @@ impl CodexProcessingProvider {
                     codex_home,
                     codex_home_mode: self.config.effective_home_mode(),
                     auth_status: auth,
+                    desktop_app_detected: false,
+                    install_command: Some(codex_install_repair_plan().recommended.command),
                     message: "Codex found".to_string(),
                 })
             }
@@ -272,7 +298,11 @@ impl CodexProcessingProvider {
                 codex_home,
                 codex_home_mode: self.config.effective_home_mode(),
                 auth_status: None,
-                message: if output.stderr.is_empty() {
+                desktop_app_detected: codex_desktop_app_detected(),
+                install_command: Some(codex_install_repair_plan().recommended.command),
+                message: if codex_desktop_app_detected() {
+                    CODEX_APP_DETECTED_CLI_MISSING.to_string()
+                } else if output.stderr.is_empty() {
                     "Codex executable did not return a version".to_string()
                 } else {
                     output.stderr
@@ -285,7 +315,13 @@ impl CodexProcessingProvider {
                 codex_home,
                 codex_home_mode: self.config.effective_home_mode(),
                 auth_status: None,
-                message: e,
+                desktop_app_detected: codex_desktop_app_detected(),
+                install_command: Some(codex_install_repair_plan().recommended.command),
+                message: if codex_desktop_app_detected() {
+                    CODEX_APP_DETECTED_CLI_MISSING.to_string()
+                } else {
+                    e
+                },
             }),
         }
     }
@@ -579,8 +615,50 @@ pub async fn codex_save_config<R: Runtime>(
 pub async fn codex_check_installation<R: Runtime>(
     app: AppHandle<R>,
 ) -> Result<CodexInstallationStatus, String> {
-    let provider = provider_from_app(&app)?;
-    provider.check_installation().await
+    let config = normalize_codex_config(
+        load_processing_config(&app)
+            .unwrap_or_default()
+            .processing
+            .codex,
+    );
+    codex_installation_status_for_config(&app, config).await
+}
+
+#[tauri::command]
+pub async fn codex_find_automatically<R: Runtime>(
+    app: AppHandle<R>,
+) -> Result<CodexInstallationStatus, String> {
+    let mut config = normalize_codex_config(
+        load_processing_config(&app)
+            .unwrap_or_default()
+            .processing
+            .codex,
+    );
+    config.codex_binary_path = None;
+    codex_installation_status_for_config(&app, config).await
+}
+
+#[tauri::command]
+pub async fn codex_browse_for_binary<R: Runtime>(
+    app: AppHandle<R>,
+) -> Result<Option<String>, String> {
+    let app_clone = app.clone();
+    let path = tokio::task::spawn_blocking(move || {
+        app_clone
+            .dialog()
+            .file()
+            .add_filter("Codex executable", &["exe", "cmd", "bat"])
+            .blocking_pick_file()
+    })
+    .await
+    .map_err(|e| format!("Codex file dialog failed: {e}"))?;
+
+    Ok(path.map(|p| p.to_string()))
+}
+
+#[tauri::command]
+pub fn codex_prepare_install_command() -> CodexInstallRepairPlan {
+    codex_install_repair_plan()
 }
 
 #[tauri::command]
@@ -666,26 +744,29 @@ pub async fn codex_process_meeting<R: Runtime>(
 pub fn provider_from_app<R: Runtime>(
     app: &AppHandle<R>,
 ) -> Result<CodexProcessingProvider, String> {
-    let config = load_processing_config(app)
-        .unwrap_or_default()
-        .processing
-        .codex;
+    let config = normalize_codex_config(
+        load_processing_config(app)
+            .unwrap_or_default()
+            .processing
+            .codex,
+    );
     let binary = discover_codex_binary(app, config.codex_binary_path.as_deref())?;
-    CodexProcessingProvider::new(normalize_codex_config(config), binary)
+    CodexProcessingProvider::new(config, binary)
 }
 
 pub fn discover_codex_binary<R: Runtime>(
     app: &AppHandle<R>,
     configured_path: Option<&str>,
 ) -> Result<PathBuf, String> {
-    if let Some(resource_dir) = app.path().resource_dir().ok() {
-        for candidate in bundled_codex_candidates(&resource_dir) {
-            if candidate.is_file() {
-                return Ok(candidate);
-            }
-        }
-    }
+    let resource_dir = app.path().resource_dir().ok();
+    discover_codex_binary_from(configured_path, resource_dir.as_deref(), None)
+}
 
+fn discover_codex_binary_from(
+    configured_path: Option<&str>,
+    resource_dir: Option<&Path>,
+    path_env: Option<&OsStr>,
+) -> Result<PathBuf, String> {
     if let Some(path) = configured_path.filter(|s| !s.trim().is_empty()) {
         let candidate = PathBuf::from(path);
         if candidate.is_file() {
@@ -697,9 +778,192 @@ pub fn discover_codex_binary<R: Runtime>(
         ));
     }
 
-    which::which("codex").map_err(|_| {
-        "Codex was not found. Install Codex, add it to PATH, bundle it with ClawScribe, or set a Codex binary path in Settings.".to_string()
+    if let Some(candidate) = find_codex_on_path(path_env) {
+        return Ok(candidate);
+    }
+
+    for candidate in default_windows_codex_candidates() {
+        if candidate.is_file() {
+            return Ok(candidate);
+        }
+    }
+
+    if let Some(resource_dir) = resource_dir {
+        for candidate in bundled_codex_candidates(resource_dir) {
+            if candidate.is_file() {
+                return Ok(candidate);
+            }
+        }
+    }
+
+    let app_detected = codex_desktop_app_detected();
+    Err(if app_detected {
+        CODEX_APP_DETECTED_CLI_MISSING.to_string()
+    } else {
+        "Codex command-line runtime was not found. ClawScribe can process meetings without Codex using an OpenAI API key or OpenClaw; select Advanced: Codex runtime only when the Codex CLI/runtime is installed.".to_string()
     })
+}
+
+async fn codex_installation_status_for_config<R: Runtime>(
+    app: &AppHandle<R>,
+    config: CodexProviderConfig,
+) -> Result<CodexInstallationStatus, String> {
+    let codex_home = config
+        .effective_codex_home()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| default_user_codex_home().to_string_lossy().to_string());
+    match discover_codex_binary(app, config.codex_binary_path.as_deref()) {
+        Ok(binary) => {
+            CodexProcessingProvider::new(config, binary)?
+                .check_installation()
+                .await
+        }
+        Err(message) => {
+            let desktop_app_detected = codex_desktop_app_detected();
+            Ok(CodexInstallationStatus {
+                found: false,
+                version: None,
+                path: None,
+                codex_home,
+                codex_home_mode: config.effective_home_mode(),
+                auth_status: None,
+                desktop_app_detected,
+                install_command: Some(codex_install_repair_plan().recommended.command),
+                message: if desktop_app_detected {
+                    CODEX_APP_DETECTED_CLI_MISSING.to_string()
+                } else {
+                    message
+                },
+            })
+        }
+    }
+}
+
+fn find_codex_on_path(path_env: Option<&OsStr>) -> Option<PathBuf> {
+    let path_value: OsString = path_env
+        .map(OsString::from)
+        .or_else(|| std::env::var_os("PATH"))?;
+    let names = ["codex", "codex.exe", "codex.cmd", "codex.bat"];
+    std::env::split_paths(&path_value).find_map(|dir| {
+        names
+            .iter()
+            .map(|name| dir.join(name))
+            .find(|candidate| candidate.is_file())
+    })
+}
+
+fn default_windows_codex_candidates() -> Vec<PathBuf> {
+    windows_codex_cli_candidates_from(
+        std::env::var_os("LOCALAPPDATA").as_deref(),
+        std::env::var_os("ProgramFiles").as_deref(),
+    )
+}
+
+fn windows_codex_cli_candidates_from(
+    local_app_data: Option<&OsStr>,
+    program_files: Option<&OsStr>,
+) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(base) = local_app_data {
+        let base = PathBuf::from(base);
+        candidates.push(
+            base.join("Programs")
+                .join("OpenAI")
+                .join("Codex")
+                .join("bin")
+                .join("codex.exe"),
+        );
+        candidates.push(
+            base.join("Programs")
+                .join("OpenAI")
+                .join("Codex")
+                .join("codex.exe"),
+        );
+    }
+    if let Some(base) = program_files {
+        let base = PathBuf::from(base);
+        candidates.push(
+            base.join("OpenAI")
+                .join("Codex")
+                .join("bin")
+                .join("codex.exe"),
+        );
+        candidates.push(base.join("OpenAI").join("Codex").join("codex.exe"));
+    }
+    candidates
+}
+
+fn codex_desktop_app_detected() -> bool {
+    codex_desktop_app_candidates_from(
+        std::env::var_os("LOCALAPPDATA").as_deref(),
+        std::env::var_os("ProgramFiles").as_deref(),
+    )
+    .into_iter()
+    .any(|candidate| candidate.exists())
+}
+
+fn codex_desktop_app_candidates_from(
+    local_app_data: Option<&OsStr>,
+    program_files: Option<&OsStr>,
+) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(base) = local_app_data {
+        let base = PathBuf::from(base);
+        candidates.push(
+            base.join("Programs")
+                .join("OpenAI")
+                .join("Codex")
+                .join("Codex.exe"),
+        );
+        candidates.push(base.join("Programs").join("OpenAI Codex").join("Codex.exe"));
+        candidates.push(base.join("Microsoft").join("WindowsApps").join("Codex.exe"));
+    }
+    if let Some(base) = program_files {
+        let base = PathBuf::from(base);
+        candidates.push(base.join("OpenAI").join("Codex").join("Codex.exe"));
+        candidates.push(base.join("OpenAI Codex").join("Codex.exe"));
+    }
+    candidates
+}
+
+fn codex_install_repair_plan() -> CodexInstallRepairPlan {
+    #[cfg(windows)]
+    let recommended = CodexInstallCommand {
+        label: "Install or repair Codex CLI".to_string(),
+        shell: "PowerShell".to_string(),
+        command:
+            r#"powershell -ExecutionPolicy ByPass -c "irm https://chatgpt.com/codex/install.ps1 | iex""#
+                .to_string(),
+    };
+    #[cfg(not(windows))]
+    let recommended = CodexInstallCommand {
+        label: "Install or repair Codex CLI".to_string(),
+        shell: "Shell".to_string(),
+        command: "curl -fsSL https://chatgpt.com/codex/install.sh | sh".to_string(),
+    };
+
+    CodexInstallRepairPlan {
+        requires_confirmation: true,
+        docs_url: "https://developers.openai.com/codex/cli".to_string(),
+        message: "ClawScribe will not install Codex automatically. Review and run an install or repair command yourself, then use Find Codex automatically.".to_string(),
+        recommended,
+        alternatives: vec![
+            CodexInstallCommand {
+                label: "Install with npm".to_string(),
+                shell: "Shell".to_string(),
+                command: "npm install -g @openai/codex".to_string(),
+            },
+            CodexInstallCommand {
+                label: "Install with Homebrew".to_string(),
+                shell: "Shell".to_string(),
+                command: "brew install --cask codex".to_string(),
+            },
+        ],
+    }
+}
+
+pub fn codex_runtime_required_for_provider(provider: &str) -> bool {
+    matches!(provider, "codex" | "codex-login" | "codex-chatgpt")
 }
 
 fn bundled_codex_candidates(resource_dir: &Path) -> Vec<PathBuf> {
@@ -721,6 +985,9 @@ fn normalize_codex_config(mut config: CodexProviderConfig) -> CodexProviderConfi
     }
     if config.timeout_seconds == 0 {
         config.timeout_seconds = DEFAULT_CODEX_TIMEOUT_SECONDS;
+    }
+    if !config.use_existing_user_codex_session {
+        config.codex_home_mode = CodexHomeMode::ClawscribeIsolated;
     }
     if !config.use_existing_user_codex_session
         && matches!(config.codex_home_mode, CodexHomeMode::ClawscribeIsolated)
@@ -830,7 +1097,7 @@ fn normalize_transcript_markdown(transcript: &str) -> String {
     }
 }
 
-fn build_meeting_prompt() -> String {
+pub(crate) fn build_meeting_prompt() -> String {
     r#"You are processing a meeting transcript for ClawScribe.
 
 Return only valid JSON matching output-schema.json.
@@ -938,13 +1205,13 @@ pub fn output_schema_json() -> String {
     .unwrap()
 }
 
-fn parse_meeting_output(raw: &str) -> Result<MeetingNotesOutput, String> {
+pub(crate) fn parse_meeting_output(raw: &str) -> Result<MeetingNotesOutput, String> {
     let cleaned = strip_json_fence(raw);
     serde_json::from_str::<MeetingNotesOutput>(&cleaned)
-        .map_err(|e| format!("Codex returned invalid meeting JSON: {e}"))
+        .map_err(|e| format!("Provider returned invalid meeting JSON: {e}"))
 }
 
-fn strip_json_fence(raw: &str) -> String {
+pub(crate) fn strip_json_fence(raw: &str) -> String {
     let trimmed = raw.trim();
     let without_prefix = trimmed
         .strip_prefix("```json")
@@ -1091,7 +1358,7 @@ fn confidence_str(confidence: &Confidence) -> &'static str {
     }
 }
 
-fn render_follow_up_email(email: &FollowUpEmail) -> String {
+pub(crate) fn render_follow_up_email(email: &FollowUpEmail) -> String {
     format!(
         "# Follow-Up Email\n\n**Subject:** {}\n\n{}",
         email.subject, email.body_markdown
@@ -1371,6 +1638,126 @@ exit 2
             fake,
         )
         .unwrap()
+    }
+
+    fn make_executable(path: &Path) {
+        fs::write(path, "#!/usr/bin/env bash\nexit 0\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = fs::metadata(path).unwrap().permissions();
+            perms.set_mode(0o755);
+            fs::set_permissions(path, perms).unwrap();
+        }
+    }
+
+    #[test]
+    fn configured_codex_path_wins_discovery() {
+        let temp = tempfile::tempdir().unwrap();
+        let configured = temp.path().join("configured-codex");
+        let path_dir = temp.path().join("path-bin");
+        fs::create_dir_all(&path_dir).unwrap();
+        make_executable(&configured);
+        make_executable(&path_dir.join("codex"));
+        let path_env = std::env::join_paths([path_dir]).unwrap();
+
+        let discovered =
+            discover_codex_binary_from(Some(configured.to_str().unwrap()), None, Some(&path_env))
+                .unwrap();
+        assert_eq!(discovered, configured);
+    }
+
+    #[test]
+    fn path_discovery_finds_codex_command() {
+        let temp = tempfile::tempdir().unwrap();
+        let path_dir = temp.path().join("path-bin");
+        fs::create_dir_all(&path_dir).unwrap();
+        let codex = path_dir.join("codex");
+        make_executable(&codex);
+        let path_env = std::env::join_paths([path_dir]).unwrap();
+
+        let discovered = discover_codex_binary_from(None, None, Some(&path_env)).unwrap();
+        assert_eq!(discovered, codex);
+    }
+
+    #[test]
+    fn windows_default_path_discovery_checks_localappdata_and_program_files() {
+        let temp = tempfile::tempdir().unwrap();
+        let local = temp.path().join("LocalAppData");
+        let program_files = temp.path().join("ProgramFiles");
+        let expected = local
+            .join("Programs")
+            .join("OpenAI")
+            .join("Codex")
+            .join("bin")
+            .join("codex.exe");
+        fs::create_dir_all(expected.parent().unwrap()).unwrap();
+        make_executable(&expected);
+
+        let candidates = windows_codex_cli_candidates_from(
+            Some(local.as_os_str()),
+            Some(program_files.as_os_str()),
+        );
+        assert_eq!(candidates.first(), Some(&expected));
+        assert!(candidates.contains(&program_files.join("OpenAI").join("Codex").join("codex.exe")));
+    }
+
+    #[test]
+    fn bundled_resource_path_is_last_resort_discovery() {
+        let temp = tempfile::tempdir().unwrap();
+        let resource_dir = temp.path().join("resources");
+        let bundled = resource_dir
+            .join("codex")
+            .join(if cfg!(target_os = "windows") {
+                "codex.exe"
+            } else {
+                "codex"
+            });
+        fs::create_dir_all(bundled.parent().unwrap()).unwrap();
+        make_executable(&bundled);
+
+        let empty_path = OsString::from("");
+        let discovered =
+            discover_codex_binary_from(None, Some(&resource_dir), Some(empty_path.as_os_str()))
+                .unwrap();
+        assert_eq!(discovered, bundled);
+    }
+
+    #[test]
+    fn install_repair_plan_is_prepare_only() {
+        let plan = codex_install_repair_plan();
+        assert!(plan.requires_confirmation);
+        assert!(plan.docs_url.contains("developers.openai.com/codex/cli"));
+        assert!(!plan.recommended.command.trim().is_empty());
+        assert!(plan
+            .message
+            .contains("will not install Codex automatically"));
+    }
+
+    #[test]
+    fn codex_runtime_is_required_only_for_codex_providers() {
+        assert!(codex_runtime_required_for_provider("codex"));
+        assert!(codex_runtime_required_for_provider("codex-login"));
+        assert!(!codex_runtime_required_for_provider("openai"));
+        assert!(!codex_runtime_required_for_provider("openclaw"));
+        assert!(!codex_runtime_required_for_provider("custom-openai"));
+    }
+
+    #[test]
+    fn existing_user_session_requires_explicit_opt_in_flag() {
+        let temp = tempfile::tempdir().unwrap();
+        let normalized = normalize_codex_config(CodexProviderConfig {
+            codex_home_mode: CodexHomeMode::ExistingUserCodexSession,
+            use_existing_user_codex_session: false,
+            codex_home_path: Some(temp.path().join("isolated").to_string_lossy().to_string()),
+            ..CodexProviderConfig::default()
+        });
+
+        assert_eq!(
+            normalized.effective_home_mode(),
+            CodexHomeMode::ClawscribeIsolated
+        );
+        assert!(normalized.effective_codex_home().is_some());
     }
 
     #[tokio::test]

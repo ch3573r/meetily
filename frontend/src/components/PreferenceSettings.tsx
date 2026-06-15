@@ -343,8 +343,8 @@ export function PreferenceSettings() {
           </div>
         </div>
 
-        <div className="mt-4 p-3 bg-blue-50 rounded-md">
-          <p className="text-xs text-gray-800">
+        <div className="mt-4 rounded-md bg-secondary p-3">
+          <p className="text-xs text-secondary-foreground">
             <strong>Note:</strong> Database and models are stored together in your application data directory for unified management.
           </p>
         </div>

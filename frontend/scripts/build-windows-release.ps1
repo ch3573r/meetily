@@ -86,6 +86,11 @@ if ($Feature -eq "cpu") {
 }
 
 $bundleRoot = Join-Path $tauriRoot "target\release\bundle"
+$sourceVersion = (node -p "require('./package.json').version").Trim()
+$commit = (git -C (Join-Path $frontendRoot "..") rev-parse HEAD).Trim()
+$shortCommit = (git -C (Join-Path $frontendRoot "..") rev-parse --short HEAD).Trim()
+$buildDateUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+$upstreamBaseVersion = "0.4.0"
 $artifactPatterns = @(
     Join-Path $bundleRoot "msi\*.msi"
     Join-Path $bundleRoot "nsis\*.exe"
@@ -106,11 +111,23 @@ if ($artifactFiles.Count -eq 0) {
 }
 
 $checksumPath = Join-Path $bundleRoot "SHA256SUMS.txt"
+$resolvedBundleRoot = (Resolve-Path -LiteralPath $bundleRoot).Path
 $checksumLines = foreach ($artifact in $artifactFiles | Sort-Object FullName) {
     $hash = Get-FileHash -Algorithm SHA256 -LiteralPath $artifact.FullName
-    "$($hash.Hash.ToLowerInvariant())  $($artifact.Name)"
+    $relativePath = [System.IO.Path]::GetRelativePath($resolvedBundleRoot, $artifact.FullName).Replace("\", "/")
+    "$($hash.Hash.ToLowerInvariant())  $relativePath"
 }
 $checksumLines | Set-Content -LiteralPath $checksumPath -Encoding ascii
+$metadataPath = Join-Path $bundleRoot "BUILD-METADATA.txt"
+$metadata = @(
+    "product=ClawScribe",
+    "version=$sourceVersion",
+    "upstream_base_version=$upstreamBaseVersion",
+    "build_commit=$commit",
+    "build_commit_short=$shortCommit",
+    "build_date_utc=$buildDateUtc"
+)
+$metadata | Set-Content -LiteralPath $metadataPath -Encoding ascii
 
 Write-Host ""
 Write-Host "SHA-256 checksums:"
@@ -118,3 +135,4 @@ Get-Content -LiteralPath $checksumPath | ForEach-Object {
     Write-Host "  $_"
 }
 Write-Host "  $checksumPath"
+Write-Host "  $metadataPath"

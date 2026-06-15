@@ -11,9 +11,11 @@ interface UseModelConfigurationProps {
 export function useModelConfiguration({ serverAddress }: UseModelConfigurationProps) {
   // Transient fallback until the saved DB config loads.
   const [modelConfig, setModelConfig] = useState<ModelConfig>({
-    provider: 'openai',
-    model: 'gpt-4o',
-    whisperModel: 'large-v3'
+    provider: 'custom-openai',
+    model: 'gpt-4o-mini',
+    whisperModel: 'large-v3',
+    customOpenAIEndpoint: 'https://api.openai.com/v1',
+    customOpenAIModel: 'gpt-4o-mini',
   });
   const [isLoading, setIsLoading] = useState(true);
   const [, setError] = useState<string>('');

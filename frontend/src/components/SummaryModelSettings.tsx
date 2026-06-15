@@ -14,11 +14,13 @@ interface SummaryModelSettingsProps {
 
 export function SummaryModelSettings({ refetchTrigger }: SummaryModelSettingsProps) {
   const [modelConfig, setModelConfig] = useState<ModelConfig>({
-    provider: 'openai',
-    model: 'gpt-4o',
+    provider: 'custom-openai',
+    model: 'gpt-4o-mini',
     whisperModel: 'large-v3',
     apiKey: null,
-    ollamaEndpoint: null
+    ollamaEndpoint: null,
+    customOpenAIEndpoint: 'https://api.openai.com/v1',
+    customOpenAIModel: 'gpt-4o-mini',
   });
 
   const { isAutoSummary, toggleIsAutoSummary } = useConfig();
@@ -51,6 +53,9 @@ export function SummaryModelSettings({ refetchTrigger }: SummaryModelSettingsPro
               data.maxTokens = customConfig.maxTokens || null;
               data.temperature = customConfig.temperature || null;
               data.topP = customConfig.topP || null;
+              data.timeoutSeconds = customConfig.timeoutSeconds || null;
+              data.organization = customConfig.organization || null;
+              data.project = customConfig.project || null;
               // For custom-openai, model field should match customOpenAIModel
               data.model = customConfig.model || data.model;
             }

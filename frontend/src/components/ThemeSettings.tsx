@@ -102,7 +102,7 @@ export function ThemeSettings() {
               onClick={() => handlePreferenceChange(option)}
               className={`flex min-h-24 flex-col items-start gap-3 rounded-md border p-4 text-left transition-colors ${
                 isSelected
-                  ? "border-primary bg-blue-50 text-foreground ring-1 ring-primary"
+                  ? "border-primary bg-secondary text-foreground ring-1 ring-primary"
                   : "border-border bg-background text-muted-foreground hover:border-primary/70 hover:bg-muted"
               }`}
             >

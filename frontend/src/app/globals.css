@@ -91,11 +91,13 @@
     --kontron-magenta: 329 100% 45%;
     --kontron-cyan: 180 100% 50%;
 
+    --app-surface: 0 0% 100%;
+    --app-elevated: 0 0% 100%;
     --background: var(--kontron-light-grey);
     --foreground: var(--kontron-black-blue);
-    --card: 0 0% 100%;
+    --card: var(--app-surface);
     --card-foreground: var(--kontron-black-blue);
-    --popover: 0 0% 100%;
+    --popover: var(--app-elevated);
     --popover-foreground: var(--kontron-black-blue);
     --primary: var(--kontron-primary);
     --primary-foreground: 0 0% 98%;
@@ -142,24 +144,26 @@
   }
 
   .dark {
-    --background: 208 65% 10%;
-    --foreground: 0 0% 98%;
-    --card: 208 50% 14%;
-    --card-foreground: 0 0% 98%;
-    --popover: 208 50% 14%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 207 33% 72%;
-    --primary-foreground: 208 65% 12%;
-    --secondary: 208 45% 20%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 208 42% 18%;
-    --muted-foreground: 207 20% 76%;
+    --app-surface: 208 33% 10%;
+    --app-elevated: 211 35% 14%;
+    --background: 210 35% 7%;
+    --foreground: 204 29% 97%;
+    --card: var(--app-surface);
+    --card-foreground: 204 29% 97%;
+    --popover: var(--app-elevated);
+    --popover-foreground: 204 29% 97%;
+    --primary: var(--kontron-accent);
+    --primary-foreground: 210 35% 7%;
+    --secondary: 211 35% 14%;
+    --secondary-foreground: 204 15% 76%;
+    --muted: 211 35% 14%;
+    --muted-foreground: 205 10% 56%;
     --accent: var(--kontron-accent);
-    --accent-foreground: 208 65% 10%;
+    --accent-foreground: 210 35% 7%;
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 98%;
-    --border: 208 31% 28%;
-    --input: 208 31% 28%;
+    --border: 210 26% 22%;
+    --input: 210 26% 22%;
     --ring: 166 48% 48%;
     --chart-1: 207 33% 72%;
     --chart-2: var(--kontron-accent);
@@ -167,24 +171,24 @@
     --chart-4: var(--kontron-mid-blue);
     --chart-5: var(--kontron-magenta);
 
-    --theme-gray-50: 208 42% 18%;
-    --theme-gray-100: 208 45% 20%;
-    --theme-gray-200: 208 31% 28%;
-    --theme-gray-300: 208 27% 38%;
-    --theme-gray-500: 207 20% 76%;
-    --theme-gray-600: 207 20% 80%;
-    --theme-gray-700: 0 0% 88%;
-    --theme-gray-800: 0 0% 94%;
-    --theme-gray-900: 0 0% 98%;
-    --theme-blue-50: 208 45% 18%;
-    --theme-blue-100: 208 45% 22%;
-    --theme-blue-500: 207 33% 72%;
-    --theme-blue-600: 207 33% 72%;
-    --theme-blue-700: 207 42% 82%;
-    --theme-slate-50: 208 42% 18%;
-    --theme-slate-100: 208 45% 20%;
-    --theme-slate-600: 207 20% 82%;
-    --theme-slate-700: 207 20% 88%;
+    --theme-gray-50: var(--muted);
+    --theme-gray-100: 210 26% 17%;
+    --theme-gray-200: var(--border);
+    --theme-gray-300: 210 19% 30%;
+    --theme-gray-500: var(--muted-foreground);
+    --theme-gray-600: 204 15% 76%;
+    --theme-gray-700: 204 29% 88%;
+    --theme-gray-800: 204 29% 93%;
+    --theme-gray-900: var(--foreground);
+    --theme-blue-50: 211 35% 14%;
+    --theme-blue-100: 210 26% 17%;
+    --theme-blue-500: var(--kontron-accent);
+    --theme-blue-600: var(--kontron-accent);
+    --theme-blue-700: 166 54% 76%;
+    --theme-slate-50: var(--muted);
+    --theme-slate-100: 210 26% 17%;
+    --theme-slate-600: 204 15% 76%;
+    --theme-slate-700: 204 29% 88%;
     --theme-success-bg: 166 44% 18%;
     --theme-success-fg: 166 54% 76%;
     --theme-warning-bg: 37 50% 18%;
@@ -233,18 +237,18 @@
   }
 
   .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: #d1d5db;
+    background: hsl(var(--border));
     border-radius: 3px;
   }
 
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: #9ca3af;
+    background: hsl(var(--muted-foreground));
   }
 
   /* Firefox scrollbar */
   .custom-scrollbar {
     scrollbar-width: thin;
-    scrollbar-color: #d1d5db transparent;
+    scrollbar-color: hsl(var(--border)) transparent;
   }
 
   /* BlockNote Editor - Override fixed dimensions for responsive layout */
@@ -287,6 +291,72 @@
 
   .dark .hover\:bg-white:hover {
     background-color: hsl(var(--card));
+  }
+
+  .dark .bg-gray-50,
+  .dark .bg-gray-100,
+  .dark .bg-slate-50,
+  .dark .bg-slate-100 {
+    background-color: hsl(var(--muted));
+  }
+
+  .dark .hover\:bg-gray-50:hover,
+  .dark .hover\:bg-gray-100:hover,
+  .dark .hover\:bg-slate-100:hover {
+    background-color: hsl(var(--secondary));
+  }
+
+  .dark .bg-gray-200,
+  .dark .bg-gray-300 {
+    background-color: hsl(var(--border));
+  }
+
+  .dark .border-gray-100,
+  .dark .border-gray-200,
+  .dark .border-gray-300,
+  .dark .border-blue-200 {
+    border-color: hsl(var(--border));
+  }
+
+  .dark .text-gray-400,
+  .dark .text-gray-500 {
+    color: hsl(var(--muted-foreground));
+  }
+
+  .dark .text-gray-600,
+  .dark .text-gray-700,
+  .dark .text-gray-800,
+  .dark .text-gray-900 {
+    color: hsl(var(--foreground));
+  }
+
+  .dark .bg-blue-50,
+  .dark .bg-blue-100 {
+    background-color: hsl(var(--secondary));
+  }
+
+  .dark .hover\:bg-blue-50:hover,
+  .dark .hover\:bg-blue-100:hover,
+  .dark .hover\:bg-blue-200:hover {
+    background-color: hsl(var(--border));
+  }
+
+  .dark .text-blue-500,
+  .dark .text-blue-600,
+  .dark .text-blue-700,
+  .dark .text-blue-800,
+  .dark .text-blue-900 {
+    color: hsl(var(--primary));
+  }
+
+  .dark .focus\:ring-blue-300:focus,
+  .dark .focus\:ring-blue-500:focus,
+  .dark .focus-visible\:ring-blue-500:focus-visible {
+    --tw-ring-color: hsl(var(--ring));
+  }
+
+  .dark .focus\:border-blue-500:focus {
+    border-color: hsl(var(--ring));
   }
 
   .dark .shadow-sm,

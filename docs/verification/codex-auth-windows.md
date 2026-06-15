@@ -32,7 +32,7 @@ configured Codex binary path.
 1. Launch ClawScribe.
 2. Open Settings.
 3. Open AI Provider / Model Settings.
-4. Select `Codex / ChatGPT login`.
+4. Select `Advanced: Codex runtime`.
 5. Confirm the label says `OpenAI login via Codex`, not generic OpenAI OAuth.
 
 ## 3. Check Installation
@@ -114,7 +114,7 @@ Create or import a short test meeting with transcript text similar to:
 [00:05] Nora: Action item for Nora: run fake-Codex and Windows checks.
 ```
 
-Generate/process the summary using provider `Codex / ChatGPT login`.
+Generate/process the summary using provider `Advanced: Codex runtime`.
 
 Expected output files in the meeting folder:
 

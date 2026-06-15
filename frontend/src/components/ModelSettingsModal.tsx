@@ -17,7 +17,7 @@ import {
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Switch } from '@/components/ui/switch';
-import { Lock, Unlock, Eye, EyeOff, RefreshCw, CheckCircle2, XCircle, ChevronDown, ChevronUp, Download, ExternalLink, Check, ChevronsUpDown, ServerCog } from 'lucide-react';
+import { Lock, Unlock, Eye, EyeOff, RefreshCw, CheckCircle2, XCircle, ChevronDown, ChevronUp, Download, ExternalLink, Check, ChevronsUpDown, ServerCog, FolderOpen, Wrench } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Command,
@@ -43,6 +43,9 @@ export interface ModelConfig {
   maxTokens?: number | null;
   temperature?: number | null;
   topP?: number | null;
+  timeoutSeconds?: number | null;
+  organization?: string | null;
+  project?: string | null;
 }
 
 interface OllamaModel {
@@ -109,6 +112,8 @@ interface CodexInstallationStatus {
   codexHome: string;
   codexHomeMode: 'clawscribe-isolated' | 'existing-user-codex-session';
   authStatus?: string | null;
+  desktopAppDetected?: boolean;
+  installCommand?: string | null;
   message: string;
 }
 
@@ -118,6 +123,20 @@ interface CodexCommandStatus {
   stdout: string;
   stderr: string;
   message: string;
+}
+
+interface CodexInstallCommand {
+  label: string;
+  shell: string;
+  command: string;
+}
+
+interface CodexInstallRepairPlan {
+  requiresConfirmation: boolean;
+  docsUrl: string;
+  message: string;
+  recommended: CodexInstallCommand;
+  alternatives: CodexInstallCommand[];
 }
 
 interface AnthropicModel {
@@ -142,6 +161,10 @@ const OPENAI_FALLBACK_MODELS = [
   'o3',
   'o3-mini',
 ];
+
+const DEFAULT_OPENAI_COMPATIBLE_ENDPOINT = 'https://api.openai.com/v1';
+const DEFAULT_OPENAI_COMPATIBLE_MODEL = 'gpt-4o-mini';
+const DEFAULT_OPENAI_COMPATIBLE_TIMEOUT_SECONDS = '300';
 
 const CLAUDE_FALLBACK_MODELS = [
   'claude-sonnet-4-5-20250929',
@@ -202,12 +225,15 @@ export function ModelSettingsModal({
   const [ollamaNotInstalled, setOllamaNotInstalled] = useState<boolean>(false); // Track if Ollama is not installed
 
   // Custom OpenAI state
-  const [customOpenAIEndpoint, setCustomOpenAIEndpoint] = useState<string>(modelConfig.customOpenAIEndpoint || '');
-  const [customOpenAIModel, setCustomOpenAIModel] = useState<string>(modelConfig.customOpenAIModel || '');
+  const [customOpenAIEndpoint, setCustomOpenAIEndpoint] = useState<string>(modelConfig.customOpenAIEndpoint || DEFAULT_OPENAI_COMPATIBLE_ENDPOINT);
+  const [customOpenAIModel, setCustomOpenAIModel] = useState<string>(modelConfig.customOpenAIModel || DEFAULT_OPENAI_COMPATIBLE_MODEL);
   const [customOpenAIApiKey, setCustomOpenAIApiKey] = useState<string>(modelConfig.customOpenAIApiKey || '');
   const [customMaxTokens, setCustomMaxTokens] = useState<string>(modelConfig.maxTokens?.toString() || '');
   const [customTemperature, setCustomTemperature] = useState<string>(modelConfig.temperature?.toString() || '');
   const [customTopP, setCustomTopP] = useState<string>(modelConfig.topP?.toString() || '');
+  const [customTimeoutSeconds, setCustomTimeoutSeconds] = useState<string>(modelConfig.timeoutSeconds?.toString() || DEFAULT_OPENAI_COMPATIBLE_TIMEOUT_SECONDS);
+  const [customOrganization, setCustomOrganization] = useState<string>(modelConfig.organization || '');
+  const [customProject, setCustomProject] = useState<string>(modelConfig.project || '');
   const [isCustomOpenAIAdvancedOpen, setIsCustomOpenAIAdvancedOpen] = useState<boolean>(false);
   const [isTestingConnection, setIsTestingConnection] = useState<boolean>(false);
 
@@ -308,7 +334,7 @@ export function ModelSettingsModal({
     openai: openaiModels.length > 0 ? openaiModels : OPENAI_FALLBACK_MODELS,
     openrouter: openRouterModels.map((m) => m.id),
     'builtin-ai': builtinAiModels.map((m) => m.name),
-    'custom-openai': customOpenAIModel ? [customOpenAIModel] : [], // User specifies model manually
+    'custom-openai': [customOpenAIModel || DEFAULT_OPENAI_COMPATIBLE_MODEL],
     openclaw: ['openclaw-managed'],
     codex: [codexConfig.model || modelConfig.model || 'gpt-5.1-codex'],
   };
@@ -326,7 +352,8 @@ export function ModelSettingsModal({
   // Custom OpenAI validation
   const isCustomOpenAIInvalid = modelConfig.provider === 'custom-openai' && (
     !customOpenAIEndpoint.trim() ||
-    !customOpenAIModel.trim()
+    !customOpenAIModel.trim() ||
+    !customTimeoutSeconds.trim()
   );
 
   const isOpenClawInvalid = modelConfig.provider === 'openclaw' && (
@@ -380,12 +407,15 @@ export function ModelSettingsModal({
             try {
               const customConfig = (await invoke('api_get_custom_openai_config')) as any;
               if (customConfig) {
-                setCustomOpenAIEndpoint(customConfig.endpoint || '');
-                setCustomOpenAIModel(customConfig.model || '');
+                setCustomOpenAIEndpoint(customConfig.endpoint || DEFAULT_OPENAI_COMPATIBLE_ENDPOINT);
+                setCustomOpenAIModel(customConfig.model || DEFAULT_OPENAI_COMPATIBLE_MODEL);
                 setCustomOpenAIApiKey(customConfig.apiKey || '');
                 setCustomMaxTokens(customConfig.maxTokens?.toString() || '');
                 setCustomTemperature(customConfig.temperature?.toString() || '');
                 setCustomTopP(customConfig.topP?.toString() || '');
+                setCustomTimeoutSeconds(customConfig.timeoutSeconds?.toString() || DEFAULT_OPENAI_COMPATIBLE_TIMEOUT_SECONDS);
+                setCustomOrganization(customConfig.organization || '');
+                setCustomProject(customConfig.project || '');
               }
             } catch (err) {
               console.error('Failed to fetch custom OpenAI config:', err);
@@ -440,12 +470,15 @@ export function ModelSettingsModal({
       });
 
       // Always sync from modelConfig (which comes from context if available)
-      setCustomOpenAIEndpoint(modelConfig.customOpenAIEndpoint || '');
-      setCustomOpenAIModel(modelConfig.customOpenAIModel || '');
+      setCustomOpenAIEndpoint(modelConfig.customOpenAIEndpoint || DEFAULT_OPENAI_COMPATIBLE_ENDPOINT);
+      setCustomOpenAIModel(modelConfig.customOpenAIModel || DEFAULT_OPENAI_COMPATIBLE_MODEL);
       setCustomOpenAIApiKey(modelConfig.customOpenAIApiKey || '');
       setCustomMaxTokens(modelConfig.maxTokens?.toString() || '');
       setCustomTemperature(modelConfig.temperature?.toString() || '');
       setCustomTopP(modelConfig.topP?.toString() || '');
+      setCustomTimeoutSeconds(modelConfig.timeoutSeconds?.toString() || DEFAULT_OPENAI_COMPATIBLE_TIMEOUT_SECONDS);
+      setCustomOrganization(modelConfig.organization || '');
+      setCustomProject(modelConfig.project || '');
     }
   }, [
     modelConfig.provider,
@@ -454,7 +487,10 @@ export function ModelSettingsModal({
     modelConfig.customOpenAIApiKey,
     modelConfig.maxTokens,
     modelConfig.temperature,
-    modelConfig.topP
+    modelConfig.topP,
+    modelConfig.timeoutSeconds,
+    modelConfig.organization,
+    modelConfig.project
   ]);
 
   // Reset hasAutoFetched flag and clear models when switching away from Ollama
@@ -700,7 +736,7 @@ export function ModelSettingsModal({
     }
   };
 
-  const loadCodexConfig = async () => {
+  const loadCodexConfig = async (): Promise<CodexProviderConfig | null> => {
     try {
       const config = (await invoke('codex_get_config')) as { processing?: { codex?: CodexProviderConfig } };
       const codex = config.processing?.codex;
@@ -709,16 +745,24 @@ export function ModelSettingsModal({
         if (codex.model && modelConfig.provider === 'codex') {
           setModelConfig((prev: ModelConfig) => ({ ...prev, model: codex.model }));
         }
+        return codex;
       }
+      return null;
     } catch (err) {
       console.error('Failed to load Codex config:', err);
       setCodexLastResult(err instanceof Error ? err.message : String(err));
+      return null;
     }
   };
 
-  const checkCodexInstallation = async () => {
+  const checkCodexInstallation = async (nextConfig?: CodexProviderConfig) => {
     setIsCodexBusy(true);
     try {
+      if (nextConfig) {
+        await saveCodexConfig(nextConfig);
+      } else {
+        await saveCodexConfig();
+      }
       const status = (await invoke('codex_check_installation')) as CodexInstallationStatus;
       setCodexStatus(status);
       setCodexLastResult(status.message);
@@ -727,6 +771,73 @@ export function ModelSettingsModal({
       } else {
         toast.error(status.message || 'Codex was not found');
       }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setCodexLastResult(message);
+      toast.error(message);
+    } finally {
+      setIsCodexBusy(false);
+    }
+  };
+
+  const findCodexAutomatically = async () => {
+    setIsCodexBusy(true);
+    try {
+      await saveCodexConfig({ ...codexConfig, codexBinaryPath: null });
+      const status = (await invoke('codex_find_automatically')) as CodexInstallationStatus;
+      setCodexStatus(status);
+      setCodexLastResult(status.message);
+      if (status.found && status.path) {
+        setCodexConfig((prev) => ({ ...prev, codexBinaryPath: status.path || null }));
+        toast.success(`Codex found: ${status.version || status.path}`);
+      } else {
+        toast.error(status.message || 'Codex runtime was not found');
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setCodexLastResult(message);
+      toast.error(message);
+    } finally {
+      setIsCodexBusy(false);
+    }
+  };
+
+  const browseForCodexBinary = async () => {
+    setIsCodexBusy(true);
+    try {
+      const path = (await invoke('codex_browse_for_binary')) as string | null;
+      if (!path) {
+        setCodexLastResult('Codex binary selection cancelled.');
+        return;
+      }
+      const nextConfig = { ...codexConfig, codexBinaryPath: path };
+      setCodexConfig(nextConfig);
+      await checkCodexInstallation(nextConfig);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setCodexLastResult(message);
+      toast.error(message);
+    } finally {
+      setIsCodexBusy(false);
+    }
+  };
+
+  const prepareCodexInstallRepair = async () => {
+    setIsCodexBusy(true);
+    try {
+      const plan = (await invoke('codex_prepare_install_command')) as CodexInstallRepairPlan;
+      const alternatives = plan.alternatives
+        .map((item) => `${item.label} (${item.shell}):\n${item.command}`)
+        .join('\n\n');
+      setCodexLastResult([
+        plan.message,
+        '',
+        `${plan.recommended.label} (${plan.recommended.shell}):`,
+        plan.recommended.command,
+        alternatives ? `\nAlternatives:\n${alternatives}` : '',
+        `\nDocs: ${plan.docsUrl}`,
+      ].filter(Boolean).join('\n'));
+      toast.info('Codex install/repair command prepared. Nothing was installed.');
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setCodexLastResult(message);
@@ -786,7 +897,7 @@ export function ModelSettingsModal({
       loadOpenClawStatus();
     }
     if (modelConfig.provider === 'codex') {
-      loadCodexConfig().then(() => checkCodexInstallation());
+      loadCodexConfig().then((loaded) => checkCodexInstallation(loaded || undefined));
     }
   }, [modelConfig.provider]);
 
@@ -825,12 +936,15 @@ export function ModelSettingsModal({
     if (modelConfig.provider === 'custom-openai') {
       try {
         await invoke('api_save_custom_openai_config', {
-          endpoint: customOpenAIEndpoint.trim(),
+          endpoint: customOpenAIEndpoint.trim() || DEFAULT_OPENAI_COMPATIBLE_ENDPOINT,
           apiKey: customOpenAIApiKey.trim() || null,
-          model: customOpenAIModel.trim(),
+          model: customOpenAIModel.trim() || DEFAULT_OPENAI_COMPATIBLE_MODEL,
           maxTokens: customMaxTokens ? parseInt(customMaxTokens, 10) : null,
           temperature: customTemperature ? parseFloat(customTemperature) : null,
           topP: customTopP ? parseFloat(customTopP) : null,
+          timeoutSeconds: customTimeoutSeconds ? parseInt(customTimeoutSeconds, 10) : null,
+          organization: customOrganization.trim() || null,
+          project: customProject.trim() || null,
         });
         console.log('Custom OpenAI config saved successfully');
       } catch (err) {
@@ -847,14 +961,17 @@ export function ModelSettingsModal({
         ? (ollamaEndpoint.trim() || null)
         : (modelConfig.ollamaEndpoint || null),
       // Include custom OpenAI fields
-      customOpenAIEndpoint: modelConfig.provider === 'custom-openai' ? customOpenAIEndpoint.trim() : null,
-      customOpenAIModel: modelConfig.provider === 'custom-openai' ? customOpenAIModel.trim() : null,
+      customOpenAIEndpoint: modelConfig.provider === 'custom-openai' ? (customOpenAIEndpoint.trim() || DEFAULT_OPENAI_COMPATIBLE_ENDPOINT) : null,
+      customOpenAIModel: modelConfig.provider === 'custom-openai' ? (customOpenAIModel.trim() || DEFAULT_OPENAI_COMPATIBLE_MODEL) : null,
       customOpenAIApiKey: modelConfig.provider === 'custom-openai' && customOpenAIApiKey.trim() ? customOpenAIApiKey.trim() : null,
       maxTokens: modelConfig.provider === 'custom-openai' && customMaxTokens ? parseInt(customMaxTokens, 10) : null,
       temperature: modelConfig.provider === 'custom-openai' && customTemperature ? parseFloat(customTemperature) : null,
       topP: modelConfig.provider === 'custom-openai' && customTopP ? parseFloat(customTopP) : null,
+      timeoutSeconds: modelConfig.provider === 'custom-openai' && customTimeoutSeconds ? parseInt(customTimeoutSeconds, 10) : null,
+      organization: modelConfig.provider === 'custom-openai' && customOrganization.trim() ? customOrganization.trim() : null,
+      project: modelConfig.provider === 'custom-openai' && customProject.trim() ? customProject.trim() : null,
       // For custom-openai, use the customOpenAIModel as the model field
-      model: modelConfig.provider === 'custom-openai' ? customOpenAIModel.trim() : modelConfig.model,
+      model: modelConfig.provider === 'custom-openai' ? (customOpenAIModel.trim() || DEFAULT_OPENAI_COMPATIBLE_MODEL) : modelConfig.model,
     };
     setModelConfig(updatedConfig);
     console.log('ModelSettingsModal - handleSave - Updated ModelConfig:', updatedConfig);
@@ -929,6 +1046,18 @@ export function ModelSettingsModal({
     }
   };
 
+  const customOpenAIInvokeConfig = () => ({
+    endpoint: customOpenAIEndpoint.trim() || DEFAULT_OPENAI_COMPATIBLE_ENDPOINT,
+    apiKey: customOpenAIApiKey.trim() || null,
+    model: customOpenAIModel.trim() || DEFAULT_OPENAI_COMPATIBLE_MODEL,
+    maxTokens: customMaxTokens ? parseInt(customMaxTokens, 10) : null,
+    temperature: customTemperature ? parseFloat(customTemperature) : null,
+    topP: customTopP ? parseFloat(customTopP) : null,
+    timeoutSeconds: customTimeoutSeconds ? parseInt(customTimeoutSeconds, 10) : null,
+    organization: customOrganization.trim() || null,
+    project: customProject.trim() || null,
+  });
+
   // Test custom OpenAI connection
   const testCustomOpenAIConnection = async () => {
     if (!customOpenAIEndpoint.trim() || !customOpenAIModel.trim()) {
@@ -939,9 +1068,7 @@ export function ModelSettingsModal({
     setIsTestingConnection(true);
     try {
       const result = await invoke<{ status: string; message: string }>('api_test_custom_openai_connection', {
-        endpoint: customOpenAIEndpoint.trim(),
-        apiKey: customOpenAIApiKey.trim() || null,
-        model: customOpenAIModel.trim(),
+        ...customOpenAIInvokeConfig(),
       });
       toast.success(result.message || 'Connection successful!');
     } catch (err) {
@@ -950,6 +1077,33 @@ export function ModelSettingsModal({
     } finally {
       setIsTestingConnection(false);
     }
+  };
+
+  const testCustomOpenAIProcessing = async () => {
+    if (!customOpenAIEndpoint.trim() || !customOpenAIModel.trim()) {
+      toast.error('Please enter endpoint URL and model name first');
+      return;
+    }
+
+    setIsTestingConnection(true);
+    try {
+      const result = await invoke<{ status: string; message: string; outputJsonPath?: string }>('api_test_custom_openai_processing', {
+        ...customOpenAIInvokeConfig(),
+      });
+      toast.success(result.message || 'Test meeting processed successfully');
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      toast.error(errorMsg);
+    } finally {
+      setIsTestingConnection(false);
+    }
+  };
+
+  const clearCustomOpenAICredentials = () => {
+    setCustomOpenAIApiKey('');
+    setCustomOrganization('');
+    setCustomProject('');
+    toast.success('Credentials cleared from this form. Click Save to persist.');
   };
 
   const handleInputClick = () => {
@@ -1118,12 +1272,15 @@ export function ModelSettingsModal({
                 if (provider === 'custom-openai') {
                   invoke<any>('api_get_custom_openai_config').then((config) => {
                     if (config) {
-                      setCustomOpenAIEndpoint(config.endpoint || '');
-                      setCustomOpenAIModel(config.model || '');
+                      setCustomOpenAIEndpoint(config.endpoint || DEFAULT_OPENAI_COMPATIBLE_ENDPOINT);
+                      setCustomOpenAIModel(config.model || DEFAULT_OPENAI_COMPATIBLE_MODEL);
                       setCustomOpenAIApiKey(config.apiKey || '');
                       setCustomMaxTokens(config.maxTokens?.toString() || '');
                       setCustomTemperature(config.temperature?.toString() || '');
                       setCustomTopP(config.topP?.toString() || '');
+                      setCustomTimeoutSeconds(config.timeoutSeconds?.toString() || DEFAULT_OPENAI_COMPATIBLE_TIMEOUT_SECONDS);
+                      setCustomOrganization(config.organization || '');
+                      setCustomProject(config.project || '');
                     }
                   }).catch((err) => {
                     console.error('Failed to load custom OpenAI config:', err);
@@ -1135,7 +1292,7 @@ export function ModelSettingsModal({
                 }
 
                 if (provider === 'codex') {
-                  loadCodexConfig().then(() => checkCodexInstallation());
+                  loadCodexConfig().then((loaded) => checkCodexInstallation(loaded || undefined));
                 }
               }}
             >
@@ -1143,15 +1300,14 @@ export function ModelSettingsModal({
                 <SelectValue placeholder="Select provider" />
               </SelectTrigger>
               <SelectContent className="max-h-64 overflow-y-auto">
-                <SelectItem value="openai">OpenAI API Key</SelectItem>
-                <SelectItem value="codex">Codex / ChatGPT login</SelectItem>
-                <SelectItem value="custom-openai">OpenAI-compatible Endpoint</SelectItem>
+                <SelectItem value="custom-openai">OpenAI / OpenAI-compatible API</SelectItem>
+                <SelectItem value="openclaw">OpenClaw</SelectItem>
+                <SelectItem value="codex">Advanced: Codex runtime</SelectItem>
                 <SelectItem value="builtin-ai">Built-in AI (Offline, No API needed)</SelectItem>
                 <SelectItem value="ollama">Ollama</SelectItem>
                 <SelectItem value="openrouter">OpenRouter</SelectItem>
                 <SelectItem value="claude">Claude</SelectItem>
                 <SelectItem value="groq">Groq</SelectItem>
-                <SelectItem value="openclaw">OpenClaw Gateway</SelectItem>
               </SelectContent>
             </Select>
 
@@ -1219,16 +1375,16 @@ export function ModelSettingsModal({
         {modelConfig.provider === 'custom-openai' && (
           <div className="space-y-4 border-t pt-4">
             <div>
-              <Label htmlFor="custom-endpoint">Endpoint URL *</Label>
+              <Label htmlFor="custom-endpoint">API base URL *</Label>
               <Input
                 id="custom-endpoint"
                 value={customOpenAIEndpoint}
                 onChange={(e) => setCustomOpenAIEndpoint(e.target.value)}
-                placeholder="http://localhost:8000/v1"
+                placeholder={DEFAULT_OPENAI_COMPATIBLE_ENDPOINT}
                 className="mt-1"
               />
               <p className="text-xs text-muted-foreground mt-1">
-                Base URL of a standalone OpenAI-compatible API or OAuth-backed gateway.
+                Defaults to the official OpenAI API. Use another /v1 endpoint for OpenAI-compatible gateways.
               </p>
             </div>
 
@@ -1238,7 +1394,7 @@ export function ModelSettingsModal({
                 id="custom-model"
                 value={customOpenAIModel}
                 onChange={(e) => setCustomOpenAIModel(e.target.value)}
-                placeholder="gpt-4, llama-3-70b, etc."
+                placeholder={DEFAULT_OPENAI_COMPATIBLE_MODEL}
                 className="mt-1"
               />
               <p className="text-xs text-muted-foreground mt-1">
@@ -1247,7 +1403,7 @@ export function ModelSettingsModal({
             </div>
 
             <div>
-              <Label htmlFor="custom-api-key">Bearer Token (optional)</Label>
+              <Label htmlFor="custom-api-key">API key</Label>
               <Input
                 id="custom-api-key"
                 type="password"
@@ -1257,7 +1413,7 @@ export function ModelSettingsModal({
                 className="mt-1"
               />
               <p className="text-xs text-muted-foreground mt-1">
-                Use the token expected by this endpoint. For OAuth-backed deployments, the endpoint owns OAuth and token refresh.
+                Stored in app settings and redacted from logs. Leave empty only for gateways that do not require a token.
               </p>
             </div>
 
@@ -1277,6 +1433,38 @@ export function ModelSettingsModal({
 
               {isCustomOpenAIAdvancedOpen && (
                 <div className="space-y-3 pl-2 border-l-2 border-muted mt-2">
+                  <div>
+                    <Label htmlFor="custom-timeout">Timeout (seconds)</Label>
+                    <Input
+                      id="custom-timeout"
+                      type="number"
+                      min="5"
+                      value={customTimeoutSeconds}
+                      onChange={(e) => setCustomTimeoutSeconds(e.target.value)}
+                      placeholder={DEFAULT_OPENAI_COMPATIBLE_TIMEOUT_SECONDS}
+                      className="mt-1"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="custom-organization">OpenAI organization (optional)</Label>
+                    <Input
+                      id="custom-organization"
+                      value={customOrganization}
+                      onChange={(e) => setCustomOrganization(e.target.value)}
+                      placeholder="org_..."
+                      className="mt-1"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="custom-project">OpenAI project (optional)</Label>
+                    <Input
+                      id="custom-project"
+                      value={customProject}
+                      onChange={(e) => setCustomProject(e.target.value)}
+                      placeholder="proj_..."
+                      className="mt-1"
+                    />
+                  </div>
                   <div>
                     <Label htmlFor="custom-max-tokens">Max Tokens</Label>
                     <Input
@@ -1320,27 +1508,45 @@ export function ModelSettingsModal({
               )}
             </div>
 
-            {/* Test Connection Button */}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={testCustomOpenAIConnection}
-              disabled={isTestingConnection || !customOpenAIEndpoint.trim() || !customOpenAIModel.trim()}
-              className="w-full"
-            >
-              {isTestingConnection ? (
-                <>
+            <div className="grid gap-2 sm:grid-cols-3">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={testCustomOpenAIConnection}
+                disabled={isTestingConnection || !customOpenAIEndpoint.trim() || !customOpenAIModel.trim()}
+              >
+                {isTestingConnection ? (
                   <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                  Testing Connection...
-                </>
-              ) : (
-                <>
+                ) : (
                   <CheckCircle2 className="mr-2 h-4 w-4" />
-                  Test Connection
-                </>
-              )}
-            </Button>
+                )}
+                Test connection
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={testCustomOpenAIProcessing}
+                disabled={isTestingConnection || !customOpenAIEndpoint.trim() || !customOpenAIModel.trim()}
+              >
+                {isTestingConnection ? (
+                  <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="mr-2 h-4 w-4" />
+                )}
+                Test meeting processing
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={clearCustomOpenAICredentials}
+              >
+                <XCircle className="mr-2 h-4 w-4" />
+                Clear credentials
+              </Button>
+            </div>
           </div>
         )}
 
@@ -1349,7 +1555,7 @@ export function ModelSettingsModal({
             <div className="flex items-start justify-between gap-3">
               <div className="space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium">OpenAI login via Codex</span>
+                  <span className="font-medium">Advanced: Codex runtime</span>
                   <span className={cn(
                     'rounded-full px-2 py-0.5 text-xs font-medium',
                     codexStatus?.found ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'
@@ -1358,7 +1564,10 @@ export function ModelSettingsModal({
                   </span>
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  Use Codex as the ChatGPT/OpenAI sign-in boundary and model runner. ClawScribe invokes <code>codex exec</code>; it does not handle OpenAI OAuth tokens.
+                  ClawScribe can process meetings without Codex using an OpenAI API key or OpenClaw. Codex mode is optional and requires the Codex command-line runtime for automated processing.
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  When enabled, ClawScribe invokes <code>codex exec</code> and keeps Codex auth outside the app. This is an advanced runtime path for users who already manage Codex locally.
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {codexStatus?.found
@@ -1376,7 +1585,7 @@ export function ModelSettingsModal({
                 type="button"
                 variant="ghost"
                 size="icon"
-                onClick={checkCodexInstallation}
+                onClick={() => checkCodexInstallation()}
                 disabled={isCodexBusy}
                 title="Check Codex installation"
               >
@@ -1426,9 +1635,12 @@ export function ModelSettingsModal({
                 id="codex-binary-path"
                 value={codexConfig.codexBinaryPath || ''}
                 onChange={(e) => setCodexConfig((prev) => ({ ...prev, codexBinaryPath: e.target.value || null }))}
-                placeholder="Leave empty to use bundled Codex or codex on PATH"
+                placeholder="Leave empty to search configured defaults and PATH"
                 className="mt-1"
               />
+              <p className="text-xs text-muted-foreground mt-1">
+                Discovery checks this path, PATH, standard Windows Codex CLI locations, and bundled ClawScribe resources.
+              </p>
             </div>
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_140px]">
@@ -1460,9 +1672,17 @@ export function ModelSettingsModal({
             </div>
 
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <Button type="button" variant="outline" onClick={checkCodexInstallation} disabled={isCodexBusy}>
+              <Button type="button" variant="outline" onClick={findCodexAutomatically} disabled={isCodexBusy}>
                 <RefreshCw className={cn('mr-2 h-4 w-4', isCodexBusy && 'animate-spin')} />
-                Check Codex installation
+                Find Codex automatically
+              </Button>
+              <Button type="button" variant="outline" onClick={browseForCodexBinary} disabled={isCodexBusy}>
+                <FolderOpen className="mr-2 h-4 w-4" />
+                Browse for codex.exe
+              </Button>
+              <Button type="button" variant="outline" onClick={prepareCodexInstallRepair} disabled={isCodexBusy}>
+                <Wrench className="mr-2 h-4 w-4" />
+                Install/repair Codex CLI
               </Button>
               <Button type="button" variant="outline" onClick={() => runCodexAction('codex_test_processing')} disabled={isCodexBusy}>
                 <CheckCircle2 className="mr-2 h-4 w-4" />
@@ -1700,7 +1920,7 @@ export function ModelSettingsModal({
                       OpenAI API key
                     </div>
                     <p className="text-sm">
-                      Paste a key from the OpenAI platform. For ChatGPT/OpenAI login, choose the Codex / ChatGPT login provider.
+                      Paste a key from the OpenAI platform. For local Codex automation, choose Advanced: Codex runtime.
                     </p>
                   </div>
                   <Button

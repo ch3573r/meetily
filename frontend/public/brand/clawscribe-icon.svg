@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">ClawScribe app icon</title>
+  <desc id="desc">A rounded blue ClawScribe icon with a three-stroke claw mark forming a pen nib over transcript lines.</desc>
+  <defs>
+    <linearGradient id="bg" x1="80" y1="48" x2="432" y2="464" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#005083"/>
+      <stop offset="1" stop-color="#113350"/>
+    </linearGradient>
+    <linearGradient id="nib" x1="196" y1="108" x2="332" y2="360" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#dff6f0"/>
+    </linearGradient>
+    <filter id="soft-shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#0a2135" flood-opacity=".32"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <path d="M116 366c42 27 97 42 152 42 57 0 100-12 139-36" fill="none" stroke="#3fb498" stroke-width="24" stroke-linecap="round" opacity=".34"/>
+  <g filter="url(#soft-shadow)">
+    <path d="M180 114c-20 80-18 153 9 221 5 12 22 11 26-2l20-70c2-6 1-13-3-18-24-35-32-79-24-132 2-16-24-15-28 1z" fill="url(#nib)"/>
+    <path d="M258 104c-7 75 5 145 39 210 7 13 25 9 27-6l9-70c1-7-1-14-6-19-30-32-45-72-44-119 0-15-23-14-25 4z" fill="url(#nib)"/>
+    <path d="M338 123c10 67 4 122-18 168-3 7-2 15 4 21l45 49c10 11 29 3 27-12-11-83-23-146-33-191-4-17-11-32-21-43-5-6-17 0-14 8z" fill="url(#nib)"/>
+  </g>
+  <path d="M213 330h116l-58 58z" fill="#3fb498"/>
+  <circle cx="271" cy="348" r="12" fill="#113350"/>
+  <path d="M130 405h252M158 438h196" fill="none" stroke="#eaf6f4" stroke-width="24" stroke-linecap="round" opacity=".92"/>
+</svg>

@@ -9,6 +9,17 @@ This report covers the first coordinated productization pass. It does not claim
 Windows runtime verification, Microsoft tenant verification, or live OAuth
 verification.
 
+Corrective alpha.2 handoff note:
+
+- Current corrective candidate version is `0.5.0-alpha.2`.
+- Preserve upstream attribution as "Based on Meetily Community Edition 0.4.0".
+- Use `docs/productization/corrective-final-report-checklist.md` for the final
+  integration report after provider, theme, Codex UX, icon, and packaging work
+  lands.
+- Windows artifact bundles must include `SHA256SUMS.txt` and
+  `BUILD-METADATA.txt` with build commit, version, upstream base version, and
+  build date.
+
 ## 1. Summary
 
 Phase 0 inventory is recorded in `docs/productization/phase0-inventory.md`.
@@ -35,6 +46,7 @@ Not implemented in this pass:
 - OS credential store migration for API keys and bearer tokens.
 - Microsoft MSAL sign-in, live OneNote export, or live Planner task creation.
 - Windows installer/runtime verification.
+- Corrective alpha.2 final report completion.
 
 ## 2. Branch And Commits
 
@@ -367,7 +379,7 @@ Follow:
 
 Expected in this pass:
 
-- Codex / ChatGPT login uses Codex as the auth and runtime boundary.
+- Advanced: Codex runtime uses Codex as the auth and runtime boundary.
 - Direct OpenAI uses an API key.
 - OpenClaw Gateway uses the OpenClaw model bridge and bearer token.
 - Status wording until Alex verifies Windows:

@@ -91,13 +91,27 @@ frontend\src-tauri\target\release\bundle\SHA256SUMS.txt
 Expected artifact names currently look like:
 
 ```text
-ClawScribe_0.5.0-alpha.1_x64_en-US.msi
-ClawScribe_0.5.0-alpha.1_x64-setup.exe
+ClawScribe_0.5.0-alpha.2_x64_en-US.msi
+ClawScribe_0.5.0-alpha.2_x64-setup.exe
 SHA256SUMS.txt
+BUILD-METADATA.txt
 ```
 
 The release script generates `SHA256SUMS.txt` after a successful installer
-build. For a local ad-hoc checksum, run:
+build. Checksum entries are relative to the bundle root, for example
+`msi/ClawScribe_0.5.0-alpha.2_x64_en-US.msi`, so this command verifies cleanly
+from `frontend\src-tauri\target\release\bundle`:
+
+```powershell
+Get-Content .\SHA256SUMS.txt | ForEach-Object {
+    $parts = $_ -split '\s+', 2
+    if ((Get-FileHash -Algorithm SHA256 -LiteralPath $parts[1]).Hash.ToLowerInvariant() -ne $parts[0]) {
+        throw "Checksum mismatch: $($parts[1])"
+    }
+}
+```
+
+For a local ad-hoc checksum, run:
 
 ```powershell
 Get-FileHash -Algorithm SHA256 .\src-tauri\target\release\bundle\msi\*.msi

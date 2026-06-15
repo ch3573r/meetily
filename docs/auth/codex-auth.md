@@ -129,7 +129,7 @@ Meeting output folders receive:
 
 ## Settings
 
-Open Settings -> AI Provider and choose `Codex / ChatGPT login`.
+Open Settings -> AI Provider and choose `Advanced: Codex runtime`.
 
 Available controls:
 

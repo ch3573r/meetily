@@ -650,6 +650,9 @@ pub fn run() {
             summary::codex_provider::codex_get_config,
             summary::codex_provider::codex_save_config,
             summary::codex_provider::codex_check_installation,
+            summary::codex_provider::codex_find_automatically,
+            summary::codex_provider::codex_browse_for_binary,
+            summary::codex_provider::codex_prepare_install_command,
             summary::codex_provider::codex_login_browser,
             summary::codex_provider::codex_login_device,
             summary::codex_provider::codex_logout,
@@ -684,6 +687,7 @@ pub fn run() {
             api::api_save_custom_openai_config,
             api::api_get_custom_openai_config,
             api::api_test_custom_openai_connection,
+            api::api_test_custom_openai_processing,
             // Summary commands
             summary::commands::api_process_transcript,
             summary::commands::api_get_summary,

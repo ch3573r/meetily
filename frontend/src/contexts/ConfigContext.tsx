@@ -99,10 +99,12 @@ const ConfigContext = createContext<ConfigContextType | undefined>(undefined);
 export function ConfigProvider({ children }: { children: ReactNode }) {
   // Model configuration state
   const [modelConfig, setModelConfig] = useState<ModelConfig>({
-    provider: 'openai',
-    model: 'gpt-4o',
+    provider: 'custom-openai',
+    model: 'gpt-4o-mini',
     whisperModel: 'large-v3',
-    ollamaEndpoint: null
+    ollamaEndpoint: null,
+    customOpenAIEndpoint: 'https://api.openai.com/v1',
+    customOpenAIModel: 'gpt-4o-mini',
   });
 
   // Transcript model configuration state
@@ -376,7 +378,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     openrouter: [],
     openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-4'],
     'builtin-ai': [],
-    'custom-openai': [],
+    'custom-openai': [modelConfig.customOpenAIModel || modelConfig.model || 'gpt-4o-mini'],
     openclaw: ['openclaw-managed'],
     codex: ['gpt-5.1-codex'],
   };

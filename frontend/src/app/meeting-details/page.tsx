@@ -78,11 +78,23 @@ function MeetingDetailsContent() {
         return;
       }
 
-      console.log('💾 DB empty, seeding standalone OpenAI summary defaults');
+      console.log('💾 DB empty, seeding standalone OpenAI-compatible summary defaults');
+
+      await invoke('api_save_custom_openai_config', {
+        endpoint: 'https://api.openai.com/v1',
+        apiKey: null,
+        model: 'gpt-4o-mini',
+        maxTokens: null,
+        temperature: null,
+        topP: null,
+        timeoutSeconds: 300,
+        organization: null,
+        project: null,
+      });
 
       await invoke('api_save_model_config', {
-        provider: 'openai',
-        model: 'gpt-4o',
+        provider: 'custom-openai',
+        model: 'gpt-4o-mini',
         whisperModel: 'large-v3',
         apiKey: null,
         ollamaEndpoint: null,

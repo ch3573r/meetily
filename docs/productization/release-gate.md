@@ -157,7 +157,23 @@ Expected:
 - MSI and NSIS artifacts are produced only during deliberate release builds.
 - Unsigned artifacts are clearly labeled unsigned unless signing secrets are
   configured and signing is verified.
+- `BUILD-METADATA.txt` records product, version, upstream base version
+  `0.4.0`, build commit, short commit, and UTC build date.
+- `SHA256SUMS.txt` uses artifact-root-relative paths such as
+  `msi/<installer>.msi` and `nsis/<installer>.exe`.
 - Generated installer artifacts are not treated as Linux-side validation.
+
+Checksum verification from the downloaded artifact root:
+
+```powershell
+Get-Content .\SHA256SUMS.txt | ForEach-Object {
+    $parts = $_ -split '\s+', 2
+    if ((Get-FileHash -Algorithm SHA256 -LiteralPath $parts[1]).Hash.ToLowerInvariant() -ne $parts[0]) {
+        throw "Checksum mismatch: $($parts[1])"
+    }
+}
+Get-Content .\BUILD-METADATA.txt
+```
 
 ## Secret Search
 
@@ -290,7 +306,7 @@ areas:
 - launch and installed-app branding
 - About dialog and legal attribution
 - light/dark theme
-- Codex / ChatGPT login provider fake-tested and awaiting Windows runtime
+- Advanced: Codex runtime provider fake-tested and awaiting Windows runtime
   verification
 - OpenAI API-key fallback
 - OpenClaw managed auth provider
@@ -346,6 +362,10 @@ are integrated, rerun:
 
 ```bash
 git status --short --branch
+git rev-parse HEAD
+python3 -m json.tool frontend/package.json >/dev/null
+python3 -m json.tool frontend/src-tauri/tauri.conf.json >/dev/null
+cargo metadata --manifest-path frontend/src-tauri/Cargo.toml --no-deps --format-version 1
 cd frontend && pnpm build
 cd frontend && pnpm exec tsc --noEmit --pretty false
 cd frontend && CI=1 pnpm lint
@@ -353,6 +373,8 @@ cargo check --manifest-path frontend/src-tauri/Cargo.toml
 cargo test --manifest-path frontend/src-tauri/Cargo.toml codex_provider --lib
 cargo test --manifest-path frontend/src-tauri/Cargo.toml openai::auth --lib
 cargo test --manifest-path frontend/src-tauri/Cargo.toml teams_detection --lib
+cargo test -p llama-helper
+rg -n "0\\.5\\.0-alpha\\.1|0\\.5\\.0-alpha\\.2|Based on Meetily Community Edition 0\\.4\\.0|upstream_base_version" frontend/package.json frontend/src-tauri/Cargo.toml frontend/src-tauri/tauri.conf.json frontend/src/components README.md CHANGELOG.md NOTICE.md UPSTREAM.md docs/windows-release.md .github/workflows/clawscribe-windows-release.yml frontend/scripts/build-windows-release.ps1
 ```
 
 Then run the secret and branding searches in this document, followed by the full

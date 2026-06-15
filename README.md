@@ -2,7 +2,7 @@
 
 ClawScribe is a local-first desktop meeting capture app for Windows-focused OpenClaw workflows. It records meetings from the user session, produces local transcripts and summaries, and can hand completed meeting artifacts to OpenClaw for post-processing and notification.
 
-Current product version: `0.5.0-alpha.1`
+Current product version: `0.5.0-alpha.2`
 
 ClawScribe is based on Meetily Community Edition `0.4.0`. The upstream Meetily project is copyright Zackriya Solutions and contributors and is distributed under the MIT License.
 
@@ -17,7 +17,7 @@ ClawScribe is based on Meetily Community Edition `0.4.0`. The upstream Meetily p
 
 ## Status
 
-This fork is in productization. Treat `0.5.0-alpha.1` as an alpha build for validation, not a finished release.
+This fork is in productization. Treat `0.5.0-alpha.2` as an alpha build for validation, not a finished release.
 
 Known productization boundaries:
 

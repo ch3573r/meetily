@@ -25,6 +25,9 @@ export interface ModelConfig {
   maxTokens?: number | null;
   temperature?: number | null;
   topP?: number | null;
+  timeoutSeconds?: number | null;
+  organization?: string | null;
+  project?: string | null;
 }
 
 export interface CustomOpenAIConfig {
@@ -34,6 +37,9 @@ export interface CustomOpenAIConfig {
   maxTokens: number | null;
   temperature: number | null;
   topP: number | null;
+  timeoutSeconds?: number | null;
+  organization?: string | null;
+  project?: string | null;
 }
 
 export interface RecordingPreferences {
@@ -91,6 +97,9 @@ export class ConfigService {
       maxTokens: config.maxTokens,
       temperature: config.temperature,
       topP: config.topP,
+      timeoutSeconds: config.timeoutSeconds,
+      organization: config.organization,
+      project: config.project,
     });
   }
 
@@ -110,6 +119,12 @@ export class ConfigService {
       endpoint,
       apiKey,
       model,
+      maxTokens: null,
+      temperature: null,
+      topP: null,
+      timeoutSeconds: null,
+      organization: null,
+      project: null,
     });
   }
 }

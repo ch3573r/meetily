@@ -8,10 +8,10 @@ Worker: Branding/version/license subagent E
 
 Updated product-visible metadata and UI to ClawScribe:
 
-- `frontend/package.json`: version `0.5.0-alpha.1`
-- `frontend/src-tauri/Cargo.toml`: version `0.5.0-alpha.1`
-- `frontend/src-tauri/tauri.conf.json`: version `0.5.0-alpha.1`
-- `frontend/src/components/About.tsx`: ClawScribe title, `0.5.0-alpha.1` fallback, upstream base line, and license-friendly fork disclaimer
+- `frontend/package.json`: version `0.5.0-alpha.2`
+- `frontend/src-tauri/Cargo.toml`: version `0.5.0-alpha.2`
+- `frontend/src-tauri/tauri.conf.json`: version `0.5.0-alpha.2`
+- `frontend/src/components/About.tsx`: ClawScribe title, `0.5.0-alpha.2` fallback, upstream base line, and license-friendly fork disclaimer
 - `frontend/src/components/Logo.tsx`, `Info.tsx`, `Sidebar/index.tsx`: ClawScribe visible name and version footer
 - `frontend/src/components/onboarding/**`: ClawScribe onboarding copy
 - `frontend/src/components/PermissionWarning.tsx`, `PreferenceSettings.tsx`, `TranscriptView.tsx`, `VirtualizedTranscriptView.tsx`: ClawScribe display strings
@@ -23,7 +23,7 @@ Updated product-visible metadata and UI to ClawScribe:
 About dialog acceptance target:
 
 - Shows `ClawScribe`
-- Shows product version `0.5.0-alpha.1` before runtime version loads
+- Shows product version `0.5.0-alpha.2` before runtime version loads
 - Shows `Based on Meetily Community Edition 0.4.0`
 - Includes a fork/license attribution disclaimer
 

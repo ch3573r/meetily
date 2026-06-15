@@ -131,6 +131,8 @@ jobs:
           $installerVersion = $env:CLAWSCRIBE_INSTALLER_VERSION
           $commit = git rev-parse HEAD
           $shortCommit = git rev-parse --short HEAD
+          $buildDateUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+          $upstreamBaseVersion = "0.4.0"
           $sourceMsi = Get-ChildItem -Path "." -Recurse -File -Filter "*.msi" |
             Where-Object { $_.Name -like "ClawScribe_*" } |
             Sort-Object LastWriteTimeUtc -Descending |
@@ -168,9 +170,11 @@ jobs:
           $metadata = @(
             "product=ClawScribe",
             "version=$sourceVersion",
+            "upstream_base_version=$upstreamBaseVersion",
             "installer_product_version=$installerVersion",
             "build_commit=$commit",
             "build_commit_short=$shortCommit",
+            "build_date_utc=$buildDateUtc",
             "workflow_ref=${{ github.ref }}",
             "requested_build_ref=${{ inputs['build-ref'] || github.ref }}"
           )

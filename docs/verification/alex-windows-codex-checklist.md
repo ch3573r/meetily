@@ -36,11 +36,11 @@ Verification date:
 
 1. Open **Settings**.
 2. Open **AI Provider** / **Model Settings**.
-3. Select **Codex / ChatGPT login**.
+3. Select **Advanced: Codex runtime**.
 
 Expected:
 
-- The provider is labeled `Codex / ChatGPT login`.
+- The provider is labeled `Advanced: Codex runtime`.
 - The panel says `OpenAI login via Codex`.
 - It does not call this generic OpenAI OAuth.
 - It shows controls for:
@@ -162,7 +162,7 @@ Create or import a tiny test meeting/transcript with content like:
 [00:05] Nora: Action item for Nora: document the Windows Codex result.
 ```
 
-Use **Codex / ChatGPT login** as the summary provider and generate notes.
+Use **Advanced: Codex runtime** as the summary provider and generate notes.
 
 Expected meeting output files:
 
@@ -207,7 +207,7 @@ Expected:
 1. Record a short real ClawScribe/Meetily meeting with spoken content.
 2. Stop recording.
 3. Wait for transcription to complete.
-4. Generate notes using **Codex / ChatGPT login**.
+4. Generate notes using **Advanced: Codex runtime**.
 
 Expected:
 
@@ -250,12 +250,12 @@ chat or issues.
 
 Verify switching still works:
 
-1. Select **Codex / ChatGPT login** and run **Test OpenAI/Codex processing**.
+1. Select **Advanced: Codex runtime** and run **Test OpenAI/Codex processing**.
 2. Select **OpenAI API Key**, save settings, and confirm the UI asks for an API
    key instead of Codex login.
 3. Select **OpenClaw Gateway**, save settings, and confirm the OpenClaw
    endpoint/bearer-token fields are shown.
-4. Switch back to **Codex / ChatGPT login** and confirm Codex settings are still
+4. Switch back to **Advanced: Codex runtime** and confirm Codex settings are still
    present.
 
 Expected:

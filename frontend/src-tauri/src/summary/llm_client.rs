@@ -72,6 +72,7 @@ pub enum LLMProvider {
     Ollama,
     OpenRouter,
     BuiltInAI,
+    OpenAICompatible,
     CustomOpenAI,
     OpenClaw,
     Codex,
@@ -87,6 +88,7 @@ impl LLMProvider {
             "ollama" => Ok(Self::Ollama),
             "openrouter" => Ok(Self::OpenRouter),
             "builtin-ai" | "local-llama" | "localllama" => Ok(Self::BuiltInAI),
+            "openai-compatible" | "api-key" => Ok(Self::OpenAICompatible),
             "custom-openai" => Ok(Self::CustomOpenAI),
             "openclaw" | "openclaw-managed" => Ok(Self::OpenClaw),
             "codex" | "codex-login" | "codex-chatgpt" => Ok(Self::Codex),
@@ -182,6 +184,14 @@ pub async fn generate_summary(
                 header::HeaderMap::new(),
             )
         }
+        LLMProvider::OpenAICompatible => {
+            let endpoint = custom_openai_endpoint
+                .ok_or_else(|| "OpenAI-compatible endpoint not configured".to_string())?;
+            (
+                format!("{}/chat/completions", endpoint.trim_end_matches('/')),
+                header::HeaderMap::new(),
+            )
+        }
         LLMProvider::OpenClaw => {
             let endpoint = custom_openai_endpoint
                 .ok_or_else(|| "OpenClaw model endpoint not configured".to_string())?;
@@ -240,12 +250,14 @@ pub async fn generate_summary(
     // Build request body based on provider
     let request_body = if provider != &LLMProvider::Claude {
         // For operator-managed OpenAI-compatible endpoints, apply optional parameters if provided.
-        let (max_tokens_val, temperature_val, top_p_val) =
-            if matches!(provider, LLMProvider::CustomOpenAI | LLMProvider::OpenClaw) {
-                (max_tokens, temperature, top_p)
-            } else {
-                (None, None, None)
-            };
+        let (max_tokens_val, temperature_val, top_p_val) = if matches!(
+            provider,
+            LLMProvider::CustomOpenAI | LLMProvider::OpenAICompatible | LLMProvider::OpenClaw
+        ) {
+            (max_tokens, temperature, top_p)
+        } else {
+            (None, None, None)
+        };
 
         serde_json::json!(ChatRequest {
             model: model_name.to_string(),
@@ -367,6 +379,7 @@ fn provider_name(provider: &LLMProvider) -> &str {
         LLMProvider::Ollama => "Ollama",
         LLMProvider::BuiltInAI => "Built-in AI",
         LLMProvider::OpenRouter => "OpenRouter",
+        LLMProvider::OpenAICompatible => "OpenAI-compatible",
         LLMProvider::CustomOpenAI => "Custom OpenAI",
         LLMProvider::OpenClaw => "OpenClaw managed auth",
         LLMProvider::Codex => "Codex",
