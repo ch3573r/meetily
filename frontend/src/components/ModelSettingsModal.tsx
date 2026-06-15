@@ -270,7 +270,7 @@ export function ModelSettingsModal({
     codexHomePath: null,
     useExistingUserCodexSession: false,
     codexBinaryPath: null,
-    model: 'gpt-5.1-codex',
+    model: 'gpt-5.5',
     timeoutSeconds: 600,
   });
   const [codexStatus, setCodexStatus] = useState<CodexInstallationStatus | null>(null);
@@ -343,7 +343,7 @@ export function ModelSettingsModal({
     'builtin-ai': builtinAiModels.map((m) => m.name),
     'custom-openai': [customOpenAIModel || DEFAULT_OPENAI_COMPATIBLE_MODEL],
     openclaw: ['openclaw-managed'],
-    codex: [codexConfig.model || modelConfig.model || 'gpt-5.1-codex'],
+    codex: [codexConfig.model || modelConfig.model || 'gpt-5.5'],
   };
 
   const requiresApiKey =
@@ -840,7 +840,7 @@ export function ModelSettingsModal({
       codexHomeMode: 'clawscribe-isolated' as const,
       useExistingUserCodexSession: false,
       codexBinaryPath: null,
-      model: nextConfig.model.trim() || 'gpt-5.1-codex',
+      model: nextConfig.model.trim() || 'gpt-5.5',
       timeoutSeconds: nextConfig.timeoutSeconds || 600,
     };
     const saved = (await invoke('codex_save_config', { config: normalized })) as { processing?: { codex?: CodexProviderConfig } };
@@ -1017,7 +1017,7 @@ export function ModelSettingsModal({
       try {
         const savedCodexConfig = await saveCodexConfig({
           ...codexConfig,
-          model: codexConfig.model.trim() || updatedConfig.model || 'gpt-5.1-codex',
+          model: codexConfig.model.trim() || updatedConfig.model || 'gpt-5.5',
         });
         updatedConfig.model = savedCodexConfig.model;
         setModelConfig(updatedConfig);
@@ -1619,7 +1619,7 @@ export function ModelSettingsModal({
                     setCodexConfig((prev) => ({ ...prev, model }));
                     setModelConfig((prev: ModelConfig) => ({ ...prev, model }));
                   }}
-                  placeholder="gpt-5.1-codex"
+                  placeholder="gpt-5.5"
                   className="mt-1"
                 />
               </div>

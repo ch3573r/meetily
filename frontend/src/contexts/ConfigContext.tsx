@@ -380,7 +380,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     'builtin-ai': [],
     'custom-openai': [modelConfig.customOpenAIModel || modelConfig.model || 'gpt-4o-mini'],
     openclaw: ['openclaw-managed'],
-    codex: ['gpt-5.1-codex'],
+    codex: ['gpt-5.5'],
   };
 
   // Toggle confidence indicator with localStorage persistence

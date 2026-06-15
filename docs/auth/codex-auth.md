@@ -41,7 +41,7 @@ ClawScribe must not launch or suggest:
       "codexHomeMode": "clawscribe-isolated",
       "codexHomePath": "%APPDATA%\\ClawScribe\\codex",
       "useExistingUserCodexSession": false,
-      "model": "gpt-5.1-codex",
+      "model": "gpt-5.5",
       "timeoutSeconds": 600
     }
   }
@@ -69,6 +69,8 @@ Login:
 ```text
 account/login/start { "type": "chatgpt" }
 ```
+
+The UI opens the returned `authUrl` in the default browser.
 
 Device-code login:
 

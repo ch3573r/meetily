@@ -3,14 +3,15 @@ use serde_json::Value;
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
+use std::process::{Command as StdCommand, Stdio};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, Lines};
-use tokio::process::{Child, ChildStdin, ChildStdout, Command};
+use tokio::process::{Child, ChildStdin, ChildStdout, Command as TokioCommand};
 use tokio::time::{sleep, timeout};
 
-const DEFAULT_CODEX_MODEL: &str = "gpt-5.1-codex";
+const DEFAULT_CODEX_MODEL: &str = "gpt-5.5";
+const LEGACY_DEFAULT_CODEX_MODEL: &str = "gpt-5.1-codex";
 const DEFAULT_CODEX_TIMEOUT_SECONDS: u64 = 600;
 const CODEX_RUNTIME_VERSION: &str = "0.139.0";
 const CODEX_RUNTIME_TARGET: &str = "x86_64-pc-windows-msvc";
@@ -146,7 +147,7 @@ mod app_server_tests {
         let turn = app_server_turn_start_request(
             11,
             "thread-1",
-            "gpt-5.1-codex",
+            "gpt-5.5",
             "[00:01] Alex: ship it",
             serde_json::json!({ "meeting_id": "m1" }),
         );
@@ -154,7 +155,7 @@ mod app_server_tests {
         assert_eq!(thread["method"], "thread/start");
         assert_eq!(turn["method"], "turn/start");
         assert_eq!(turn["params"]["threadId"], "thread-1");
-        assert_eq!(turn["params"]["model"], "gpt-5.1-codex");
+        assert_eq!(turn["params"]["model"], "gpt-5.5");
         assert!(turn["params"]["input"][0]["text"]
             .as_str()
             .unwrap()
@@ -305,14 +306,13 @@ for line in sys.stdin:
 
     #[cfg(unix)]
     #[tokio::test]
-    async fn fake_app_server_device_code_login_flow_surfaces_code_and_updates() {
+    async fn fake_app_server_device_code_login_flow_surfaces_code_immediately() {
         let temp = tempfile::tempdir().unwrap();
         let provider = provider_with_fake(&temp, "ok");
         let status = provider.login_device().await.unwrap();
         assert!(status.success);
         assert!(status.stdout.contains("https://chatgpt.com/activate"));
         assert!(status.stdout.contains("ABCD-EFGH"));
-        assert!(status.stdout.contains("account/login/completed"));
         assert!(!status.stderr.contains("secret-token-value"));
     }
 
@@ -662,13 +662,13 @@ impl CodexAppServerProvider {
 
     pub async fn login_browser(&self) -> Result<CodexCommandStatus, String> {
         validate_codex_runtime_file(&self.app_server_binary)?;
-        let mut session = AppServerSession::start(self).await?;
+        let session = AppServerSession::start(self).await?;
         session.login("chatgpt").await
     }
 
     pub async fn login_device(&self) -> Result<CodexCommandStatus, String> {
         validate_codex_runtime_file(&self.app_server_binary)?;
-        let mut session = AppServerSession::start(self).await?;
+        let session = AppServerSession::start(self).await?;
         session.login("chatgptDeviceCode").await
     }
 
@@ -718,6 +718,7 @@ impl CodexAppServerProvider {
     ) -> Result<CodexCommandStatus, String> {
         validate_codex_runtime_file(&self.app_server_binary)?;
         let mut session = AppServerSession::start(self).await?;
+        session.require_authenticated().await?;
         let output = session
             .process_turn(
                 &self.config.model,
@@ -775,6 +776,7 @@ impl CodexAppServerProvider {
         validate_codex_runtime_file(&self.app_server_binary)?;
         let started = std::time::Instant::now();
         let mut session = AppServerSession::start(self).await?;
+        session.require_authenticated().await?;
         let raw_output = match session
             .process_turn(
                 &self.config.model,
@@ -863,7 +865,9 @@ pub struct CodexMeetingProcessRequest {
 pub async fn codex_get_config<R: Runtime>(
     app: AppHandle<R>,
 ) -> Result<ClawScribeProcessingConfig, String> {
-    load_processing_config(&app)
+    let mut config = load_processing_config(&app)?;
+    config.processing.codex = normalize_codex_config(config.processing.codex);
+    Ok(config)
 }
 
 #[tauri::command]
@@ -1144,7 +1148,7 @@ fn bundled_codex_app_server_candidates(resource_dir: &Path) -> Vec<PathBuf> {
 }
 
 fn normalize_codex_config(mut config: CodexProviderConfig) -> CodexProviderConfig {
-    if config.model.trim().is_empty() {
+    if config.model.trim().is_empty() || config.model.trim() == LEGACY_DEFAULT_CODEX_MODEL {
         config.model = default_codex_model();
     }
     if config.timeout_seconds == 0 {
@@ -1333,6 +1337,16 @@ impl CodexAccountState {
             ..Self::default()
         }
     }
+
+    fn is_unauthenticated(&self) -> bool {
+        self.auth_status
+            .as_deref()
+            .map(|status| {
+                let lower = status.to_ascii_lowercase();
+                lower.contains("unauthenticated") || lower.contains("signed out")
+            })
+            .unwrap_or(false)
+    }
 }
 
 struct AppServerSession {
@@ -1347,13 +1361,14 @@ struct AppServerSession {
 
 impl AppServerSession {
     async fn start(provider: &CodexAppServerProvider) -> Result<Self, String> {
-        let mut command = Command::new(&provider.app_server_binary);
+        let mut command = TokioCommand::new(&provider.app_server_binary);
         command
             .arg("app-server")
             .env_clear()
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        hide_tokio_child_console(&mut command);
         for (key, value) in codex_sidecar_env(provider) {
             command.env(key, value);
         }
@@ -1404,7 +1419,15 @@ impl AppServerSession {
         Ok(parse_account_state(&value))
     }
 
-    async fn login(&mut self, login_type: &str) -> Result<CodexCommandStatus, String> {
+    async fn require_authenticated(&mut self) -> Result<(), String> {
+        let account = self.account_read().await?;
+        if account.is_unauthenticated() {
+            return Err(CODEX_REAUTH_MESSAGE.to_string());
+        }
+        Ok(())
+    }
+
+    async fn login(mut self, login_type: &str) -> Result<CodexCommandStatus, String> {
         let response = self
             .request(
                 "account/login/start",
@@ -1414,6 +1437,17 @@ impl AppServerSession {
             )
             .await?;
         let mut lines = Vec::new();
+        if let Some(url) = json_string_at(&response, &["authUrl"])
+            .or_else(|| json_string_at(&response, &["auth_url"]))
+        {
+            match open_url_in_default_browser(&url) {
+                Ok(()) => lines.push(format!("Opened browser for ChatGPT sign-in: {url}")),
+                Err(e) => {
+                    lines.push(format!("Auth URL: {url}"));
+                    lines.push(format!("Could not open browser automatically: {e}"));
+                }
+            }
+        }
         if let Some(url) = json_string_at(&response, &["verificationUrl"])
             .or_else(|| json_string_at(&response, &["verification_url"]))
         {
@@ -1424,30 +1458,19 @@ impl AppServerSession {
         {
             lines.push(format!("User code: {code}"));
         }
-        let notification = self
-            .wait_for_notification(&["account/login/completed", "account/updated"])
-            .await
-            .ok();
-        if let Some(notification) = &notification {
+        if lines.is_empty() {
             lines.push(format!(
-                "Notification: {}",
-                notification
-                    .get("method")
-                    .and_then(Value::as_str)
-                    .unwrap_or("account/updated")
+                "Codex app-server returned login response: {}",
+                truncate_for_log(&response.to_string())
             ));
         }
-        let stderr = self.take_stderr().await;
+        self.spawn_login_completion_watch();
         Ok(CodexCommandStatus {
             success: true,
             exit_code: None,
             stdout: truncate_for_log(&lines.join("\n")),
-            stderr,
-            message: if notification.is_some() {
-                "Codex app-server sign-in completed.".to_string()
-            } else {
-                "Codex app-server sign-in started.".to_string()
-            },
+            stderr: String::new(),
+            message: "Codex app-server sign-in started.".to_string(),
         })
     }
 
@@ -1510,8 +1533,11 @@ impl AppServerSession {
                 }
                 if method == "turn/completed" {
                     collect_output_text(message.get("params").unwrap_or(&Value::Null), &mut output);
-                    if response_seen || !output.trim().is_empty() {
+                    if !output.trim().is_empty() {
                         return Ok(strip_json_fence(&output));
+                    }
+                    if response_seen {
+                        return Err("Codex app-server completed the turn without assistant output. Sign in with ChatGPT and try again; if already signed in, check the Codex model and account/rate-limit state.".to_string());
                     }
                 }
             }
@@ -1546,20 +1572,22 @@ impl AppServerSession {
         Err("Codex app-server is overloaded after bounded retries.".to_string())
     }
 
-    async fn wait_for_notification(&mut self, methods: &[&str]) -> Result<Value, String> {
-        let deadline = Duration::from_secs(120).min(self.timeout);
-        timeout(deadline, async {
-            loop {
-                let message = self.read_message().await?;
-                if let Some(method) = message.get("method").and_then(Value::as_str) {
-                    if methods.contains(&method) {
-                        return Ok(message);
+    fn spawn_login_completion_watch(mut self) {
+        tokio::spawn(async move {
+            let deadline = Duration::from_secs(180).min(self.timeout);
+            let _ = timeout(deadline, async {
+                loop {
+                    let message = self.read_message().await?;
+                    if let Some(method) = message.get("method").and_then(Value::as_str) {
+                        if matches!(method, "account/login/completed" | "account/updated") {
+                            return Ok::<(), String>(());
+                        }
                     }
                 }
-            }
-        })
-        .await
-        .map_err(|_| "Timed out waiting for Codex app-server notification".to_string())?
+            })
+            .await;
+            let _ = self.take_stderr().await;
+        });
     }
 
     async fn read_response(&mut self, id: u64) -> Result<Value, String> {
@@ -1625,6 +1653,47 @@ impl Drop for AppServerSession {
     }
 }
 
+#[cfg(windows)]
+fn hide_tokio_child_console(command: &mut TokioCommand) {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+    command.as_std_mut().creation_flags(CREATE_NO_WINDOW);
+}
+
+#[cfg(not(windows))]
+fn hide_tokio_child_console(_command: &mut TokioCommand) {}
+
+#[cfg(windows)]
+fn hide_std_child_console(command: &mut StdCommand) {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+    command.creation_flags(CREATE_NO_WINDOW);
+}
+
+#[cfg(not(windows))]
+fn hide_std_child_console(_command: &mut StdCommand) {}
+
+fn open_url_in_default_browser(url: &str) -> Result<(), String> {
+    let mut command = if cfg!(target_os = "windows") {
+        let mut command = StdCommand::new("cmd");
+        command.args(["/C", "start", "", url]);
+        command
+    } else if cfg!(target_os = "macos") {
+        let mut command = StdCommand::new("open");
+        command.arg(url);
+        command
+    } else {
+        let mut command = StdCommand::new("xdg-open");
+        command.arg(url);
+        command
+    };
+    hide_std_child_console(&mut command);
+    command
+        .spawn()
+        .map_err(|e| format!("Failed to open sign-in URL: {e}"))?;
+    Ok(())
+}
+
 fn build_app_server_turn_text(transcript: &str, metadata: Value) -> String {
     format!(
         "{}\n\n<metadata>\n{}\n</metadata>\n\n<output_schema>\n{}\n</output_schema>\n\n<untrusted_transcript>\n{}\n</untrusted_transcript>\n",
@@ -1636,7 +1705,8 @@ fn build_app_server_turn_text(transcript: &str, metadata: Value) -> String {
 }
 
 fn parse_account_state(value: &Value) -> CodexAccountState {
-    let account = value.get("account").unwrap_or(value);
+    let account_value = value.get("account");
+    let account = account_value.unwrap_or(value);
     let email = json_string_at(account, &["email"])
         .or_else(|| json_string_at(account, &["profile", "email"]));
     let plan = json_string_at(account, &["planType"])
@@ -1644,11 +1714,16 @@ fn parse_account_state(value: &Value) -> CodexAccountState {
         .or_else(|| json_string_at(account, &["plan", "type"]));
     let rate_limit = json_string_at(account, &["rateLimitState"])
         .or_else(|| json_string_at(account, &["rate_limit_state"]));
+    let has_account = account_value.is_some_and(|account| !account.is_null());
     let auth_status = json_string_at(value, &["authStatus"])
         .or_else(|| json_string_at(value, &["auth_status"]))
+        .or_else(|| json_string_at(value, &["authMode"]))
+        .or_else(|| json_string_at(value, &["auth_mode"]))
         .or_else(|| {
-            if email.is_some() {
+            if email.is_some() || has_account {
                 Some("authenticated".to_string())
+            } else if value.get("requiresOpenaiAuth").and_then(Value::as_bool) == Some(false) {
+                Some("not-required".to_string())
             } else {
                 Some("unauthenticated".to_string())
             }
@@ -1700,7 +1775,17 @@ fn collect_output_text(value: &Value, output: &mut String) {
         output.push_str(text);
         return;
     }
-    for key in ["delta", "text", "message", "content", "output", "finalText"] {
+    for key in [
+        "delta",
+        "text",
+        "message",
+        "content",
+        "output",
+        "finalText",
+        "final_text",
+        "lastAgentMessage",
+        "last_agent_message",
+    ] {
         if let Some(text) = value.get(key).and_then(Value::as_str) {
             output.push_str(text);
             return;
@@ -1712,7 +1797,7 @@ fn collect_output_text(value: &Value, output: &mut String) {
         }
     }
     if let Some(obj) = value.as_object() {
-        for key in ["item", "agentMessage", "turn", "result"] {
+        for key in ["item", "agentMessage", "agent_message", "turn", "result"] {
             if let Some(nested) = obj.get(key) {
                 collect_output_text(nested, output);
             }
@@ -1946,6 +2031,9 @@ pub fn output_schema_json() -> String {
 
 pub(crate) fn parse_meeting_output(raw: &str) -> Result<MeetingNotesOutput, String> {
     let cleaned = strip_json_fence(raw);
+    if cleaned.trim().is_empty() {
+        return Err("Provider returned no meeting JSON. Sign in with ChatGPT and try again; if already signed in, check the Codex model and account/rate-limit state.".to_string());
+    }
     serde_json::from_str::<MeetingNotesOutput>(&cleaned)
         .map_err(|e| format!("Provider returned invalid meeting JSON: {e}"))
 }
