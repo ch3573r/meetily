@@ -13,6 +13,25 @@ Build Windows artifacts on a Windows host with Visual Studio Build Tools,
 Windows SDK, Rust, Node.js, pnpm, and LLVM installed. The release script must
 be run from `frontend`.
 
+## Prerequisites
+
+Install these on the Windows build host:
+
+- Windows 10/11 or Windows Server with WebView2 Runtime.
+- Visual Studio Build Tools 2022 with **Desktop development with C++**.
+- Windows 10/11 SDK from Visual Studio Installer.
+- Node.js 20.
+- pnpm 10.
+- Rust stable with the MSVC target:
+
+```powershell
+rustup target add x86_64-pc-windows-msvc
+```
+
+- LLVM/Clang, with `LIBCLANG_PATH` pointing at the LLVM `bin` directory if
+  bindgen cannot find it automatically.
+- CMake if any native dependency in the selected feature path requires it.
+
 Stage the Windows `llama-helper` sidecar before running the Tauri bundle:
 
 ```powershell
@@ -66,12 +85,49 @@ Artifacts are written under:
 ```text
 frontend\src-tauri\target\release\bundle\msi\*.msi
 frontend\src-tauri\target\release\bundle\nsis\*.exe
+frontend\src-tauri\target\release\bundle\SHA256SUMS.txt
+```
+
+Expected artifact names currently look like:
+
+```text
+ClawScribe_0.5.0-alpha.1_x64_en-US.msi
+ClawScribe_0.5.0-alpha.1_x64-setup.exe
+SHA256SUMS.txt
+```
+
+The release script generates `SHA256SUMS.txt` after a successful installer
+build. For a local ad-hoc checksum, run:
+
+```powershell
+Get-FileHash -Algorithm SHA256 .\src-tauri\target\release\bundle\msi\*.msi
+Get-FileHash -Algorithm SHA256 .\src-tauri\target\release\bundle\nsis\*.exe
+```
+
+Portable/no-install execution is not the normal release path. For a developer
+smoke without installing, run the Tauri dev app:
+
+```powershell
+cd frontend
+pnpm install --frozen-lockfile
+pnpm tauri dev
+```
+
+or run a built app executable directly from the Tauri release output if the
+bundle step produced one:
+
+```powershell
+.\src-tauri\target\release\ClawScribe.exe
 ```
 
 Authenticode signing is optional. Set `DIGICERT_KEYPAIR_ALIAS` in the build
 environment to enable `frontend/src-tauri/scripts/sign-windows.ps1`; leave it
 unset for unsigned local artifacts. Updater artifacts are intentionally disabled
 until a ClawScribe release feed and signing key are provisioned.
+
+Unsigned artifacts will show an unknown-publisher / SmartScreen warning on
+Windows. That is expected for private test builds. Public-friendly installs
+require an Authenticode code-signing certificate and a release signing pipeline.
 
 Before handing an installer to a recorder laptop, create or update the
 OpenClaw config file from [openclaw-handoff.md](openclaw-handoff.md) and set a

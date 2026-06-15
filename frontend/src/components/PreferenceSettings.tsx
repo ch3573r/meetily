@@ -7,6 +7,7 @@ import { invoke } from "@tauri-apps/api/core"
 import Analytics from "@/lib/analytics"
 import AnalyticsConsentSwitch from "./AnalyticsConsentSwitch"
 import { useConfig, NotificationSettings } from "@/contexts/ConfigContext"
+import { ThemeSettings } from "./ThemeSettings"
 
 type OpenClawSubmissionStatus = {
   state: string
@@ -191,30 +192,32 @@ export function PreferenceSettings() {
 
   return (
     <div className="space-y-6">
+      <ThemeSettings />
+
       {/* Notifications Section */}
-      <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
+      <div className="bg-card rounded-lg border border-border p-6 shadow-sm">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Notifications</h3>
-            <p className="text-sm text-gray-600">Enable or disable notifications of start and end of meeting</p>
+            <h3 className="text-lg font-semibold text-card-foreground mb-2">Notifications</h3>
+            <p className="text-sm text-muted-foreground">Enable or disable notifications of start and end of meeting</p>
           </div>
           <Switch checked={notificationsEnabledValue} onCheckedChange={setNotificationsEnabled} />
         </div>
       </div>
 
-      <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
+      <div className="bg-card rounded-lg border border-border p-6 shadow-sm">
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-start gap-3">
-            <div className="mt-1 rounded-md bg-slate-100 p-2 text-slate-700">
+            <div className="mt-1 rounded-md bg-secondary p-2 text-secondary-foreground">
               <ServerCog className="h-5 w-5" />
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">OpenClaw Handoff</h3>
+              <h3 className="text-lg font-semibold text-card-foreground mb-2">OpenClaw Handoff</h3>
               <div className="flex flex-wrap items-center gap-2">
                 <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${openClawStatus?.ready ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}`}>
                   {openClawStatus?.ready ? 'Ready' : 'Not ready'}
                 </span>
-                <span className="text-sm text-gray-600">
+                <span className="text-sm text-muted-foreground">
                   {openClawStatus?.status_message ?? (openClawStatusError ? 'Status unavailable' : 'Loading status')}
                 </span>
               </div>
@@ -223,7 +226,7 @@ export function PreferenceSettings() {
           <button
             onClick={() => void loadOpenClawStatus()}
             disabled={isOpenClawStatusLoading}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-300 text-gray-600 transition-colors hover:bg-gray-50 disabled:opacity-50"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-input text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
             aria-label="Refresh OpenClaw handoff status"
             title="Refresh OpenClaw handoff status"
           >
@@ -232,54 +235,54 @@ export function PreferenceSettings() {
         </div>
 
         {openClawStatusError ? (
-          <div className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          <div className="mt-4 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
             {openClawStatusError}
           </div>
         ) : (
           <div className="mt-5 grid gap-3 text-sm md:grid-cols-2">
             <div>
-              <div className="text-xs font-medium uppercase text-gray-500">Endpoint</div>
-              <div className="mt-1 break-all font-mono text-xs text-gray-800">
+              <div className="text-xs font-medium uppercase text-muted-foreground">Endpoint</div>
+              <div className="mt-1 break-all font-mono text-xs text-card-foreground">
                 {openClawStatus?.endpoint ?? 'Loading...'}
               </div>
             </div>
             <div>
-              <div className="text-xs font-medium uppercase text-gray-500">Source</div>
-              <div className="mt-1 font-mono text-xs text-gray-800">
+              <div className="text-xs font-medium uppercase text-muted-foreground">Source</div>
+              <div className="mt-1 font-mono text-xs text-card-foreground">
                 {openClawStatus?.source ?? 'Loading...'}
               </div>
             </div>
             <div>
-              <div className="text-xs font-medium uppercase text-gray-500">Bearer Token</div>
-              <div className="mt-1 text-gray-800">
+              <div className="text-xs font-medium uppercase text-muted-foreground">Bearer Token</div>
+              <div className="mt-1 text-card-foreground">
                 {openClawStatus?.bearer_token_configured ? 'Configured' : 'Missing'}
               </div>
             </div>
             <div>
-              <div className="text-xs font-medium uppercase text-gray-500">Audio Path</div>
-              <div className="mt-1 text-gray-800">
+              <div className="text-xs font-medium uppercase text-muted-foreground">Audio Path</div>
+              <div className="mt-1 text-card-foreground">
                 {openClawStatus?.include_audio_path ? 'Included' : 'Not included'}
               </div>
             </div>
             <div className="md:col-span-2">
-              <div className="text-xs font-medium uppercase text-gray-500">Config File</div>
-              <div className="mt-1 break-all font-mono text-xs text-gray-800">
+              <div className="text-xs font-medium uppercase text-muted-foreground">Config File</div>
+              <div className="mt-1 break-all font-mono text-xs text-card-foreground">
                 {openClawStatus?.config_path ?? 'Loading...'}
               </div>
             </div>
             {openClawStatus?.last_submission && (
-              <div className="md:col-span-2 rounded-md bg-gray-50 p-3">
+              <div className="md:col-span-2 rounded-md bg-muted p-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs font-medium uppercase text-gray-500">Last Handoff</span>
-                  <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-700">
+                  <span className="text-xs font-medium uppercase text-muted-foreground">Last Handoff</span>
+                  <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground">
                     {openClawStatus.last_submission.state}
                   </span>
                   {openClawStatus.last_submission.status_code && (
-                    <span className="text-xs text-gray-500">HTTP {openClawStatus.last_submission.status_code}</span>
+                    <span className="text-xs text-muted-foreground">HTTP {openClawStatus.last_submission.status_code}</span>
                   )}
                 </div>
-                <div className="mt-2 text-sm text-gray-700">{openClawStatus.last_submission.message}</div>
-                <div className="mt-1 text-xs text-gray-500">{openClawStatus.last_submission.updated_at}</div>
+                <div className="mt-2 text-sm text-card-foreground">{openClawStatus.last_submission.message}</div>
+                <div className="mt-1 text-xs text-muted-foreground">{openClawStatus.last_submission.updated_at}</div>
               </div>
             )}
           </div>
@@ -287,10 +290,10 @@ export function PreferenceSettings() {
       </div>
 
       {/* Data Storage Locations Section */}
-      <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Data Storage Locations</h3>
-        <p className="text-sm text-gray-600 mb-6">
-          View and access where Meetily stores your data
+      <div className="bg-card rounded-lg border border-border p-6 shadow-sm">
+        <h3 className="text-lg font-semibold text-card-foreground mb-4">Data Storage Locations</h3>
+        <p className="text-sm text-muted-foreground mb-6">
+          View and access where ClawScribe stores your data
         </p>
 
         <div className="space-y-4">
@@ -325,14 +328,14 @@ export function PreferenceSettings() {
           </div> */}
 
           {/* Recordings Location */}
-          <div className="p-4 border rounded-lg bg-gray-50">
+          <div className="p-4 border rounded-lg bg-muted">
             <div className="font-medium mb-2">Meeting Recordings</div>
-            <div className="text-sm text-gray-600 mb-3 break-all font-mono text-xs">
+            <div className="text-sm text-muted-foreground mb-3 break-all font-mono text-xs">
               {storageLocations?.recordings || 'Loading...'}
             </div>
             <button
               onClick={() => handleOpenFolder('recordings')}
-              className="flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-100 transition-colors"
+              className="flex items-center gap-2 px-3 py-2 text-sm border border-input rounded-md hover:bg-background transition-colors"
             >
               <FolderOpen className="w-4 h-4" />
               Open Folder
@@ -341,14 +344,14 @@ export function PreferenceSettings() {
         </div>
 
         <div className="mt-4 p-3 bg-blue-50 rounded-md">
-          <p className="text-xs text-blue-800">
+          <p className="text-xs text-gray-800">
             <strong>Note:</strong> Database and models are stored together in your application data directory for unified management.
           </p>
         </div>
       </div>
 
       {/* Analytics Section */}
-      <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
+      <div className="bg-card rounded-lg border border-border p-6 shadow-sm">
         <AnalyticsConsentSwitch />
       </div>
     </div>

@@ -73,7 +73,7 @@ impl SettingsRepository {
         api_key: &str,
     ) -> std::result::Result<(), sqlx::Error> {
         // Operator-managed providers use their own config instead of a separate API key column.
-        if provider == "custom-openai" || provider == "openclaw" {
+        if provider == "custom-openai" || provider == "openclaw" || provider == "codex" {
             return Err(sqlx::Error::Protocol(
                 format!("{provider} provider should not use save_api_key()").into(),
             ));
@@ -116,7 +116,7 @@ impl SettingsRepository {
             let config = Self::get_custom_openai_config(pool).await?;
             return Ok(config.and_then(|c| c.api_key));
         }
-        if provider == "openclaw" {
+        if provider == "openclaw" || provider == "codex" {
             return Ok(None);
         }
 
@@ -254,6 +254,7 @@ impl SettingsRepository {
             "claude" => "anthropicApiKey",
             "openrouter" => "openRouterApiKey",
             "builtin-ai" => return Ok(()), // No API key needed
+            "codex" => return Ok(()),      // Codex auth is managed by Codex CLI
             _ => {
                 return Err(sqlx::Error::Protocol(
                     format!("Invalid provider: {}", provider).into(),

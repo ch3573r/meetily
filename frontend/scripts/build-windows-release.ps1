@@ -93,8 +93,28 @@ $artifactPatterns = @(
 
 Write-Host ""
 Write-Host "Windows release artifacts:"
+$artifactFiles = @()
 foreach ($pattern in $artifactPatterns) {
     Get-ChildItem $pattern -ErrorAction SilentlyContinue | ForEach-Object {
+        $artifactFiles += $_
         Write-Host "  $($_.FullName)"
     }
 }
+
+if ($artifactFiles.Count -eq 0) {
+    throw "No Windows release artifacts were found under '$bundleRoot'."
+}
+
+$checksumPath = Join-Path $bundleRoot "SHA256SUMS.txt"
+$checksumLines = foreach ($artifact in $artifactFiles | Sort-Object FullName) {
+    $hash = Get-FileHash -Algorithm SHA256 -LiteralPath $artifact.FullName
+    "$($hash.Hash.ToLowerInvariant())  $($artifact.Name)"
+}
+$checksumLines | Set-Content -LiteralPath $checksumPath -Encoding ascii
+
+Write-Host ""
+Write-Host "SHA-256 checksums:"
+Get-Content -LiteralPath $checksumPath | ForEach-Object {
+    Write-Host "  $_"
+}
+Write-Host "  $checksumPath"

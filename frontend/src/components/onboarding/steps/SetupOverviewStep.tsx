@@ -46,7 +46,7 @@ export function SetupOverviewStep() {
   return (
     <OnboardingContainer
       title="Setup Overview"
-      description="Meetily requires that you download the Transcription & Summarization AI models for the software to work."
+      description="ClawScribe requires that you download the Transcription & Summarization AI models for the software to work."
       step={2}
       totalSteps={isMac ? 4 : 3}
     >
@@ -103,7 +103,7 @@ export function SetupOverviewStep() {
               rel="noopener noreferrer"
               className="text-xs text-gray-600 hover:underline"
             >
-              Report issues on GitHub
+              View upstream project on GitHub
             </a>
           </div>
         </div>

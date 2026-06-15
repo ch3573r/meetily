@@ -1,5 +1,10 @@
 # OpenAI Auth Modes
 
+> Update: ClawScribe now supports interactive OpenAI/ChatGPT login through
+> Codex. See `docs/auth/codex-auth.md`. The OAuth/PKCE notes below still apply
+> to direct OpenAI API credentials: ClawScribe must not use private/raw OpenAI
+> OAuth endpoints or treat Codex tokens as generic API bearer tokens.
+
 This fork treats OpenAI auth as a production configuration contract for a
 distributable desktop app. OpenClaw is an optional integration, not the
 foundation for OpenAI auth.

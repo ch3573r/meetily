@@ -7,6 +7,9 @@ future debounced automation.
 
 The detector does not start, stop, or schedule recordings.
 
+For the full Windows runtime verification matrix and result logging template,
+see `docs/verification/teams-detection.md`.
+
 ## Tauri Commands
 
 - `get_teams_detection_config` returns the default detector configuration.

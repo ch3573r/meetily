@@ -74,6 +74,7 @@ pub enum LLMProvider {
     BuiltInAI,
     CustomOpenAI,
     OpenClaw,
+    Codex,
 }
 
 impl LLMProvider {
@@ -88,6 +89,7 @@ impl LLMProvider {
             "builtin-ai" | "local-llama" | "localllama" => Ok(Self::BuiltInAI),
             "custom-openai" => Ok(Self::CustomOpenAI),
             "openclaw" | "openclaw-managed" => Ok(Self::OpenClaw),
+            "codex" | "codex-login" | "codex-chatgpt" => Ok(Self::Codex),
             _ => Err(format!("Unsupported LLM provider: {}", s)),
         }
     }
@@ -210,6 +212,12 @@ pub async fn generate_summary(
         LLMProvider::BuiltInAI => {
             // This case is handled earlier with early returns
             unreachable!("BuiltInAI is handled before this match statement")
+        }
+        LLMProvider::Codex => {
+            return Err(
+                "Codex provider is handled by CodexProcessingProvider, not the HTTP LLM client"
+                    .to_string(),
+            );
         }
     };
 
@@ -361,5 +369,6 @@ fn provider_name(provider: &LLMProvider) -> &str {
         LLMProvider::OpenRouter => "OpenRouter",
         LLMProvider::CustomOpenAI => "Custom OpenAI",
         LLMProvider::OpenClaw => "OpenClaw managed auth",
+        LLMProvider::Codex => "Codex",
     }
 }

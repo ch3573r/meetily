@@ -2,6 +2,7 @@ use crate::database::repositories::{
     meeting::MeetingsRepository, setting::SettingsRepository, summary::SummaryProcessesRepository,
 };
 use crate::ollama::metadata::ModelMetadataCache;
+use crate::summary::codex_provider::{provider_from_app, CodexMeetingProcessRequest};
 use crate::summary::language_detection::detect_summary_language;
 use crate::summary::llm_client::LLMProvider;
 use crate::summary::metadata::read_detected_summary_language_from_metadata;
@@ -13,7 +14,7 @@ use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
@@ -333,6 +334,7 @@ impl SummaryService {
                 | LLMProvider::BuiltInAI
                 | LLMProvider::CustomOpenAI
                 | LLMProvider::OpenClaw
+                | LLMProvider::Codex
         ) {
             // These providers don't require API keys from the standard database column
             String::new()
@@ -498,6 +500,97 @@ impl SummaryService {
 
         if let Some(code) = &detected_summary_language {
             info!("📝 Detected transcript summary language: {}", code);
+        }
+
+        if provider == LLMProvider::Codex {
+            if cancellation_token.is_cancelled() {
+                Self::cleanup_cancellation_token(&meeting_id);
+                if let Err(db_err) =
+                    SummaryProcessesRepository::update_process_cancelled(&pool, &meeting_id).await
+                {
+                    error!(
+                        "Failed to update DB status to cancelled for {}: {}",
+                        meeting_id, db_err
+                    );
+                }
+                return;
+            }
+
+            let meeting_metadata = MeetingsRepository::get_meeting_metadata(&pool, &meeting_id)
+                .await
+                .ok()
+                .flatten();
+            let output_dir = meeting_metadata
+                .as_ref()
+                .and_then(|m| m.folder_path.as_ref())
+                .filter(|p| !p.trim().is_empty())
+                .map(PathBuf::from);
+            let meeting_title = meeting_metadata.map(|m| m.title);
+
+            let result = match provider_from_app(&_app) {
+                Ok(codex_provider) => {
+                    codex_provider
+                        .process_meeting(CodexMeetingProcessRequest {
+                            meeting_id: meeting_id.clone(),
+                            meeting_title,
+                            transcript: text.clone(),
+                            output_dir,
+                            scratch_root: None,
+                        })
+                        .await
+                }
+                Err(e) => Err(e),
+            };
+
+            let duration = start_time.elapsed().as_secs_f64();
+            Self::cleanup_cancellation_token(&meeting_id);
+
+            match result {
+                Ok(codex_result) => {
+                    info!(
+                        "✓ Codex processed meeting_id: {}. Duration: {:.2}s",
+                        meeting_id, duration
+                    );
+                    let result_json = serde_json::json!({
+                        "markdown": strip_title_if_present(&codex_result.markdown),
+                        "structured_meeting_output": codex_result.structured_output,
+                        "codex": {
+                            "scratch_dir": codex_result.scratch_dir,
+                            "output_json_path": codex_result.output_json_path,
+                            "notes_markdown_path": codex_result.notes_markdown_path,
+                            "follow_up_email_path": codex_result.follow_up_email_path,
+                            "processing_log_path": codex_result.processing_log_path,
+                        }
+                    });
+                    if let Err(e) = SummaryProcessesRepository::update_process_completed(
+                        &pool,
+                        &meeting_id,
+                        result_json,
+                        1,
+                        duration,
+                    )
+                    .await
+                    {
+                        error!("Failed to save Codex process for {}: {}", meeting_id, e);
+                    }
+                }
+                Err(e) => {
+                    if e.contains("cancelled") {
+                        if let Err(db_err) =
+                            SummaryProcessesRepository::update_process_cancelled(&pool, &meeting_id)
+                                .await
+                        {
+                            error!(
+                                "Failed to update DB status to cancelled for {}: {}",
+                                meeting_id, db_err
+                            );
+                        }
+                    } else {
+                        Self::update_process_failed(&pool, &meeting_id, &e).await;
+                    }
+                }
+            }
+            return;
         }
 
         let template = match templates::get_template(&template_id) {

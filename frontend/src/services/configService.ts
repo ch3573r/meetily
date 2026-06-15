@@ -9,7 +9,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { TranscriptModelProps } from '@/components/TranscriptSettings';
 
 export interface ModelConfig {
-  provider: 'ollama' | 'groq' | 'claude' | 'openrouter' | 'openai' | 'builtin-ai' | 'custom-openai' | 'openclaw';
+  provider: 'ollama' | 'groq' | 'claude' | 'openrouter' | 'openai' | 'builtin-ai' | 'custom-openai' | 'openclaw' | 'codex';
   model: string;
   whisperModel: string;
   /**

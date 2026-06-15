@@ -31,7 +31,7 @@ import { cn, isOllamaNotInstalledError } from '@/lib/utils';
 import { toast } from 'sonner';
 
 export interface ModelConfig {
-  provider: 'ollama' | 'groq' | 'claude' | 'openai' | 'openrouter' | 'builtin-ai' | 'custom-openai' | 'openclaw';
+  provider: 'ollama' | 'groq' | 'claude' | 'openai' | 'openrouter' | 'builtin-ai' | 'custom-openai' | 'openclaw' | 'codex';
   model: string;
   whisperModel: string;
   apiKey?: string | null;
@@ -91,6 +91,33 @@ interface OpenClawConfigStatus {
   source: string;
   status_message: string;
   include_audio_path: boolean;
+}
+
+interface CodexProviderConfig {
+  codexHomeMode: 'clawscribe-isolated' | 'existing-user-codex-session';
+  codexHomePath?: string | null;
+  useExistingUserCodexSession: boolean;
+  codexBinaryPath?: string | null;
+  model: string;
+  timeoutSeconds: number;
+}
+
+interface CodexInstallationStatus {
+  found: boolean;
+  version?: string | null;
+  path?: string | null;
+  codexHome: string;
+  codexHomeMode: 'clawscribe-isolated' | 'existing-user-codex-session';
+  authStatus?: string | null;
+  message: string;
+}
+
+interface CodexCommandStatus {
+  success: boolean;
+  exitCode?: number | null;
+  stdout: string;
+  stderr: string;
+  message: string;
 }
 
 interface AnthropicModel {
@@ -205,6 +232,17 @@ export function ModelSettingsModal({
   const [openClawBearerToken, setOpenClawBearerToken] = useState<string>('');
   const [openClawSource, setOpenClawSource] = useState<string>('ClawScribe');
   const [openClawIncludeAudioPath, setOpenClawIncludeAudioPath] = useState<boolean>(false);
+  const [codexConfig, setCodexConfig] = useState<CodexProviderConfig>({
+    codexHomeMode: 'clawscribe-isolated',
+    codexHomePath: null,
+    useExistingUserCodexSession: false,
+    codexBinaryPath: null,
+    model: 'gpt-5.1-codex',
+    timeoutSeconds: 600,
+  });
+  const [codexStatus, setCodexStatus] = useState<CodexInstallationStatus | null>(null);
+  const [codexLastResult, setCodexLastResult] = useState<string>('');
+  const [isCodexBusy, setIsCodexBusy] = useState<boolean>(false);
 
   // Use global download context instead of local state
   const { isDownloading, getProgress, downloadingModels } = useOllamaDownload();
@@ -272,6 +310,7 @@ export function ModelSettingsModal({
     'builtin-ai': builtinAiModels.map((m) => m.name),
     'custom-openai': customOpenAIModel ? [customOpenAIModel] : [], // User specifies model manually
     openclaw: ['openclaw-managed'],
+    codex: [codexConfig.model || modelConfig.model || 'gpt-5.1-codex'],
   };
 
   const requiresApiKey =
@@ -661,6 +700,77 @@ export function ModelSettingsModal({
     }
   };
 
+  const loadCodexConfig = async () => {
+    try {
+      const config = (await invoke('codex_get_config')) as { processing?: { codex?: CodexProviderConfig } };
+      const codex = config.processing?.codex;
+      if (codex) {
+        setCodexConfig(codex);
+        if (codex.model && modelConfig.provider === 'codex') {
+          setModelConfig((prev: ModelConfig) => ({ ...prev, model: codex.model }));
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load Codex config:', err);
+      setCodexLastResult(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const checkCodexInstallation = async () => {
+    setIsCodexBusy(true);
+    try {
+      const status = (await invoke('codex_check_installation')) as CodexInstallationStatus;
+      setCodexStatus(status);
+      setCodexLastResult(status.message);
+      if (status.found) {
+        toast.success(`Codex found: ${status.version || status.path || 'installed'}`);
+      } else {
+        toast.error(status.message || 'Codex was not found');
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setCodexLastResult(message);
+      toast.error(message);
+    } finally {
+      setIsCodexBusy(false);
+    }
+  };
+
+  const saveCodexConfig = async (nextConfig = codexConfig) => {
+    const normalized = {
+      ...nextConfig,
+      model: nextConfig.model.trim() || 'gpt-5.1-codex',
+      timeoutSeconds: nextConfig.timeoutSeconds || 600,
+    };
+    const saved = (await invoke('codex_save_config', { config: normalized })) as { processing?: { codex?: CodexProviderConfig } };
+    if (saved.processing?.codex) {
+      setCodexConfig(saved.processing.codex);
+    }
+    return normalized;
+  };
+
+  const runCodexAction = async (command: 'codex_login_browser' | 'codex_login_device' | 'codex_logout' | 'codex_test_processing') => {
+    setIsCodexBusy(true);
+    try {
+      await saveCodexConfig();
+      const result = (await invoke(command)) as CodexCommandStatus;
+      const detail = [result.message, result.stdout, result.stderr].filter(Boolean).join('\n').trim();
+      setCodexLastResult(detail || (result.success ? 'Codex command completed' : 'Codex command failed'));
+      if (result.success) {
+        toast.success(result.message || 'Codex command completed');
+      } else {
+        toast.error(result.message || 'Codex command failed');
+      }
+      await checkCodexInstallation();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setCodexLastResult(message);
+      toast.error(message);
+    } finally {
+      setIsCodexBusy(false);
+    }
+  };
+
   // Auto-fetch OpenAI models when provider is openai and we have an API key
   useEffect(() => {
     if (modelConfig.provider === 'openai' && apiKey?.trim()) {
@@ -674,6 +784,9 @@ export function ModelSettingsModal({
     }
     if (modelConfig.provider === 'openclaw') {
       loadOpenClawStatus();
+    }
+    if (modelConfig.provider === 'codex') {
+      loadCodexConfig().then(() => checkCodexInstallation());
     }
   }, [modelConfig.provider]);
 
@@ -727,7 +840,7 @@ export function ModelSettingsModal({
       }
     }
 
-    const updatedConfig = {
+    let updatedConfig = {
       ...modelConfig,
       apiKey: typeof apiKey === 'string' ? apiKey.trim() || null : null,
       ollamaEndpoint: modelConfig.provider === 'ollama'
@@ -789,6 +902,22 @@ export function ModelSettingsModal({
         const errorMsg = err instanceof Error ? err.message : String(err);
         console.error('Failed to save OpenClaw configuration:', err);
         toast.error(errorMsg || 'Failed to save OpenClaw configuration');
+        return;
+      }
+    }
+
+    if (updatedConfig.provider === 'codex') {
+      try {
+        const savedCodexConfig = await saveCodexConfig({
+          ...codexConfig,
+          model: codexConfig.model.trim() || updatedConfig.model || 'gpt-5.1-codex',
+        });
+        updatedConfig.model = savedCodexConfig.model;
+        setModelConfig(updatedConfig);
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        console.error('Failed to save Codex configuration:', err);
+        toast.error(errorMsg || 'Failed to save Codex configuration');
         return;
       }
     }
@@ -1004,6 +1133,10 @@ export function ModelSettingsModal({
                 if (provider === 'openclaw') {
                   loadOpenClawStatus();
                 }
+
+                if (provider === 'codex') {
+                  loadCodexConfig().then(() => checkCodexInstallation());
+                }
               }}
             >
               <SelectTrigger>
@@ -1011,6 +1144,7 @@ export function ModelSettingsModal({
               </SelectTrigger>
               <SelectContent className="max-h-64 overflow-y-auto">
                 <SelectItem value="openai">OpenAI API Key</SelectItem>
+                <SelectItem value="codex">Codex / ChatGPT login</SelectItem>
                 <SelectItem value="custom-openai">OpenAI-compatible Endpoint</SelectItem>
                 <SelectItem value="builtin-ai">Built-in AI (Offline, No API needed)</SelectItem>
                 <SelectItem value="ollama">Ollama</SelectItem>
@@ -1021,7 +1155,7 @@ export function ModelSettingsModal({
               </SelectContent>
             </Select>
 
-            {modelConfig.provider !== 'builtin-ai' && modelConfig.provider !== 'custom-openai' && modelConfig.provider !== 'openclaw' && (
+            {modelConfig.provider !== 'builtin-ai' && modelConfig.provider !== 'custom-openai' && modelConfig.provider !== 'openclaw' && modelConfig.provider !== 'codex' && (
               <Popover open={modelComboboxOpen} onOpenChange={setModelComboboxOpen} modal={true}>
                 <PopoverTrigger asChild>
                   <Button
@@ -1210,6 +1344,180 @@ export function ModelSettingsModal({
           </div>
         )}
 
+        {modelConfig.provider === 'codex' && (
+          <div className="space-y-4 border-t pt-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium">OpenAI login via Codex</span>
+                  <span className={cn(
+                    'rounded-full px-2 py-0.5 text-xs font-medium',
+                    codexStatus?.found ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'
+                  )}>
+                    {isCodexBusy ? 'Checking' : codexStatus?.found ? 'Codex found' : 'Needs Codex'}
+                  </span>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Use Codex as the ChatGPT/OpenAI sign-in boundary and model runner. ClawScribe invokes <code>codex exec</code>; it does not handle OpenAI OAuth tokens.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {codexStatus?.found
+                    ? `${codexStatus.version || 'Codex installed'} at ${codexStatus.path || 'PATH'}`
+                    : codexStatus?.message || 'Check Codex installation before signing in.'}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  CODEX_HOME: {codexStatus?.codexHome || codexConfig.codexHomePath || '%APPDATA%\\ClawScribe\\codex'}
+                </p>
+                {codexStatus?.authStatus && (
+                  <p className="text-xs text-muted-foreground">Auth: {codexStatus.authStatus}</p>
+                )}
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={checkCodexInstallation}
+                disabled={isCodexBusy}
+                title="Check Codex installation"
+              >
+                <RefreshCw className={cn('h-4 w-4', isCodexBusy && 'animate-spin')} />
+              </Button>
+            </div>
+
+            <div>
+              <Label htmlFor="codex-home-mode">CODEX_HOME mode</Label>
+              <Select
+                value={codexConfig.useExistingUserCodexSession ? 'existing-user-codex-session' : 'clawscribe-isolated'}
+                onValueChange={(value) => {
+                  const useExisting = value === 'existing-user-codex-session';
+                  setCodexConfig((prev) => ({
+                    ...prev,
+                    codexHomeMode: value as CodexProviderConfig['codexHomeMode'],
+                    useExistingUserCodexSession: useExisting,
+                  }));
+                }}
+              >
+                <SelectTrigger id="codex-home-mode" className="mt-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="clawscribe-isolated">ClawScribe isolated</SelectItem>
+                  <SelectItem value="existing-user-codex-session">Existing user Codex session</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {!codexConfig.useExistingUserCodexSession && (
+              <div>
+                <Label htmlFor="codex-home-path">Isolated CODEX_HOME</Label>
+                <Input
+                  id="codex-home-path"
+                  value={codexConfig.codexHomePath || ''}
+                  onChange={(e) => setCodexConfig((prev) => ({ ...prev, codexHomePath: e.target.value }))}
+                  placeholder="%APPDATA%\\ClawScribe\\codex"
+                  className="mt-1"
+                />
+              </div>
+            )}
+
+            <div>
+              <Label htmlFor="codex-binary-path">Codex binary path</Label>
+              <Input
+                id="codex-binary-path"
+                value={codexConfig.codexBinaryPath || ''}
+                onChange={(e) => setCodexConfig((prev) => ({ ...prev, codexBinaryPath: e.target.value || null }))}
+                placeholder="Leave empty to use bundled Codex or codex on PATH"
+                className="mt-1"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_140px]">
+              <div>
+                <Label htmlFor="codex-model">Codex model</Label>
+                <Input
+                  id="codex-model"
+                  value={codexConfig.model}
+                  onChange={(e) => {
+                    const model = e.target.value;
+                    setCodexConfig((prev) => ({ ...prev, model }));
+                    setModelConfig((prev: ModelConfig) => ({ ...prev, model }));
+                  }}
+                  placeholder="gpt-5.1-codex"
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label htmlFor="codex-timeout">Timeout</Label>
+                <Input
+                  id="codex-timeout"
+                  type="number"
+                  min="30"
+                  value={codexConfig.timeoutSeconds}
+                  onChange={(e) => setCodexConfig((prev) => ({ ...prev, timeoutSeconds: parseInt(e.target.value, 10) || 600 }))}
+                  className="mt-1"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <Button type="button" variant="outline" onClick={checkCodexInstallation} disabled={isCodexBusy}>
+                <RefreshCw className={cn('mr-2 h-4 w-4', isCodexBusy && 'animate-spin')} />
+                Check Codex installation
+              </Button>
+              <Button type="button" variant="outline" onClick={() => runCodexAction('codex_test_processing')} disabled={isCodexBusy}>
+                <CheckCircle2 className="mr-2 h-4 w-4" />
+                Test OpenAI/Codex processing
+              </Button>
+              <Button type="button" variant="outline" onClick={() => runCodexAction('codex_login_browser')} disabled={isCodexBusy}>
+                <ExternalLink className="mr-2 h-4 w-4" />
+                Sign in with OpenAI via Codex
+              </Button>
+              <Button type="button" variant="outline" onClick={() => runCodexAction('codex_login_device')} disabled={isCodexBusy}>
+                <CheckCircle2 className="mr-2 h-4 w-4" />
+                Sign in with device code
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setCodexConfig((prev) => ({
+                    ...prev,
+                    codexHomeMode: 'existing-user-codex-session',
+                    useExistingUserCodexSession: true,
+                  }));
+                  setCodexLastResult('Existing user Codex session selected. Save settings to persist this mode.');
+                }}
+                disabled={isCodexBusy}
+              >
+                <Check className="mr-2 h-4 w-4" />
+                Use existing Codex session
+              </Button>
+              <Button type="button" variant="outline" onClick={() => runCodexAction('codex_logout')} disabled={isCodexBusy}>
+                <Lock className="mr-2 h-4 w-4" />
+                Logout / clear Codex auth
+              </Button>
+            </div>
+
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => invoke('open_external_url', { url: 'https://github.com/Zackriya-Solutions/meetily/blob/main/docs/auth/codex-auth.md' })}
+            >
+              <ExternalLink className="mr-2 h-4 w-4" />
+              Open Codex auth docs
+            </Button>
+
+            {codexLastResult && (
+              <Alert>
+                <AlertDescription>
+                  <pre className="max-h-40 overflow-auto whitespace-pre-wrap text-xs">{codexLastResult}</pre>
+                </AlertDescription>
+              </Alert>
+            )}
+          </div>
+        )}
+
         {modelConfig.provider === 'openclaw' && (
           <div className="space-y-4 border-t pt-4">
             <div className="flex items-start justify-between gap-3">
@@ -1392,7 +1700,7 @@ export function ModelSettingsModal({
                       OpenAI API key
                     </div>
                     <p className="text-sm">
-                      Paste a key from the OpenAI platform. Sign in with OpenAI/ChatGPT OAuth is not available to this desktop app.
+                      Paste a key from the OpenAI platform. For ChatGPT/OpenAI login, choose the Codex / ChatGPT login provider.
                     </p>
                   </div>
                   <Button

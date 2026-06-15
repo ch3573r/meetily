@@ -548,7 +548,11 @@ pub async fn api_save_model_config<R: Runtime>(
 
     // Skip API key saving for operator-managed providers.
     if let Some(key) = api_key {
-        if !key.is_empty() && provider != "custom-openai" && provider != "openclaw" {
+        if !key.is_empty()
+            && provider != "custom-openai"
+            && provider != "openclaw"
+            && provider != "codex"
+        {
             log_info!("🔑 API key provided, saving...");
             if let Err(e) = SettingsRepository::save_api_key(pool, &provider, &key).await {
                 log_error!("❌ Failed to save API key: {}", e);
