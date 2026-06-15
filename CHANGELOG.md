@@ -4,6 +4,11 @@
 
 - Prepared the corrective productization QA/build metadata pass.
 - Preserved upstream Meetily Community Edition `0.4.0` attribution.
+- Replaced the generated ClawScribe icon set with Alex's supplied app icon.
+- Routed summary regeneration through the same user-provided context field as
+  first-time summary generation.
+- Added a Settings → Add-ons tab that exposes Teams detection status, OpenClaw
+  handoff, OneNote export, Planner export, and Advanced Codex app-server state.
 
 ## 0.5.0-alpha.1
 
