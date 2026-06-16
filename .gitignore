@@ -84,3 +84,6 @@ frontend/src-tauri/binaries/codex-app-server-runtime/*
 !frontend/src-tauri/binaries/codex-app-server-aarch64-apple-darwin
 !frontend/src-tauri/binaries/codex-app-server-x86_64-apple-darwin
 !frontend/src-tauri/binaries/codex-app-server-x86_64-unknown-linux-gnu
+
+# Local agent memory / scratch
+.claude/
