@@ -18,7 +18,6 @@ export function useMicrosoftExport() {
     userEmail: null,
   });
   const [signingIn, setSigningIn] = useState(false);
-  const [userCode, setUserCode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [notebooks, setNotebooks] = useState<NotebookInfo[]>([]);
@@ -46,11 +45,13 @@ export function useMicrosoftExport() {
 
   useEffect(() => {
     let unlisten: UnlistenFn | null = null;
-    listen<{ state: string; userDisplayName?: string; userEmail?: string }>(
+    listen<{ state: string; userDisplayName?: string; userEmail?: string; error?: string }>(
       "microsoft-auth-complete",
       (event) => {
         setSigningIn(false);
-        setUserCode(null);
+        if (event.payload.state !== "connected" && event.payload.error) {
+          setError(event.payload.error);
+        }
         setConnection({
           state: event.payload.state as MicrosoftConnectionInfo["state"],
           userDisplayName: event.payload.userDisplayName ?? null,
@@ -69,8 +70,7 @@ export function useMicrosoftExport() {
     setSigningIn(true);
     setError(null);
     try {
-      const resp = await microsoftExportService.signIn();
-      setUserCode(resp.userCode);
+      await microsoftExportService.signIn();
       setConnection((prev) => ({ ...prev, state: "connecting" }));
     } catch (e) {
       setSigningIn(false);
@@ -143,7 +143,6 @@ export function useMicrosoftExport() {
   return {
     connection,
     signingIn,
-    userCode,
     error,
     signIn,
     signOut,

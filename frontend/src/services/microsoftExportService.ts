@@ -13,12 +13,6 @@ export interface MicrosoftConnectionInfo {
   userEmail: string | null;
 }
 
-export interface MicrosoftSignInResponse {
-  userCode: string;
-  verificationUri: string;
-  message: string;
-}
-
 export interface ExportItemResult {
   dedupeKey: string;
   localId: string;
@@ -53,8 +47,10 @@ export interface BucketInfo {
 }
 
 export const microsoftExportService = {
-  async signIn(): Promise<MicrosoftSignInResponse> {
-    return invoke<MicrosoftSignInResponse>("microsoft_sign_in");
+  async signIn(): Promise<void> {
+    // Opens the system browser for interactive sign-in; completion arrives via
+    // the `microsoft-auth-complete` event.
+    return invoke<void>("microsoft_sign_in");
   },
 
   async signOut(): Promise<void> {

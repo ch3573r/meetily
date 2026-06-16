@@ -6,7 +6,6 @@ import {
   AlertTriangle,
   CheckCircle2,
   Cloud,
-  Copy,
   FileCheck2,
   ListTodo,
   Loader2,
@@ -171,27 +170,13 @@ function MicrosoftSignInPanel() {
           </div>
         )}
 
-        {(ms.connection.state === "connecting" || ms.signingIn) && ms.userCode && (
+        {(ms.connection.state === "connecting" || ms.signingIn) && (
           <div className="rounded-md border border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950/40">
-            <p className="mb-2 text-sm text-blue-800 dark:text-blue-200">
-              Enter this code at <strong>microsoft.com/devicelogin</strong>:
-            </p>
-            <div className="flex items-center gap-2">
-              <code className="rounded bg-white px-3 py-1.5 text-lg font-bold tracking-widest text-blue-900 dark:bg-blue-900 dark:text-blue-100">
-                {ms.userCode}
-              </code>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => navigator.clipboard.writeText(ms.userCode!)}
-              >
-                <Copy className="h-4 w-4" />
-              </Button>
-            </div>
-            <div className="mt-2 flex items-center gap-2 text-xs text-blue-600 dark:text-blue-300">
-              <Loader2 className="h-3 w-3 animate-spin" />
-              <span>Waiting for sign-in…</span>
+            <div className="flex items-center gap-2 text-sm text-blue-800 dark:text-blue-200">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>
+                Complete sign-in in your browser, then return to ClawScribe.
+              </span>
             </div>
           </div>
         )}

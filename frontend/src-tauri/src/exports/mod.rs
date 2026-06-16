@@ -21,6 +21,7 @@ pub mod commands;
 pub mod discovery;
 pub mod error;
 pub mod exporter;
+pub mod interactive_auth;
 pub mod ledger;
 pub mod model;
 pub mod ms_auth_state;

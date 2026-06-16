@@ -66,8 +66,12 @@ pub async fn list_notebooks<T: GraphTransport, S: Sleeper>(
     client: &GraphClient<T, S>,
     token: &str,
 ) -> Result<Vec<NotebookInfo>, String> {
+    // The OneNote API requires any $orderby field to also appear in $select,
+    // otherwise it rejects the request — which previously surfaced as an empty
+    // picker. Keep the query minimal and let the service apply its default
+    // ordering rather than risk that constraint.
     let request = get_request(format!(
-        "{GRAPH_BASE}/me/onenote/notebooks?$select=id,displayName&$orderby=lastModifiedDateTime desc&$top=50"
+        "{GRAPH_BASE}/me/onenote/notebooks?$select=id,displayName&$top=50"
     ));
     map_outcome(client.execute(&request, token).await)
 }

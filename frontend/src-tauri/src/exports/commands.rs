@@ -3,7 +3,7 @@
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
-use crate::exports::auth::{self, PollResult};
+use crate::exports::auth;
 use crate::exports::client::{GraphClient, RetryPolicy, TokioSleeper};
 use crate::exports::discovery;
 use crate::exports::exporter::{self, ExportContext, OneNoteTarget};
@@ -16,14 +16,6 @@ use crate::exports::token_store;
 use crate::summary::codex_provider::open_url_in_default_browser;
 
 // ── Response types ──────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MicrosoftSignInResponse {
-    pub user_code: String,
-    pub verification_uri: String,
-    pub message: String,
-}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -77,11 +69,15 @@ impl From<exporter::ExportReport> for ExportReportResponse {
 
 // ── Auth commands ───────────────────────────────────────────────────────
 
+/// Begin interactive Microsoft sign-in. Opens the system browser to the Entra
+/// sign-in page and captures the loopback redirect (authorization-code + PKCE).
+/// Returns immediately; completion (or failure) is delivered via the
+/// `microsoft-auth-complete` event so the UI can update without blocking.
 #[tauri::command]
 pub async fn microsoft_sign_in<R: Runtime>(
     app: AppHandle<R>,
     state: tauri::State<'_, MicrosoftAuthState>,
-) -> Result<MicrosoftSignInResponse, String> {
+) -> Result<(), String> {
     let (config, http);
     {
         let mut inner = state.inner.write().await;
@@ -90,104 +86,72 @@ pub async fn microsoft_sign_in<R: Runtime>(
         http = inner.http.clone();
     }
 
-    let dc = auth::start_device_code_flow(&http, &config)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    {
-        let mut inner = state.inner.write().await;
-        inner.pending_device_code = Some(dc.device_code.clone());
-    }
-
-    let _ = open_url_in_default_browser(&dc.verification_uri);
-
-    let response = MicrosoftSignInResponse {
-        user_code: dc.user_code.clone(),
-        verification_uri: dc.verification_uri.clone(),
-        message: dc.message.clone(),
-    };
-
-    let device_code = dc.device_code;
-    let interval = dc.interval.max(5);
     let app_handle = app.clone();
-
     tauri::async_runtime::spawn(async move {
+        let result = crate::exports::interactive_auth::run_interactive_sign_in(
+            &http,
+            &config,
+            |url| {
+                let _ = open_url_in_default_browser(url);
+            },
+        )
+        .await;
+
         let state = app_handle.state::<MicrosoftAuthState>();
-        loop {
-            tokio::time::sleep(std::time::Duration::from_secs(interval)).await;
+        match result {
+            Ok(tokens) => {
+                let profile = auth::fetch_user_profile(&http, &tokens.access_token)
+                    .await
+                    .ok();
+                let user_id = profile.as_ref().map(|p| p.id.clone()).unwrap_or_default();
+                let display_name = profile
+                    .as_ref()
+                    .map(|p| p.display_name.clone())
+                    .unwrap_or_else(|| "Microsoft User".to_string());
+                let email = profile.as_ref().and_then(|p| p.email.clone());
 
-            let (cfg, client);
-            {
-                let inner = state.inner.read().await;
-                if inner.pending_device_code.is_none() {
-                    return;
+                let stored = token_store::StoredToken::from_token_response(
+                    &tokens,
+                    user_id.clone(),
+                    display_name.clone(),
+                    email.clone(),
+                    config.tenant_id.clone(),
+                );
+                let _ = token_store::save_token(&stored);
+
+                {
+                    let mut inner = state.inner.write().await;
+                    inner.connection_state = MicrosoftConnectionState::Connected;
+                    inner.pending_device_code = None;
+                    inner.user_display_name = Some(display_name.clone());
+                    inner.user_email = email.clone();
+                    inner.user_id = Some(user_id);
                 }
-                cfg = inner.config.clone();
-                client = inner.http.clone();
+
+                let _ = app_handle.emit(
+                    "microsoft-auth-complete",
+                    serde_json::json!({
+                        "state": "connected",
+                        "userDisplayName": display_name,
+                        "userEmail": email,
+                    }),
+                );
             }
-
-            match auth::poll_device_code_token(&client, &cfg, &device_code).await {
-                Ok(PollResult::Pending) => continue,
-                Ok(PollResult::Completed(tokens)) => {
-                    let profile = auth::fetch_user_profile(&client, &tokens.access_token)
-                        .await
-                        .ok();
-
-                    let user_id = profile
-                        .as_ref()
-                        .map(|p| p.id.clone())
-                        .unwrap_or_default();
-                    let display_name = profile
-                        .as_ref()
-                        .map(|p| p.display_name.clone())
-                        .unwrap_or_else(|| "Microsoft User".to_string());
-                    let email = profile.as_ref().and_then(|p| p.email.clone());
-
-                    let stored = token_store::StoredToken::from_token_response(
-                        &tokens,
-                        user_id.clone(),
-                        display_name.clone(),
-                        email.clone(),
-                        cfg.tenant_id.clone(),
-                    );
-                    let _ = token_store::save_token(&stored);
-
-                    {
-                        let mut inner = state.inner.write().await;
-                        inner.connection_state = MicrosoftConnectionState::Connected;
-                        inner.pending_device_code = None;
-                        inner.user_display_name = Some(display_name.clone());
-                        inner.user_email = email.clone();
-                        inner.user_id = Some(user_id);
-                    }
-
-                    let _ = app_handle.emit(
-                        "microsoft-auth-complete",
-                        serde_json::json!({
-                            "state": "connected",
-                            "userDisplayName": display_name,
-                            "userEmail": email,
-                        }),
-                    );
-                    return;
+            Err(e) => {
+                {
+                    let mut inner = state.inner.write().await;
+                    inner.connection_state = MicrosoftConnectionState::NotConnected;
+                    inner.pending_device_code = None;
                 }
-                Ok(PollResult::Expired) | Ok(PollResult::Denied) | Err(_) => {
-                    {
-                        let mut inner = state.inner.write().await;
-                        inner.connection_state = MicrosoftConnectionState::NotConnected;
-                        inner.pending_device_code = None;
-                    }
-                    let _ = app_handle.emit(
-                        "microsoft-auth-complete",
-                        serde_json::json!({ "state": "not_connected" }),
-                    );
-                    return;
-                }
+                let _ = app_handle.emit(
+                    "microsoft-auth-complete",
+                    serde_json::json!({ "state": "not_connected", "error": e.to_string() }),
+                );
             }
         }
     });
 
-    Ok(response)
+    Ok(())
 }
 
 #[tauri::command]
