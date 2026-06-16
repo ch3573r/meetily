@@ -24,6 +24,10 @@ pub struct StoredToken {
     pub user_display_name: String,
     pub user_email: Option<String>,
     pub tenant_id: String,
+    /// Space-separated scopes actually granted by Entra (the token's `scope`
+    /// response field). Used to diagnose insufficient-permission failures.
+    #[serde(default)]
+    pub granted_scopes: String,
 }
 
 impl StoredToken {
@@ -42,6 +46,7 @@ impl StoredToken {
             user_display_name,
             user_email,
             tenant_id,
+            granted_scopes: resp.scope.clone(),
         }
     }
 
@@ -137,10 +142,16 @@ pub async fn ensure_valid_token(
 
     let new_tokens = refresh_access_token(http, config, refresh).await?;
 
+    let granted_scopes = if new_tokens.scope.is_empty() {
+        stored.granted_scopes.clone()
+    } else {
+        new_tokens.scope.clone()
+    };
     let updated = StoredToken {
         access_token: new_tokens.access_token.clone(),
         refresh_token: new_tokens.refresh_token.or(stored.refresh_token),
         expires_at: Utc::now() + Duration::seconds(new_tokens.expires_in as i64),
+        granted_scopes,
         ..stored
     };
 

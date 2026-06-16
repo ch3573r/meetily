@@ -72,7 +72,11 @@ fn authorize_url(config: &MicrosoftAuthConfig, redirect_uri: &str, challenge: &s
         .append_pair("code_challenge", challenge)
         .append_pair("code_challenge_method", "S256")
         .append_pair("state", state)
-        .append_pair("prompt", "select_account");
+        // Force the consent screen rather than silently reusing a prior grant.
+        // Sign-in testing across builds can leave an older grant that lacks the
+        // OneNote/Planner scopes; reusing it yields a token that 403s on Graph.
+        // `prompt=consent` makes Entra re-issue consent for the full scope set.
+        .append_pair("prompt", "consent");
     url.into()
 }
 

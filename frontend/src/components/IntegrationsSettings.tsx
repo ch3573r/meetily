@@ -154,21 +154,38 @@ function MicrosoftSignInPanel() {
     >
       <div className="space-y-3">
         {ms.connection.state === "connected" && (
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-              <span>
-                {ms.connection.userDisplayName}
-                {ms.connection.userEmail && (
-                  <span className="ml-1 text-xs opacity-70">({ms.connection.userEmail})</span>
-                )}
-              </span>
+          <>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                <span>
+                  {ms.connection.userDisplayName}
+                  {ms.connection.userEmail && (
+                    <span className="ml-1 text-xs opacity-70">({ms.connection.userEmail})</span>
+                  )}
+                </span>
+              </div>
+              <Button type="button" variant="outline" size="sm" onClick={ms.signOut}>
+                <LogOut className="mr-2 h-4 w-4" />
+                Sign out
+              </Button>
             </div>
-            <Button type="button" variant="outline" size="sm" onClick={ms.signOut}>
-              <LogOut className="mr-2 h-4 w-4" />
-              Sign out
-            </Button>
-          </div>
+            {ms.connection.grantedScopes !== undefined &&
+              ms.connection.grantedScopes !== null &&
+              !/\bNotes\./i.test(ms.connection.grantedScopes ?? "") && (
+                <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>
+                    This session was granted no OneNote permission, so notebook
+                    discovery will fail. Granted scopes:{" "}
+                    <code className="break-all">{ms.connection.grantedScopes || "(none)"}</code>.
+                    Sign out and sign in again to grant OneNote/Planner access; if
+                    the consent screen does not list them, the Entra app
+                    registration needs those Graph permissions and admin consent.
+                  </span>
+                </div>
+              )}
+          </>
         )}
 
         {(ms.connection.state === "connecting" || ms.signingIn) && (

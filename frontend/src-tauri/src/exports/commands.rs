@@ -23,6 +23,10 @@ pub struct MicrosoftConnectionInfo {
     pub state: MicrosoftConnectionState,
     pub user_display_name: Option<String>,
     pub user_email: Option<String>,
+    /// Space-separated scopes the active token was granted. Empty when not
+    /// connected. Surfaced so permission problems (e.g. a token missing the
+    /// OneNote scope) are diagnosable from the UI.
+    pub granted_scopes: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -184,6 +188,10 @@ pub async fn microsoft_connection_status(
         state: inner.connection_state,
         user_display_name: inner.user_display_name.clone(),
         user_email: inner.user_email.clone(),
+        granted_scopes: inner
+            .current_token
+            .as_ref()
+            .map(|t| t.granted_scopes.clone()),
     })
 }
 

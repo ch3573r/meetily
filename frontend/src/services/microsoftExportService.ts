@@ -11,6 +11,7 @@ export interface MicrosoftConnectionInfo {
     | "expired";
   userDisplayName: string | null;
   userEmail: string | null;
+  grantedScopes?: string | null;
 }
 
 export interface ExportItemResult {
