@@ -2,6 +2,121 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Current Handoff - ClawScribe Productization
+
+Updated: 2026-06-16 12:30 Europe/Vienna.
+
+### Start Here
+
+Launch Claude CLI from this folder:
+
+```bash
+cd /path/to/clawscribe
+claude
+```
+
+This is the active ClawScribe/Meetily fork. Work is on branch
+`feat/clawscribe-productization-auth-theme-exports`, tracking
+`fork/feat/clawscribe-productization-auth-theme-exports`.
+
+Recent commits, newest first:
+
+```text
+ab37b96 Fix artifact name containing slash from branch ref
+f36727a Wire live Microsoft Graph exports (auth, transport, UI)
+533beaf Fix parse_meeting_output trailing/leading character tolerance
+7f1f18e Add Microsoft Graph export foundation (mock-tested)
+e31fde5 Fix provider context parity and icon alpha
+9da318b Expose add-ons settings and preserve summary context
+6a0b727 Fix Codex app-server sign-in UX
+33d849f Use new ClawScribe app icon
+```
+
+### Product Context
+
+This fork is being productized as **ClawScribe**, a Windows-oriented, bot-free
+meeting recorder/summarizer based on Meetily Community Edition `0.4.0`.
+
+Primary goal: a Windows app that records local mic + system audio, transcribes
+locally, and can summarize through:
+
+- Built-in local AI
+- OpenAI API key
+- OpenAI-compatible endpoint
+- OpenClaw endpoint
+- Bundled Codex app-server / ChatGPT sign-in path
+
+Do not reintroduce the archived Python/FastAPI backend as a supported runtime.
+Current app behavior belongs in `frontend/src-tauri/src` and the Tauri/Next UI.
+
+### What's New Since Last Handoff
+
+1. **`parse_meeting_output` trailing-character fix** (`533beaf`)
+   - Codex/LLM providers sometimes return JSON with trailing characters.
+   - Fixed with serde_json streaming deserializer.
+   - File: `frontend/src-tauri/src/summary/codex_provider.rs`
+
+2. **Live Microsoft Graph exports** (`7f1f18e`, `f36727a`)
+   - Full Entra ID device-code OAuth 2.0 flow with OS keychain token storage.
+   - OneNote page export and Planner task export via Microsoft Graph API.
+   - Discovery commands for notebooks, sections, plans, and buckets.
+   - IntegrationsSettings UI rewritten with sign-in panel and destination pickers.
+   - App registration: client ID `4ab2ca8f-c2f1-45f3-b4ee-8bc9a511bcc8`,
+     tenant `d0627577-cabb-4909-8ea1-c5d86abfd204`.
+   - Key files:
+     - `frontend/src-tauri/src/exports/` (auth, token_store, ms_auth_state,
+       reqwest_transport, discovery, commands)
+     - `frontend/src/services/microsoftExportService.ts`
+     - `frontend/src/hooks/useMicrosoftExport.ts`
+     - `frontend/src/components/IntegrationsSettings.tsx`
+
+3. **Self-hosted GitHub Actions runner** (this session)
+   - Proxmox VM `build-runner` (VMID 103) at `build-host.local`.
+   - Windows Server 2025, 4 cores, 6GB RAM, 128GB disk.
+   - Pre-installed: VS Build Tools 2022 (C++ workload), LLVM 22.1.7,
+     Rust 1.96.0, Node.js 24.16.0, pnpm 10.34.3, Git 2.54.0.
+   - Runner labels: `self-hosted, windows, x64, clawscribe`.
+   - Workflow updated to `runs-on: [self-hosted, windows, clawscribe]`.
+   - Service: `actions.runner.runner-service.build-runner` (auto-start).
+
+### Current Release/Test Status
+
+Latest successful GitHub Actions build:
+
+- Run: `27605947274` (succeeded 2026-06-16)
+- Built from branch head at time of run.
+- Previous run `27604470818` failed (artifact name slash issue, fixed in `ab37b96`).
+
+Runtime Windows checks still pending (need actual install/run):
+
+- Start Menu/taskbar/window/About icon visually updated and transparent
+- No blank command windows during installed-app use
+- Browser login opens correctly
+- Device-code login opens verification page correctly
+- Microsoft Graph sign-in and export to OneNote/Planner
+- OpenAI-compatible/OpenClaw summary regeneration uses "Add context"
+
+### Add-ons State
+
+Settings -> Add-ons now exposes:
+
+- Teams detection status
+- OpenClaw handoff
+- Microsoft sign-in (Entra ID device-code flow)
+- OneNote export: live with notebook/section picker
+- Planner task export: live with plan/bucket picker
+- Advanced Codex app-server status
+
+### Likely Next Task
+
+1. Commit the self-hosted runner workflow change and push.
+2. Trigger a build on the self-hosted runner to validate it works.
+3. Download the artifact and have Alex perform the runtime checks above.
+
+For local Linux validation after changes, prefer focused tests first, then
+`pnpm build`, then broader `cargo test` only when the change justifies the time
+and disk cost.
+
 ## Project Overview
 
 **Meetily** is a privacy-first AI meeting assistant that captures, transcribes, and summarizes meetings entirely on local infrastructure. The supported application is the Tauri desktop app with a Rust core.
@@ -15,7 +130,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Audio Processing**: Rust (cpal, whisper-rs, professional audio mixing)
 - **Transcription**: Whisper.cpp / whisper-rs and Parakeet paths in the Tauri app
 - **App API Surface**: Tauri commands and events, not a separate FastAPI service
-- **LLM Integration**: Ollama (local), Claude, Groq, OpenRouter
+- **LLM Integration**: Built-in/local AI, OpenAI API key, OpenAI-compatible endpoints, OpenClaw, and bundled Codex app-server
 
 ## Essential Development Commands
 
@@ -387,7 +502,7 @@ $env:RUST_LOG="debug"; ./clean_run_windows.bat
   - `main`: Stable releases
   - `fix/*`: Bug fixes
   - `enhance/*`: Feature enhancements
-  - Current: `fix/audio-mixing` (working on audio pipeline improvements)
+  - Current: `feat/clawscribe-productization-auth-theme-exports` (ClawScribe productization, auth, settings, exports)
 
 ## Key Files Reference
 
