@@ -362,6 +362,26 @@ pub async fn export_meeting_markdown_to_onenote(
     Ok(report.into())
 }
 
+/// OneNote section names reject `?*\/:<>|&#'%~"` and must be fewer than 50
+/// characters (Graph errors 20153 / 20155). Replace forbidden characters with
+/// spaces, collapse whitespace, and truncate to 49 chars on a char boundary.
+fn sanitize_onenote_section_name(raw: &str) -> String {
+    const FORBIDDEN: &[char] =
+        &['?', '*', '\\', '/', ':', '<', '>', '|', '&', '#', '\'', '%', '~', '"'];
+    let replaced: String = raw
+        .chars()
+        .map(|c| if FORBIDDEN.contains(&c) { ' ' } else { c })
+        .collect();
+    let collapsed = replaced.split_whitespace().collect::<Vec<_>>().join(" ");
+    let truncated: String = collapsed.chars().take(49).collect();
+    let result = truncated.trim().to_string();
+    if result.is_empty() {
+        "ClawScribe Export".to_string()
+    } else {
+        result
+    }
+}
+
 /// Export a meeting's summary to OneNote by creating a fresh section in the
 /// chosen notebook (named by the caller, e.g. `2026-06-16: Standup`) and writing
 /// the notes into it. Creating a section is not subject to the 5,000-item
@@ -377,6 +397,8 @@ pub async fn export_meeting_to_onenote_section(
     section_name: String,
 ) -> Result<ExportReportResponse, String> {
     let (token, tenant_id, user_id) = get_token_and_context(&state).await?;
+
+    let section_name = sanitize_onenote_section_name(&section_name);
 
     let transport = ReqwestGraphTransport::new();
     let client = GraphClient::new(transport, TokioSleeper, RetryPolicy::default());

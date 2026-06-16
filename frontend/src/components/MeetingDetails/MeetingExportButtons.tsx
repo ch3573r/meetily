@@ -33,11 +33,25 @@ interface MeetingExportButtonsProps {
 
 type Busy = "onenote" | "planner" | null;
 
-/** Default section name: `YYYY-MM-DD: <meeting title>`. */
+// OneNote section names reject ? * \ / : < > | & # ' % ~ " and must be < 50
+// chars (Graph 20153 / 20155). The backend sanitizes too, but we keep the
+// prefilled value valid and show the user what will actually be created.
+const ONENOTE_SECTION_MAX = 49;
+
+function sanitizeSectionName(raw: string): string {
+  return raw
+    .replace(/[?*\\/:<>|&#'%~"]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, ONENOTE_SECTION_MAX)
+    .trim();
+}
+
+/** Default section name: `YYYY-MM-DD <meeting title>` (sanitized, truncated). */
 function defaultSectionName(title: string): string {
   const date = new Date().toISOString().slice(0, 10);
   const clean = (title || "Untitled meeting").trim();
-  return `${date}: ${clean}`;
+  return sanitizeSectionName(`${date} ${clean}`);
 }
 
 /**
@@ -85,9 +99,17 @@ export function MeetingExportButtons({
   }, [meetingId, getMarkdown]);
 
   const reportToast = useCallback(
-    (label: string, report: { overall: string; items: Array<{ webUrl: string | null }> }) => {
+    (
+      label: string,
+      report: {
+        overall: string;
+        items: Array<{ webUrl: string | null; code: string | null; status: string }>;
+      },
+    ) => {
       const webUrl = report.items.find((i) => i.webUrl)?.webUrl ?? null;
-      if (report.overall === "success" || report.overall === "skipped") {
+      // The backend serializes ExportStatus via Debug-lowercase, so success is
+      // "succeeded" (not "success").
+      if (report.overall === "succeeded") {
         toast.success(`${label} export complete`, {
           description: webUrl ? "Open in Microsoft 365" : undefined,
           action: webUrl
@@ -95,8 +117,10 @@ export function MeetingExportButtons({
             : undefined,
         });
       } else {
+        const failing = report.items.find((i) => i.code) ?? report.items[0];
+        const reason = failing?.code ?? report.overall;
         toast.warning(`${label} export finished with issues`, {
-          description: `Status: ${report.overall}`,
+          description: `Reason: ${reason}`,
         });
       }
     },
@@ -116,7 +140,7 @@ export function MeetingExportButtons({
   }, [meetingTitle]);
 
   const confirmOneNote = useCallback(async () => {
-    const name = sectionName.trim();
+    const name = sanitizeSectionName(sectionName);
     if (!name) {
       toast.info("Enter a section name.");
       return;
@@ -234,6 +258,12 @@ export function MeetingExportButtons({
               }}
               autoFocus
             />
+            <p className="text-xs text-muted-foreground">
+              Created as: <span className="font-medium">{sanitizeSectionName(sectionName) || "—"}</span>
+              {" · "}
+              {sanitizeSectionName(sectionName).length}/{ONENOTE_SECTION_MAX}.
+              OneNote disallows {"? * \\ / : < > | & # ' % ~"} and names ≥ 50 chars.
+            </p>
           </div>
           <DialogFooter>
             <Button
