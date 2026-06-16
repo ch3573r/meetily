@@ -71,21 +71,48 @@ Current app behavior belongs in `frontend/src-tauri/src` and the Tauri/Next UI.
      - `frontend/src/components/IntegrationsSettings.tsx`
 
 3. **Self-hosted GitHub Actions runner** (this session)
-   - Proxmox VM `build-runner` (VMID 103) at `build-host.local`.
-   - Windows Server 2025, 4 cores, 6GB RAM, 128GB disk.
-   - Pre-installed: VS Build Tools 2022 (C++ workload), LLVM 22.1.7,
-     Rust 1.96.0, Node.js 24.16.0, pnpm 10.34.3, Git 2.54.0.
+   - Proxmox VM `build-runner` (VMID 103) at `build-host.local` (node `pve`,
+     `infra-host.local:8006`), cloned from the `WinSrv2025` template (VMID 10000).
+   - Windows Server 2025, **6 cores**, 6GB RAM, 128GB disk.
    - Runner labels: `self-hosted, windows, x64, clawscribe`.
-   - Workflow updated to `runs-on: [self-hosted, windows, clawscribe]`.
-   - Service: `actions.runner.runner-service.build-runner` (auto-start).
+   - Workflow `runs-on: [self-hosted, windows, clawscribe]`.
+   - Service `actions.runner.runner-service.build-runner` runs as a **local admin
+     user `.\builder`** (NOT a service account — see gotchas below).
+   - Toolchain installed via choco/rustup: VS Build Tools 2022 (C++ workload),
+     **LLVM 20.1.8** (pinned), Rust 1.96.0, Node 24.16.0, pnpm 10.34.3,
+     Git 2.54.0, CMake 4.3.3, PowerShell 7, NSIS 3.12, Vulkan SDK 1.4.350.
+
+   **Non-obvious runner setup that MUST be preserved (cost real debugging):**
+   - **LLVM must be 20.x, not 22+.** bindgen 0.69 (via whisper-rs-sys) mis-parses
+     `whisper_full_params` with clang 21+, dropping 71 struct fields. The
+     workflow pins `choco install llvm --version=20.1.8 --allow-downgrade`.
+   - **Runner runs as a normal local user, not LocalSystem/NETWORK SERVICE.**
+     WiX `light.exe` ICE validation needs admin privileges (NETWORK SERVICE
+     fails). LocalSystem has privileges but its profile is under
+     `C:\WINDOWS\system32\...`, and 32-bit `makensis.exe` then hits WoW64
+     `system32`→`SysWOW64` redirection and can't load `zlib1.dll`
+     (STATUS_DLL_NOT_FOUND / "os error 2"). A local admin user
+     (`C:\Users\builder`) satisfies both.
+   - **Windows Defender was uninstalled** (`Uninstall-WindowsFeature
+     Windows-Defender`). It was content-flagging NSIS `makensis.exe` and
+     silently truncating it to a 2560-byte stub. Do not reinstall.
+   - **`git config --system --add safe.directory "*"`** is set so the build
+     can run git in the cached workspace regardless of which account created it.
+   - **Build cache is disk-local**: workflow uses `checkout clean:false` +
+     machine-level `CARGO_HOME=C:\cargo`. No GitHub Actions cache is used
+     (the `swatinem/rust-cache` step was removed), so nothing is written to the
+     repo's Actions cache storage.
 
 ### Current Release/Test Status
 
-Latest successful GitHub Actions build:
+Both CPU and Vulkan installers build green on the self-hosted runner:
 
-- Run: `27605947274` (succeeded 2026-06-16)
-- Built from branch head at time of run.
-- Previous run `27604470818` failed (artifact name slash issue, fixed in `ab37b96`).
+- CPU run `27624474317` — success, artifact
+  `clawscribe-windows-cpu-f6265aff...` (MSI + NSIS).
+- Vulkan run `27625222659` — success, artifact
+  `clawscribe-windows-vulkan-f6265aff...` (MSI + NSIS).
+- GitHub Actions storage cleaned: old artifacts + stale `windows-latest`
+  caches deleted; only the latest CPU/Vulkan artifacts retained.
 
 Runtime Windows checks still pending (need actual install/run):
 
