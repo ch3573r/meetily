@@ -115,6 +115,8 @@ pub struct RecordingState {
     recoverable_error_count: AtomicU32,
     last_error: Mutex<Option<AudioError>>,
     error_callback: Mutex<Option<Box<dyn Fn(&AudioError) + Send + Sync>>>,
+    // Non-fatal warnings surfaced to the UI (e.g. system audio is silent).
+    warning_callback: Mutex<Option<Box<dyn Fn(&str) + Send + Sync>>>,
 
     // Statistics
     stats: Mutex<RecordingStats>,
@@ -141,6 +143,7 @@ impl RecordingState {
             recoverable_error_count: AtomicU32::new(0),
             last_error: Mutex::new(None),
             error_callback: Mutex::new(None),
+            warning_callback: Mutex::new(None),
             stats: Mutex::new(RecordingStats::default()),
             recording_start: Mutex::new(None),
             pause_start: Mutex::new(None),
@@ -297,6 +300,21 @@ impl RecordingState {
         *self.error_callback.lock().unwrap() = Some(Box::new(callback));
     }
 
+    pub fn set_warning_callback<F>(&self, callback: F)
+    where
+        F: Fn(&str) + Send + Sync + 'static,
+    {
+        *self.warning_callback.lock().unwrap() = Some(Box::new(callback));
+    }
+
+    /// Surface a non-fatal warning to the UI. Does not affect recording state.
+    pub fn report_warning(&self, message: &str) {
+        log::warn!("Recording warning: {message}");
+        if let Some(callback) = self.warning_callback.lock().unwrap().as_ref() {
+            callback(message);
+        }
+    }
+
     pub fn report_error(&self, error: AudioError) {
         let count = self.error_count.fetch_add(1, Ordering::SeqCst) + 1;
 
@@ -446,6 +464,7 @@ impl Default for RecordingState {
             recoverable_error_count: AtomicU32::new(0),
             last_error: Mutex::new(None),
             error_callback: Mutex::new(None),
+            warning_callback: Mutex::new(None),
             stats: Mutex::new(RecordingStats::default()),
             recording_start: Mutex::new(None),
             pause_start: Mutex::new(None),

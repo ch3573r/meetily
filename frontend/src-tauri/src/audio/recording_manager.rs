@@ -458,6 +458,14 @@ impl RecordingManager {
         self.state.set_error_callback(callback);
     }
 
+    /// Set a callback for non-fatal warnings surfaced to the UI.
+    pub fn set_warning_callback<F>(&self, callback: F)
+    where
+        F: Fn(&str) + Send + Sync + 'static,
+    {
+        self.state.set_warning_callback(callback);
+    }
+
     /// Check if there's a fatal error
     pub fn has_fatal_error(&self) -> bool {
         self.state.has_fatal_error()

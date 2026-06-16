@@ -244,6 +244,12 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
         let _ = app_for_error.emit("recording-error", error.user_message());
     });
 
+    // Surface non-fatal warnings (e.g. the chosen system-audio device is silent).
+    let app_for_warning = app.clone();
+    manager.set_warning_callback(move |message| {
+        let _ = app_for_warning.emit("system-audio-warning", message);
+    });
+
     // Start recording with resolved devices (replaces start_recording_with_defaults_and_auto_save call)
     let transcription_receiver = manager
         .start_recording(microphone_device, system_device, auto_save)
@@ -420,6 +426,12 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
     let app_for_error = app.clone();
     manager.set_error_callback(move |error| {
         let _ = app_for_error.emit("recording-error", error.user_message());
+    });
+
+    // Surface non-fatal warnings (e.g. the chosen system-audio device is silent).
+    let app_for_warning = app.clone();
+    manager.set_warning_callback(move |message| {
+        let _ = app_for_warning.emit("system-audio-warning", message);
     });
 
     // Start recording with specified devices and auto_save setting

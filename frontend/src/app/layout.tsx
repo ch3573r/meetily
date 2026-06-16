@@ -133,6 +133,20 @@ export default function RootLayout({
     };
   }, [showOnboarding]);
 
+  // Surface non-fatal system-audio warnings (e.g. the selected loopback device
+  // is silent) raised by the recording pipeline.
+  useEffect(() => {
+    const unlisten = listen<string>('system-audio-warning', (event) => {
+      toast.warning('No system audio detected', {
+        description: event.payload,
+        duration: 12000,
+      });
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
   // Handle file drop for audio import
   const handleFileDrop = useCallback((paths: string[]) => {
     // Check if beta features are enabled (read from localStorage directly since we're outside ConfigProvider)

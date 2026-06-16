@@ -828,6 +828,16 @@ impl AudioPipeline {
     pub async fn run(mut self) -> Result<()> {
         info!("VAD-driven audio pipeline started - segments sent in real-time based on speech detection");
 
+        // System-audio silence detection: if a system device is selected but no
+        // non-silent samples ever arrive, the chosen loopback endpoint isn't the
+        // one audio actually plays through (e.g. an idle digital output). Warn
+        // once so it isn't a silent failure.
+        let run_start = std::time::Instant::now();
+        let mut system_audio_seen = false;
+        let mut silence_warned = false;
+        const SILENCE_GRACE_SECS: u64 = 15;
+        const SILENCE_PEAK_THRESHOLD: f32 = 0.001; // ~-60 dBFS
+
         // CRITICAL FIX: Continue processing until channel is closed, not based on recording state
         // This ensures ALL chunks are processed during shutdown, fixing premature meeting completion
         // Previous bug: Loop checked `while self.state.is_recording()` which caused early exit when
@@ -888,11 +898,36 @@ impl AudioPipeline {
                         self.last_summary_time = std::time::Instant::now();
                     }
 
+                    // Track whether the system-audio stream is actually carrying
+                    // sound (for the silence warning below).
+                    if !system_audio_seen && chunk.device_type == DeviceType::System {
+                        let peak = chunk
+                            .data
+                            .iter()
+                            .fold(0.0f32, |m, &x| m.max(x.abs()));
+                        if peak > SILENCE_PEAK_THRESHOLD {
+                            system_audio_seen = true;
+                        }
+                    }
+
                     // STEP 1: Add raw audio to ring buffer for mixing
                     // Microphone audio is already normalized at capture level (AudioCapture)
                     // System audio remains raw
                     self.ring_buffer
                         .add_samples(chunk.device_type.clone(), chunk.data);
+
+                    // Warn once if a system device was chosen but stays silent.
+                    if !silence_warned
+                        && !system_audio_seen
+                        && run_start.elapsed().as_secs() >= SILENCE_GRACE_SECS
+                        && self.state.is_recording()
+                        && self.state.get_system_device().is_some()
+                    {
+                        self.state.report_warning(
+                            "No system audio detected. The selected system-audio device may not be the one your sound plays through — pick the output device your meeting audio actually uses (Settings → audio device).",
+                        );
+                        silence_warned = true;
+                    }
 
                     // STEP 2: Mix audio in fixed windows when both streams have sufficient data
                     while self.ring_buffer.can_mix() {
