@@ -7,6 +7,7 @@ import { EmptyStateSummary } from '@/components/EmptyStateSummary';
 import { ModelConfig } from '@/components/ModelSettingsModal';
 import { SummaryGeneratorButtonGroup } from './SummaryGeneratorButtonGroup';
 import { SummaryUpdaterButtonGroup } from './SummaryUpdaterButtonGroup';
+import { MeetingExportButtons } from './MeetingExportButtons';
 import Analytics from '@/lib/analytics';
 import { useEffect, useRef, useState, RefObject } from 'react';
 import { toast } from 'sonner';
@@ -301,6 +302,17 @@ export function SummaryPanel({
                 }}
                 onOpenFolder={onOpenFolder}
                 hasSummary={!!aiSummary}
+              />
+            </div>
+
+            {/* Microsoft export (OneNote always; Planner when tasks exist) */}
+            <div className="flex-shrink-0">
+              <MeetingExportButtons
+                meetingId={meeting.id}
+                meetingTitle={meetingTitle}
+                getMarkdown={async () =>
+                  (await summaryRef.current?.getMarkdown()) ?? ''
+                }
               />
             </div>
           </div>

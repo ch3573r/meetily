@@ -340,6 +340,7 @@ mod tests {
                 },
             ],
             transcript_excerpt: None,
+            summary_html: None,
         }
     }
 

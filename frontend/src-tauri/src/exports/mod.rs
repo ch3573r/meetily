@@ -23,6 +23,7 @@ pub mod error;
 pub mod exporter;
 pub mod interactive_auth;
 pub mod ledger;
+pub mod markdown_notes;
 pub mod model;
 pub mod ms_auth_state;
 pub mod onenote;
@@ -80,5 +81,6 @@ pub fn meeting_export_from_notes(
         decisions,
         action_items,
         transcript_excerpt,
+        summary_html: None,
     }
 }

@@ -99,7 +99,11 @@ fn build_notes_xhtml(meeting: &MeetingExport) -> String {
     body.push_str("<p><b>Recorded by:</b> ClawScribe</p>");
 
     body.push_str("<h2>Summary</h2>");
-    body.push_str(&format!("<p>{}</p>", escape_xml(&meeting.executive_summary)));
+    match &meeting.summary_html {
+        // Pre-rendered, already-sanitized XHTML (e.g. a full markdown summary).
+        Some(html) if !html.trim().is_empty() => body.push_str(html),
+        _ => body.push_str(&format!("<p>{}</p>", escape_xml(&meeting.executive_summary))),
+    }
 
     if !meeting.decisions.is_empty() {
         body.push_str("<h2>Decisions</h2><ul>");
@@ -225,6 +229,7 @@ mod tests {
                 due_date: Some("2026-06-20".into()),
             }],
             transcript_excerpt: transcript,
+            summary_html: None,
         }
     }
 

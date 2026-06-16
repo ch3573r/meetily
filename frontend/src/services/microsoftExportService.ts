@@ -91,6 +91,40 @@ export const microsoftExportService = {
     });
   },
 
+  async summaryHasActionItems(markdown: string): Promise<boolean> {
+    return invoke<boolean>("summary_has_action_items", { markdown });
+  },
+
+  async exportMeetingMarkdownToOneNote(
+    meetingId: string,
+    meetingTitle: string,
+    markdown: string,
+    sectionId: string,
+  ): Promise<ExportReport> {
+    return invoke<ExportReport>("export_meeting_markdown_to_onenote", {
+      meetingId,
+      meetingTitle,
+      markdown,
+      sectionId,
+    });
+  },
+
+  async exportMeetingMarkdownToPlanner(
+    meetingId: string,
+    meetingTitle: string,
+    markdown: string,
+    planId: string,
+    bucketId: string,
+  ): Promise<ExportReport> {
+    return invoke<ExportReport>("export_meeting_markdown_to_planner", {
+      meetingId,
+      meetingTitle,
+      markdown,
+      planId,
+      bucketId,
+    });
+  },
+
   async listNotebooks(): Promise<NotebookInfo[]> {
     return invoke<NotebookInfo[]>("list_onenote_notebooks");
   },

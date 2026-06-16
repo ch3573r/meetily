@@ -190,6 +190,7 @@ mod tests {
             decisions: vec![],
             action_items: vec![],
             transcript_excerpt: None,
+            summary_html: None,
         };
         let a = action("action-1", "Send proposal");
         let k1 = dedupe_key("tenant", "user", &dest(), &meeting, &a);

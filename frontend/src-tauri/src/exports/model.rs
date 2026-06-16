@@ -100,6 +100,12 @@ pub struct MeetingExport {
     pub action_items: Vec<ExportActionItem>,
     /// Optional transcript text. May be split across OneNote pages.
     pub transcript_excerpt: Option<String>,
+    /// Optional pre-rendered XHTML for the OneNote "Summary" section. When set,
+    /// it is emitted verbatim (already sanitized) instead of escaping
+    /// `executive_summary` into one paragraph — so a full markdown summary keeps
+    /// its headings, lists, and emphasis on the exported page.
+    #[serde(default)]
+    pub summary_html: Option<String>,
 }
 
 impl MeetingExport {
@@ -149,6 +155,7 @@ mod tests {
                 due_date: None,
             }],
             transcript_excerpt: None,
+            summary_html: None,
         };
 
         let h1 = base.artifact_hash();

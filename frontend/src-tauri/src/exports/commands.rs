@@ -284,6 +284,107 @@ pub async fn export_to_planner(
     Ok(report.into())
 }
 
+// ── Per-meeting markdown export ───────────────────────────────────────────
+// These power the export buttons in a meeting's summary view. The summary is
+// stored as markdown, so OneNote receives the whole summary rendered to XHTML
+// and Planner receives the action items parsed out of it.
+
+/// Whether a summary's markdown contains parseable action items (drives whether
+/// the Planner export button is shown for a meeting).
+#[tauri::command]
+pub fn summary_has_action_items(markdown: String) -> bool {
+    crate::exports::markdown_notes::has_action_items(&markdown)
+}
+
+#[tauri::command]
+pub async fn export_meeting_markdown_to_onenote(
+    state: tauri::State<'_, MicrosoftAuthState>,
+    meeting_id: String,
+    meeting_title: String,
+    markdown: String,
+    section_id: String,
+) -> Result<ExportReportResponse, String> {
+    let (token, tenant_id, user_id) = get_token_and_context(&state).await?;
+
+    let meeting_export = crate::exports::markdown_notes::meeting_export_for_onenote(
+        &meeting_id,
+        &meeting_title,
+        None,
+        &markdown,
+    );
+
+    let transport = ReqwestGraphTransport::new();
+    let client = GraphClient::new(transport, TokioSleeper, RetryPolicy::default());
+    let mut ledger = ExportLedger::new(&meeting_id);
+
+    let ctx = ExportContext {
+        tenant_id: &tenant_id,
+        user_id: &user_id,
+        bearer_token: &token,
+    };
+
+    let report = exporter::export_onenote(
+        &client,
+        &mut ledger,
+        &meeting_export,
+        &OneNoteTarget { section_id },
+        &ctx,
+    )
+    .await;
+
+    if report.connection_state == Some(MicrosoftConnectionState::Expired) {
+        let mut inner = state.inner.write().await;
+        inner.connection_state = MicrosoftConnectionState::Expired;
+    }
+
+    Ok(report.into())
+}
+
+#[tauri::command]
+pub async fn export_meeting_markdown_to_planner(
+    state: tauri::State<'_, MicrosoftAuthState>,
+    meeting_id: String,
+    meeting_title: String,
+    markdown: String,
+    plan_id: String,
+    bucket_id: String,
+) -> Result<ExportReportResponse, String> {
+    let (token, tenant_id, user_id) = get_token_and_context(&state).await?;
+
+    let meeting_export = crate::exports::markdown_notes::meeting_export_for_planner(
+        &meeting_id,
+        &meeting_title,
+        None,
+        &markdown,
+    );
+
+    if meeting_export.action_items.is_empty() {
+        return Err("No action items were found in this meeting's summary.".to_string());
+    }
+
+    let transport = ReqwestGraphTransport::new();
+    let client = GraphClient::new(transport, TokioSleeper, RetryPolicy::default());
+    let mut ledger = ExportLedger::new(&meeting_id);
+    let destination = PlannerDestination { plan_id, bucket_id };
+
+    let ctx = ExportContext {
+        tenant_id: &tenant_id,
+        user_id: &user_id,
+        bearer_token: &token,
+    };
+
+    let report = exporter::export_planner(&client, &mut ledger, &meeting_export, &destination, &ctx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if report.connection_state == Some(MicrosoftConnectionState::Expired) {
+        let mut inner = state.inner.write().await;
+        inner.connection_state = MicrosoftConnectionState::Expired;
+    }
+
+    Ok(report.into())
+}
+
 // ── Discovery commands ──────────────────────────────────────────────────
 
 #[tauri::command]

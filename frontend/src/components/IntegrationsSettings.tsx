@@ -20,6 +20,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { teamsDetectionService, TeamsDetectionStatus } from "@/services/teamsDetectionService";
 import { useMicrosoftExport } from "@/hooks/useMicrosoftExport";
+import { getExportDestinations, setExportDestinations } from "@/lib/exportDestinations";
 
 type AddonState = "ready" | "prompt" | "planned" | "provider" | "advanced" | "connected" | "connecting";
 
@@ -203,8 +204,9 @@ function MicrosoftSignInPanel() {
 
 function OneNotePanel() {
   const ms = useMicrosoftExport();
-  const [selectedNotebook, setSelectedNotebook] = useState<string>("");
-  const [selectedSection, setSelectedSection] = useState<string>("");
+  const saved = getExportDestinations();
+  const [selectedNotebook, setSelectedNotebook] = useState<string>(saved.notebookId ?? "");
+  const [selectedSection, setSelectedSection] = useState<string>(saved.sectionId ?? "");
 
   const isConnected = ms.connection.state === "connected";
 
@@ -214,12 +216,25 @@ function OneNotePanel() {
     }
   }, [isConnected]);
 
+  // Load the sections for whatever notebook is selected (including a restored
+  // one). The selected section is only cleared on an explicit notebook change
+  // (handled in the picker onChange), so a saved destination survives a reload.
   useEffect(() => {
     if (selectedNotebook) {
       void ms.loadSections(selectedNotebook);
-      setSelectedSection("");
     }
   }, [selectedNotebook]);
+
+  // Persist the chosen destination so the per-meeting export buttons can use it.
+  useEffect(() => {
+    if (!selectedSection) return;
+    setExportDestinations({
+      notebookId: selectedNotebook,
+      notebookName: ms.notebooks.find((n) => n.id === selectedNotebook)?.displayName,
+      sectionId: selectedSection,
+      sectionName: ms.sections.find((s) => s.id === selectedSection)?.displayName,
+    });
+  }, [selectedSection, selectedNotebook, ms.notebooks, ms.sections]);
 
   const panelState: AddonState = isConnected ? "connected" : "planned";
   const detail = isConnected
@@ -238,7 +253,10 @@ function OneNotePanel() {
               <select
                 className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
                 value={selectedNotebook}
-                onChange={(e) => setSelectedNotebook(e.target.value)}
+                onChange={(e) => {
+                  setSelectedNotebook(e.target.value);
+                  setSelectedSection("");
+                }}
                 disabled={ms.loadingNotebooks}
               >
                 <option value="">
@@ -292,8 +310,9 @@ function OneNotePanel() {
 
 function PlannerPanel() {
   const ms = useMicrosoftExport();
-  const [selectedPlan, setSelectedPlan] = useState<string>("");
-  const [selectedBucket, setSelectedBucket] = useState<string>("");
+  const saved = getExportDestinations();
+  const [selectedPlan, setSelectedPlan] = useState<string>(saved.planId ?? "");
+  const [selectedBucket, setSelectedBucket] = useState<string>(saved.bucketId ?? "");
 
   const isConnected = ms.connection.state === "connected";
 
@@ -306,9 +325,18 @@ function PlannerPanel() {
   useEffect(() => {
     if (selectedPlan) {
       void ms.loadBuckets(selectedPlan);
-      setSelectedBucket("");
     }
   }, [selectedPlan]);
+
+  useEffect(() => {
+    if (!selectedBucket) return;
+    setExportDestinations({
+      planId: selectedPlan,
+      planName: ms.plans.find((p) => p.id === selectedPlan)?.title,
+      bucketId: selectedBucket,
+      bucketName: ms.buckets.find((b) => b.id === selectedBucket)?.name,
+    });
+  }, [selectedBucket, selectedPlan, ms.plans, ms.buckets]);
 
   const panelState: AddonState = isConnected ? "connected" : "planned";
   const detail = isConnected
@@ -327,7 +355,10 @@ function PlannerPanel() {
               <select
                 className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
                 value={selectedPlan}
-                onChange={(e) => setSelectedPlan(e.target.value)}
+                onChange={(e) => {
+                  setSelectedPlan(e.target.value);
+                  setSelectedBucket("");
+                }}
                 disabled={ms.loadingPlans}
               >
                 <option value="">
