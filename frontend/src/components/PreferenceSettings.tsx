@@ -1,36 +1,36 @@
-"use client"
+"use client";
 
-import { useCallback, useEffect, useState, useRef } from "react"
-import { Switch } from "./ui/switch"
-import { FolderOpen, RefreshCw, ServerCog } from "lucide-react"
-import { invoke } from "@tauri-apps/api/core"
-import Analytics from "@/lib/analytics"
-import { useConfig, NotificationSettings } from "@/contexts/ConfigContext"
-import { ThemeSettings } from "./ThemeSettings"
+import { useCallback, useEffect, useState, useRef } from "react";
+import { Switch } from "./ui/switch";
+import { FolderOpen, RefreshCw, ServerCog } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
+import Analytics from "@/lib/analytics";
+import { useConfig, NotificationSettings } from "@/contexts/ConfigContext";
+import { ThemeSettings } from "./ThemeSettings";
 
 type OpenClawSubmissionStatus = {
-  state: string
-  updated_at: string
-  status_code?: number | null
-  message: string
-  endpoint?: string | null
-  source?: string | null
-  idempotency_key?: string | null
-}
+  state: string;
+  updated_at: string;
+  status_code?: number | null;
+  message: string;
+  endpoint?: string | null;
+  source?: string | null;
+  idempotency_key?: string | null;
+};
 
 type OpenClawConfigStatus = {
-  enabled: boolean
-  configured: boolean
-  ready: boolean
-  bearer_token_configured: boolean
-  endpoint: string
-  source: string
-  status_message: string
-  config_path: string
-  last_status_path: string
-  include_audio_path: boolean
-  last_submission?: OpenClawSubmissionStatus | null
-}
+  enabled: boolean;
+  configured: boolean;
+  ready: boolean;
+  bearer_token_configured: boolean;
+  endpoint: string;
+  source: string;
+  status_message: string;
+  config_path: string;
+  last_status_path: string;
+  include_audio_path: boolean;
+  last_submission?: OpenClawSubmissionStatus | null;
+};
 
 export function PreferenceSettings() {
   const {
@@ -38,14 +38,20 @@ export function PreferenceSettings() {
     storageLocations,
     isLoadingPreferences,
     loadPreferences,
-    updateNotificationSettings
+    updateNotificationSettings,
   } = useConfig();
 
-  const [notificationsEnabled, setNotificationsEnabled] = useState<boolean | null>(null);
+  const [notificationsEnabled, setNotificationsEnabled] = useState<
+    boolean | null
+  >(null);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
-  const [previousNotificationsEnabled, setPreviousNotificationsEnabled] = useState<boolean | null>(null);
-  const [openClawStatus, setOpenClawStatus] = useState<OpenClawConfigStatus | null>(null);
-  const [openClawStatusError, setOpenClawStatusError] = useState<string | null>(null);
+  const [previousNotificationsEnabled, setPreviousNotificationsEnabled] =
+    useState<boolean | null>(null);
+  const [openClawStatus, setOpenClawStatus] =
+    useState<OpenClawConfigStatus | null>(null);
+  const [openClawStatusError, setOpenClawStatusError] = useState<string | null>(
+    null,
+  );
   const [isOpenClawStatusLoading, setIsOpenClawStatusLoading] = useState(false);
   const hasTrackedViewRef = useRef(false);
 
@@ -54,7 +60,9 @@ export function PreferenceSettings() {
     setOpenClawStatusError(null);
 
     try {
-      const status = await invoke('get_openclaw_config_status') as OpenClawConfigStatus;
+      const status = (await invoke(
+        "get_openclaw_config_status",
+      )) as OpenClawConfigStatus;
       setOpenClawStatus(status);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -79,14 +87,17 @@ export function PreferenceSettings() {
     const trackPreferencesViewed = async () => {
       // Wait for notification settings to be available (either from cache or after loading)
       if (notificationSettings) {
-        await Analytics.track('preferences_viewed', {
-          notifications_enabled: notificationSettings.notification_preferences.show_recording_started ? 'true' : 'false'
+        await Analytics.track("preferences_viewed", {
+          notifications_enabled: notificationSettings.notification_preferences
+            .show_recording_started
+            ? "true"
+            : "false",
         });
         hasTrackedViewRef.current = true;
       } else if (!isLoadingPreferences) {
         // If not loading and no settings available, track with default value
-        await Analytics.track('preferences_viewed', {
-          notifications_enabled: 'false'
+        await Analytics.track("preferences_viewed", {
+          notifications_enabled: "false",
         });
         hasTrackedViewRef.current = true;
       }
@@ -115,11 +126,16 @@ export function PreferenceSettings() {
         setIsInitialLoad(false);
       }
     }
-  }, [notificationSettings, isLoadingPreferences, isInitialLoad])
+  }, [notificationSettings, isLoadingPreferences, isInitialLoad]);
 
   useEffect(() => {
     // Skip update on initial load or if value hasn't actually changed
-    if (isInitialLoad || notificationsEnabled === null || notificationsEnabled === previousNotificationsEnabled) return;
+    if (
+      isInitialLoad ||
+      notificationsEnabled === null ||
+      notificationsEnabled === previousNotificationsEnabled
+    )
+      return;
     if (!notificationSettings) return;
 
     const handleUpdateNotificationSettings = async () => {
@@ -133,43 +149,57 @@ export function PreferenceSettings() {
             ...notificationSettings.notification_preferences,
             show_recording_started: notificationsEnabled,
             show_recording_stopped: notificationsEnabled,
-          }
+          },
         };
 
-        console.log("Calling updateNotificationSettings with:", updatedSettings);
+        console.log(
+          "Calling updateNotificationSettings with:",
+          updatedSettings,
+        );
         await updateNotificationSettings(updatedSettings);
         setPreviousNotificationsEnabled(notificationsEnabled);
-        console.log("Successfully updated notification settings to:", notificationsEnabled);
+        console.log(
+          "Successfully updated notification settings to:",
+          notificationsEnabled,
+        );
 
         // Track notification preference change - only fires when user manually toggles
-        await Analytics.track('notification_settings_changed', {
-          notifications_enabled: notificationsEnabled.toString()
+        await Analytics.track("notification_settings_changed", {
+          notifications_enabled: notificationsEnabled.toString(),
         });
       } catch (error) {
-        console.error('Failed to update notification settings:', error);
+        console.error("Failed to update notification settings:", error);
       }
     };
 
     handleUpdateNotificationSettings();
-  }, [notificationsEnabled, notificationSettings, isInitialLoad, previousNotificationsEnabled, updateNotificationSettings])
+  }, [
+    notificationsEnabled,
+    notificationSettings,
+    isInitialLoad,
+    previousNotificationsEnabled,
+    updateNotificationSettings,
+  ]);
 
-  const handleOpenFolder = async (folderType: 'database' | 'models' | 'recordings') => {
+  const handleOpenFolder = async (
+    folderType: "database" | "models" | "recordings",
+  ) => {
     try {
       switch (folderType) {
-        case 'database':
-          await invoke('open_database_folder');
+        case "database":
+          await invoke("open_database_folder");
           break;
-        case 'models':
-          await invoke('open_models_folder');
+        case "models":
+          await invoke("open_models_folder");
           break;
-        case 'recordings':
-          await invoke('open_recordings_folder');
+        case "recordings":
+          await invoke("open_recordings_folder");
           break;
       }
 
       // Track storage folder access
-      await Analytics.track('storage_folder_opened', {
-        folder_type: folderType
+      await Analytics.track("storage_folder_opened", {
+        folder_type: folderType,
       });
     } catch (error) {
       console.error(`Failed to open ${folderType} folder:`, error);
@@ -178,46 +208,60 @@ export function PreferenceSettings() {
 
   // Show loading only if we're actually loading and don't have cached data
   if (isLoadingPreferences && !notificationSettings && !storageLocations) {
-    return <div className="max-w-2xl mx-auto p-6">Loading Preferences...</div>
+    return <div className="max-w-2xl mx-auto p-6">Loading Preferences...</div>;
   }
 
   // Show loading if notificationsEnabled hasn't been determined yet
   if (notificationsEnabled === null && !isLoadingPreferences) {
-    return <div className="max-w-2xl mx-auto p-6">Loading Preferences...</div>
+    return <div className="max-w-2xl mx-auto p-6">Loading Preferences...</div>;
   }
 
   // Ensure we have a boolean value for the Switch component
   const notificationsEnabledValue = notificationsEnabled ?? false;
 
   return (
-    <div className="space-y-6">
+    <div className="grid gap-5 xl:grid-cols-2">
       <ThemeSettings />
 
       {/* Notifications Section */}
-      <div className="bg-card rounded-lg border border-border p-6 shadow-sm">
+      <div className="rounded-3xl border border-white/10 bg-[#0e1723] p-6 shadow-xl shadow-black/20">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-lg font-semibold text-card-foreground mb-2">Notifications</h3>
-            <p className="text-sm text-muted-foreground">Enable or disable notifications of start and end of meeting</p>
+            <h3 className="text-lg font-semibold text-slate-100 mb-2">
+              Notifications
+            </h3>
+            <p className="text-sm text-slate-400">
+              Enable or disable notifications of start and end of meeting
+            </p>
           </div>
-          <Switch checked={notificationsEnabledValue} onCheckedChange={setNotificationsEnabled} />
+          <Switch
+            checked={notificationsEnabledValue}
+            onCheckedChange={setNotificationsEnabled}
+          />
         </div>
       </div>
 
-      <div className="bg-card rounded-lg border border-border p-6 shadow-sm">
+      <div className="rounded-3xl border border-white/10 bg-[#0e1723] p-6 shadow-xl shadow-black/20">
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-start gap-3">
-            <div className="mt-1 rounded-md bg-secondary p-2 text-secondary-foreground">
+            <div className="mt-1 rounded-xl bg-white/[0.05] p-2 text-slate-200">
               <ServerCog className="h-5 w-5" />
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-card-foreground mb-2">OpenClaw Handoff</h3>
+              <h3 className="text-lg font-semibold text-slate-100 mb-2">
+                OpenClaw Handoff
+              </h3>
               <div className="flex flex-wrap items-center gap-2">
-                <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${openClawStatus?.ready ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}`}>
-                  {openClawStatus?.ready ? 'Ready' : 'Not ready'}
+                <span
+                  className={`rounded-full px-2.5 py-1 text-xs font-medium ${openClawStatus?.ready ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800"}`}
+                >
+                  {openClawStatus?.ready ? "Ready" : "Not ready"}
                 </span>
-                <span className="text-sm text-muted-foreground">
-                  {openClawStatus?.status_message ?? (openClawStatusError ? 'Status unavailable' : 'Loading status')}
+                <span className="text-sm text-slate-400">
+                  {openClawStatus?.status_message ??
+                    (openClawStatusError
+                      ? "Status unavailable"
+                      : "Loading status")}
                 </span>
               </div>
             </div>
@@ -225,63 +269,87 @@ export function PreferenceSettings() {
           <button
             onClick={() => void loadOpenClawStatus()}
             disabled={isOpenClawStatusLoading}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-input text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 text-slate-400 transition-colors hover:bg-white/[0.08] disabled:opacity-50"
             aria-label="Refresh OpenClaw handoff status"
             title="Refresh OpenClaw handoff status"
           >
-            <RefreshCw className={`h-4 w-4 ${isOpenClawStatusLoading ? 'animate-spin' : ''}`} />
+            <RefreshCw
+              className={`h-4 w-4 ${isOpenClawStatusLoading ? "animate-spin" : ""}`}
+            />
           </button>
         </div>
 
         {openClawStatusError ? (
-          <div className="mt-4 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+          <div className="mt-4 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
             {openClawStatusError}
           </div>
         ) : (
           <div className="mt-5 grid gap-3 text-sm md:grid-cols-2">
             <div>
-              <div className="text-xs font-medium uppercase text-muted-foreground">Endpoint</div>
-              <div className="mt-1 break-all font-mono text-xs text-card-foreground">
-                {openClawStatus?.endpoint ?? 'Loading...'}
+              <div className="text-xs font-medium uppercase text-slate-400">
+                Endpoint
+              </div>
+              <div className="mt-1 break-all font-mono text-xs text-slate-100">
+                {openClawStatus?.endpoint ?? "Loading..."}
               </div>
             </div>
             <div>
-              <div className="text-xs font-medium uppercase text-muted-foreground">Source</div>
-              <div className="mt-1 font-mono text-xs text-card-foreground">
-                {openClawStatus?.source ?? 'Loading...'}
+              <div className="text-xs font-medium uppercase text-slate-400">
+                Source
+              </div>
+              <div className="mt-1 font-mono text-xs text-slate-100">
+                {openClawStatus?.source ?? "Loading..."}
               </div>
             </div>
             <div>
-              <div className="text-xs font-medium uppercase text-muted-foreground">Bearer Token</div>
-              <div className="mt-1 text-card-foreground">
-                {openClawStatus?.bearer_token_configured ? 'Configured' : 'Missing'}
+              <div className="text-xs font-medium uppercase text-slate-400">
+                Bearer Token
+              </div>
+              <div className="mt-1 text-slate-100">
+                {openClawStatus?.bearer_token_configured
+                  ? "Configured"
+                  : "Missing"}
               </div>
             </div>
             <div>
-              <div className="text-xs font-medium uppercase text-muted-foreground">Audio Path</div>
-              <div className="mt-1 text-card-foreground">
-                {openClawStatus?.include_audio_path ? 'Included' : 'Not included'}
+              <div className="text-xs font-medium uppercase text-slate-400">
+                Audio Path
+              </div>
+              <div className="mt-1 text-slate-100">
+                {openClawStatus?.include_audio_path
+                  ? "Included"
+                  : "Not included"}
               </div>
             </div>
             <div className="md:col-span-2">
-              <div className="text-xs font-medium uppercase text-muted-foreground">Config File</div>
-              <div className="mt-1 break-all font-mono text-xs text-card-foreground">
-                {openClawStatus?.config_path ?? 'Loading...'}
+              <div className="text-xs font-medium uppercase text-slate-400">
+                Config File
+              </div>
+              <div className="mt-1 break-all font-mono text-xs text-slate-100">
+                {openClawStatus?.config_path ?? "Loading..."}
               </div>
             </div>
             {openClawStatus?.last_submission && (
-              <div className="md:col-span-2 rounded-md bg-muted p-3">
+              <div className="md:col-span-2 rounded-xl bg-white/[0.04] p-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs font-medium uppercase text-muted-foreground">Last Handoff</span>
-                  <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground">
+                  <span className="text-xs font-medium uppercase text-slate-400">
+                    Last Handoff
+                  </span>
+                  <span className="rounded-full bg-white/[0.05] px-2 py-0.5 text-xs font-medium text-slate-200">
                     {openClawStatus.last_submission.state}
                   </span>
                   {openClawStatus.last_submission.status_code && (
-                    <span className="text-xs text-muted-foreground">HTTP {openClawStatus.last_submission.status_code}</span>
+                    <span className="text-xs text-slate-400">
+                      HTTP {openClawStatus.last_submission.status_code}
+                    </span>
                   )}
                 </div>
-                <div className="mt-2 text-sm text-card-foreground">{openClawStatus.last_submission.message}</div>
-                <div className="mt-1 text-xs text-muted-foreground">{openClawStatus.last_submission.updated_at}</div>
+                <div className="mt-2 text-sm text-slate-100">
+                  {openClawStatus.last_submission.message}
+                </div>
+                <div className="mt-1 text-xs text-slate-400">
+                  {openClawStatus.last_submission.updated_at}
+                </div>
               </div>
             )}
           </div>
@@ -289,22 +357,24 @@ export function PreferenceSettings() {
       </div>
 
       {/* Data Storage Locations Section */}
-      <div className="bg-card rounded-lg border border-border p-6 shadow-sm">
-        <h3 className="text-lg font-semibold text-card-foreground mb-4">Data Storage Locations</h3>
-        <p className="text-sm text-muted-foreground mb-6">
+      <div className="rounded-3xl border border-white/10 bg-[#0e1723] p-6 shadow-xl shadow-black/20">
+        <h3 className="text-lg font-semibold text-slate-100 mb-4">
+          Data Storage Locations
+        </h3>
+        <p className="text-sm text-slate-400 mb-6">
           View and access where ClawScribe stores your data
         </p>
 
         <div className="space-y-4">
           {/* Database Location */}
-          {/* <div className="p-4 border rounded-lg bg-gray-50">
+          {/* <div className="p-4 border rounded-3xl bg-gray-50">
             <div className="font-medium mb-2">Database</div>
             <div className="text-sm text-gray-600 mb-3 break-all font-mono text-xs">
               {storageLocations?.database || 'Loading...'}
             </div>
             <button
               onClick={() => handleOpenFolder('database')}
-              className="flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-100 transition-colors"
+              className="flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 rounded-xl hover:bg-gray-100 transition-colors"
             >
               <FolderOpen className="w-4 h-4" />
               Open Folder
@@ -312,14 +382,14 @@ export function PreferenceSettings() {
           </div> */}
 
           {/* Models Location */}
-          {/* <div className="p-4 border rounded-lg bg-gray-50">
+          {/* <div className="p-4 border rounded-3xl bg-gray-50">
             <div className="font-medium mb-2">Whisper Models</div>
             <div className="text-sm text-gray-600 mb-3 break-all font-mono text-xs">
               {storageLocations?.models || 'Loading...'}
             </div>
             <button
               onClick={() => handleOpenFolder('models')}
-              className="flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-100 transition-colors"
+              className="flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 rounded-xl hover:bg-gray-100 transition-colors"
             >
               <FolderOpen className="w-4 h-4" />
               Open Folder
@@ -327,14 +397,14 @@ export function PreferenceSettings() {
           </div> */}
 
           {/* Recordings Location */}
-          <div className="p-4 border rounded-lg bg-muted">
+          <div className="p-4 border rounded-3xl bg-white/[0.04]">
             <div className="font-medium mb-2">Meeting Recordings</div>
-            <div className="text-sm text-muted-foreground mb-3 break-all font-mono text-xs">
-              {storageLocations?.recordings || 'Loading...'}
+            <div className="text-sm text-slate-400 mb-3 break-all font-mono text-xs">
+              {storageLocations?.recordings || "Loading..."}
             </div>
             <button
-              onClick={() => handleOpenFolder('recordings')}
-              className="flex items-center gap-2 px-3 py-2 text-sm border border-input rounded-md hover:bg-background transition-colors"
+              onClick={() => handleOpenFolder("recordings")}
+              className="flex items-center gap-2 px-3 py-2 text-sm border border-white/10 rounded-xl hover:bg-white/[0.08] transition-colors"
             >
               <FolderOpen className="w-4 h-4" />
               Open Folder
@@ -342,12 +412,13 @@ export function PreferenceSettings() {
           </div>
         </div>
 
-        <div className="mt-4 rounded-md bg-secondary p-3">
-          <p className="text-xs text-secondary-foreground">
-            <strong>Note:</strong> Database and models are stored together in your application data directory for unified management.
+        <div className="mt-4 rounded-xl bg-white/[0.05] p-3">
+          <p className="text-xs text-slate-200">
+            <strong>Note:</strong> Database and models are stored together in
+            your application data directory for unified management.
           </p>
         </div>
       </div>
     </div>
-  )
+  );
 }

@@ -1,61 +1,72 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
-import { ArrowLeft, Settings2, Mic, Database as DatabaseIcon, SparkleIcon, FlaskConical, Plug } from 'lucide-react';
-import { useRouter } from 'next/navigation';
-import { invoke } from '@tauri-apps/api/core';
-import { motion } from 'framer-motion';
-import { TranscriptSettings } from '@/components/TranscriptSettings';
-import { RecordingSettings } from '@/components/RecordingSettings';
-import { PreferenceSettings } from '@/components/PreferenceSettings';
-import { SummaryModelSettings } from '@/components/SummaryModelSettings';
-import { BetaSettings } from '@/components/BetaSettings';
-import { IntegrationsSettings } from '@/components/IntegrationsSettings';
-import { useConfig } from '@/contexts/ConfigContext';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
+import {
+  ArrowLeft,
+  Settings2,
+  Mic,
+  Database as DatabaseIcon,
+  SparkleIcon,
+  FlaskConical,
+  Plug,
+} from "lucide-react";
+import { useRouter } from "next/navigation";
+import { invoke } from "@tauri-apps/api/core";
+import { motion } from "framer-motion";
+import { TranscriptSettings } from "@/components/TranscriptSettings";
+import { RecordingSettings } from "@/components/RecordingSettings";
+import { PreferenceSettings } from "@/components/PreferenceSettings";
+import { SummaryModelSettings } from "@/components/SummaryModelSettings";
+import { BetaSettings } from "@/components/BetaSettings";
+import { IntegrationsSettings } from "@/components/IntegrationsSettings";
+import { useConfig } from "@/contexts/ConfigContext";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
-// Tabs configuration (constant)
 const TABS = [
-  { value: 'general', label: 'General', icon: Settings2 },
-  { value: 'recording', label: 'Recordings', icon: Mic },
-  { value: 'Transcriptionmodels', label: 'Transcription', icon: DatabaseIcon },
-  { value: 'summaryModels', label: 'Summary', icon: SparkleIcon },
-  { value: 'integrations', label: 'Add-ons', icon: Plug },
-  { value: 'beta', label: 'Beta', icon: FlaskConical }
+  { value: "general", label: "General", icon: Settings2 },
+  { value: "recording", label: "Recording", icon: Mic },
+  { value: "Transcriptionmodels", label: "Transcription", icon: DatabaseIcon },
+  { value: "summaryModels", label: "Summary", icon: SparkleIcon },
+  { value: "integrations", label: "Add-ons", icon: Plug },
+  { value: "beta", label: "Beta", icon: FlaskConical },
 ] as const;
 
 export default function SettingsPage() {
   const router = useRouter();
   const { transcriptModelConfig, setTranscriptModelConfig } = useConfig();
 
-  // Animation state for tabs
-  const [activeTab, setActiveTab] = useState('general');
+  const [activeTab, setActiveTab] = useState("general");
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const [underlineStyle, setUnderlineStyle] = useState({ left: 0, width: 0 });
 
-  // Load saved transcript configuration on mount
   useEffect(() => {
     const loadTranscriptConfig = async () => {
       try {
-        const config = await invoke('api_get_transcript_config') as any;
+        const config = (await invoke("api_get_transcript_config")) as any;
         if (config) {
-          console.log('Loaded saved transcript config:', config);
+          console.log("Loaded saved transcript config:", config);
           setTranscriptModelConfig({
-            provider: config.provider || 'localWhisper',
-            model: config.model || 'large-v3',
-            apiKey: config.apiKey || null
+            provider: config.provider || "localWhisper",
+            model: config.model || "large-v3",
+            apiKey: config.apiKey || null,
           });
         }
       } catch (error) {
-        console.error('Failed to load transcript config:', error);
+        console.error("Failed to load transcript config:", error);
       }
     };
     loadTranscriptConfig();
   }, [setTranscriptModelConfig]);
 
-  // Update underline position when active tab changes
+  useEffect(() => {
+    const requestedTab = new URLSearchParams(window.location.search).get("tab");
+    if (requestedTab && TABS.some((tab) => tab.value === requestedTab)) {
+      setActiveTab(requestedTab);
+    }
+  }, []);
+
   useLayoutEffect(() => {
-    const activeIndex = TABS.findIndex(tab => tab.value === activeTab);
+    const activeIndex = TABS.findIndex((tab) => tab.value === activeTab);
     const activeTabElement = tabRefs.current[activeIndex];
 
     if (activeTabElement) {
@@ -65,65 +76,76 @@ export default function SettingsPage() {
   }, [activeTab]);
 
   return (
-    <div className="h-screen bg-background flex flex-col">
-      {/* Fixed Header */}
-      <div className="sticky top-0 z-10 bg-background border-b border-border">
-        <div className="max-w-6xl mx-auto px-8 py-6">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => router.back()}
-              className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <ArrowLeft className="w-5 h-5" />
-              <span>Back</span>
-            </button>
-            <h1 className="text-3xl font-bold">Settings</h1>
+    <div className="h-screen overflow-hidden bg-[#081019] text-slate-100">
+      <div className="sticky top-0 z-10 border-b border-white/10 bg-[#081019]/95 backdrop-blur">
+        <div className="mx-auto max-w-[1500px] px-8 py-7">
+          <div className="flex items-center justify-between gap-6">
+            <div className="flex items-center gap-5">
+              <button
+                onClick={() => router.back()}
+                className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-slate-400 transition hover:bg-white/[0.08] hover:text-white"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Back
+              </button>
+              <div>
+                <h1 className="text-4xl font-semibold tracking-tight text-white">
+                  Settings
+                </h1>
+                <p className="mt-2 text-sm text-slate-400">
+                  Customize how ClawScribe works for you.
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Scrollable Content */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="max-w-6xl mx-auto p-8 pt-6">
-          {/* Tabs */}
+      <div className="h-[calc(100vh-121px)] overflow-y-auto">
+        <div className="mx-auto max-w-[1500px] p-8 pt-6">
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="bg-transparent relative rounded-none border-b border-border p-0 h-auto">
+            <TabsList className="relative h-auto flex-wrap justify-start gap-1 rounded-none border-b border-white/10 bg-transparent p-0">
               {TABS.map((tab, index) => {
                 const Icon = tab.icon;
                 return (
                   <TabsTrigger
-                    key={tab.value}
+                    key={`${tab.value}-${tab.label}`}
                     value={tab.value}
-                    ref={el => { tabRefs.current[index] = el }}
-                    className="flex items-center gap-2 px-6 py-4 bg-transparent rounded-none border-0 data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none text-muted-foreground hover:text-foreground relative z-10"
+                    ref={(el) => {
+                      tabRefs.current[index] = el;
+                    }}
+                    className="relative z-10 flex items-center gap-2 rounded-none border-0 bg-transparent px-5 py-4 text-slate-500 shadow-none transition hover:text-slate-200 data-[state=active]:bg-transparent data-[state=active]:text-cyan-300 data-[state=active]:shadow-none"
                   >
-                    <Icon className="w-4 h-4" />
+                    <Icon className="h-4 w-4" />
                     {tab.label}
                   </TabsTrigger>
                 );
               })}
 
               <motion.div
-                className="absolute bottom-0 z-20 h-0.5 bg-primary"
+                className="absolute bottom-0 z-20 h-0.5 bg-cyan-300 shadow-[0_0_18px_rgba(34,211,238,0.6)]"
                 layoutId="underline"
-                style={{ left: underlineStyle.left, width: underlineStyle.width }}
-                transition={{ type: 'spring', stiffness: 400, damping: 40 }}
+                style={{
+                  left: underlineStyle.left,
+                  width: underlineStyle.width,
+                }}
+                transition={{ type: "spring", stiffness: 400, damping: 40 }}
               />
             </TabsList>
 
-            <TabsContent value="general">
+            <TabsContent value="general" className="mt-6">
               <PreferenceSettings />
             </TabsContent>
-            <TabsContent value="recording">
+            <TabsContent value="recording" className="mt-6">
               <RecordingSettings />
             </TabsContent>
-            <TabsContent value="Transcriptionmodels">
+            <TabsContent value="Transcriptionmodels" className="mt-6">
               <TranscriptSettings
                 transcriptModelConfig={transcriptModelConfig}
                 setTranscriptModelConfig={setTranscriptModelConfig}
               />
             </TabsContent>
-            <TabsContent value="summaryModels">
+            <TabsContent value="summaryModels" className="mt-6">
               <SummaryModelSettings />
             </TabsContent>
             <TabsContent value="integrations" className="mt-6">
@@ -137,4 +159,4 @@ export default function SettingsPage() {
       </div>
     </div>
   );
-};
+}

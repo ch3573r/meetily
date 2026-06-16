@@ -1,7 +1,7 @@
-"use client"
+"use client";
 
-import { useEffect, useState } from "react"
-import { Monitor, Moon, Sun } from "lucide-react"
+import { useEffect, useState } from "react";
+import { Monitor, Moon, Sun } from "lucide-react";
 import {
   applyNativeThemePreference,
   applyThemePreference,
@@ -10,13 +10,16 @@ import {
   subscribeToSystemTheme,
   themePreferences,
   type ThemePreference,
-} from "@/lib/theme"
+} from "@/lib/theme";
 
-const themeOptions: Record<ThemePreference, {
-  label: string
-  description: string
-  Icon: typeof Sun
-}> = {
+const themeOptions: Record<
+  ThemePreference,
+  {
+    label: string;
+    description: string;
+    Icon: typeof Sun;
+  }
+> = {
   light: {
     label: "Light",
     description: "Use the Kontron light palette",
@@ -32,70 +35,74 @@ const themeOptions: Record<ThemePreference, {
     description: "Follow the operating system",
     Icon: Monitor,
   },
-}
+};
 
 export function ThemeInitializer() {
   useEffect(() => {
     const applyStoredTheme = () => {
-      const storedPreference = getStoredThemePreference()
-      applyThemePreference(storedPreference)
-      void applyNativeThemePreference(storedPreference)
-    }
+      const storedPreference = getStoredThemePreference();
+      applyThemePreference(storedPreference);
+      void applyNativeThemePreference(storedPreference);
+    };
 
-    applyStoredTheme()
+    applyStoredTheme();
 
-    const unsubscribeSystemTheme = subscribeToSystemTheme(applyStoredTheme)
-    window.addEventListener("storage", applyStoredTheme)
+    const unsubscribeSystemTheme = subscribeToSystemTheme(applyStoredTheme);
+    window.addEventListener("storage", applyStoredTheme);
 
     return () => {
-      unsubscribeSystemTheme()
-      window.removeEventListener("storage", applyStoredTheme)
-    }
-  }, [])
+      unsubscribeSystemTheme();
+      window.removeEventListener("storage", applyStoredTheme);
+    };
+  }, []);
 
-  return null
+  return null;
 }
 
 export function ThemeSettings() {
-  const [preference, setPreference] = useState<ThemePreference>("system")
+  const [preference, setPreference] = useState<ThemePreference>("system");
 
   useEffect(() => {
     const syncThemePreference = () => {
-      const storedPreference = getStoredThemePreference()
-      setPreference(storedPreference)
-      applyThemePreference(storedPreference)
-    }
+      const storedPreference = getStoredThemePreference();
+      setPreference(storedPreference);
+      applyThemePreference(storedPreference);
+    };
 
-    syncThemePreference()
+    syncThemePreference();
 
-    const unsubscribeSystemTheme = subscribeToSystemTheme(syncThemePreference)
-    window.addEventListener("storage", syncThemePreference)
+    const unsubscribeSystemTheme = subscribeToSystemTheme(syncThemePreference);
+    window.addEventListener("storage", syncThemePreference);
 
     return () => {
-      unsubscribeSystemTheme()
-      window.removeEventListener("storage", syncThemePreference)
-    }
-  }, [])
+      unsubscribeSystemTheme();
+      window.removeEventListener("storage", syncThemePreference);
+    };
+  }, []);
 
   const handlePreferenceChange = (nextPreference: ThemePreference) => {
-    setPreference(nextPreference)
-    setThemePreference(nextPreference)
-    void applyNativeThemePreference(nextPreference)
-  }
+    setPreference(nextPreference);
+    setThemePreference(nextPreference);
+    void applyNativeThemePreference(nextPreference);
+  };
 
   return (
-    <div className="bg-card rounded-lg border border-border p-6 shadow-sm">
+    <div className="rounded-3xl border border-white/10 bg-[#0e1723] p-6 shadow-xl shadow-black/20">
       <div className="mb-4">
-        <h3 className="text-lg font-semibold text-card-foreground">Appearance</h3>
-        <p className="mt-2 text-sm text-muted-foreground">
+        <h3 className="text-lg font-semibold text-slate-100">Appearance</h3>
+        <p className="mt-2 text-sm text-slate-400">
           Choose how ClawScribe follows light and dark mode.
         </p>
       </div>
 
-      <div className="grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Theme preference">
+      <div
+        className="grid gap-2 sm:grid-cols-3"
+        role="radiogroup"
+        aria-label="Theme preference"
+      >
         {themePreferences.map((option) => {
-          const { label, description, Icon } = themeOptions[option]
-          const isSelected = option === preference
+          const { label, description, Icon } = themeOptions[option];
+          const isSelected = option === preference;
 
           return (
             <button
@@ -104,10 +111,10 @@ export function ThemeSettings() {
               role="radio"
               aria-checked={isSelected}
               onClick={() => handlePreferenceChange(option)}
-              className={`flex min-h-24 flex-col items-start gap-3 rounded-md border p-4 text-left transition-colors ${
+              className={`flex min-h-24 flex-col items-start gap-3 rounded-2xl border p-4 text-left transition-colors ${
                 isSelected
-                  ? "border-primary bg-secondary text-foreground ring-1 ring-primary"
-                  : "border-border bg-background text-muted-foreground hover:border-primary/70 hover:bg-muted"
+                  ? "border-cyan-300/50 bg-cyan-300/10 text-cyan-50 ring-1 ring-cyan-300/50"
+                  : "border-border bg-background text-slate-400 hover:border-primary/70 hover:bg-muted"
               }`}
             >
               <span className="flex items-center gap-2 text-sm font-semibold">
@@ -116,9 +123,9 @@ export function ThemeSettings() {
               </span>
               <span className="text-xs leading-5">{description}</span>
             </button>
-          )
+          );
         })}
       </div>
     </div>
-  )
+  );
 }

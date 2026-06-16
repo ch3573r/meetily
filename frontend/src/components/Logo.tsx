@@ -1,29 +1,40 @@
-import React from "react";
-import Image from "next/image";
-import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "./ui/dialog";
-import { VisuallyHidden } from "./ui/visually-hidden";
-import { About } from "./About";
+import React from 'react';
+import Image from 'next/image';
+import { Dialog, DialogContent, DialogTitle, DialogTrigger } from './ui/dialog';
+import { VisuallyHidden } from './ui/visually-hidden';
+import { About } from './About';
 
 interface LogoProps {
-    isCollapsed: boolean;
+  isCollapsed: boolean;
 }
 
 const Logo = React.forwardRef<HTMLButtonElement, LogoProps>(({ isCollapsed }, ref) => {
   return (
     <Dialog aria-describedby={undefined}>
-      {isCollapsed ? (
-        <DialogTrigger asChild>
-          <button ref={ref} className="flex items-center justify-start mb-2 cursor-pointer bg-transparent border-none p-0 hover:opacity-80 transition-opacity">
-            <Image src="/logo-collapsed.png" alt="Logo" width={40} height={32} />
-          </button>
-        </DialogTrigger>
-      ) : (
-        <DialogTrigger asChild>
-          <span className="text-lg text-center border rounded-full bg-blue-50 border-white font-semibold text-gray-700 mb-2 block items-center cursor-pointer hover:opacity-80 transition-opacity">
-            <span>ClawScribe</span>
-          </span>
-        </DialogTrigger>
-      )}
+      <DialogTrigger asChild>
+        <button
+          ref={ref}
+          className={`flex cursor-pointer items-center border-none bg-transparent p-0 text-left transition-opacity hover:opacity-85 ${
+            isCollapsed ? 'justify-center' : 'gap-3'
+          }`}
+        >
+          <Image
+            src="/brand/clawscribe-icon-64.png"
+            alt="ClawScribe"
+            width={isCollapsed ? 34 : 38}
+            height={isCollapsed ? 34 : 38}
+            className="rounded-xl"
+          />
+          {!isCollapsed && (
+            <span className="flex flex-col leading-none">
+              <span className="text-lg font-semibold tracking-tight text-white">ClawScribe</span>
+              <span className="mt-1 text-xs font-medium uppercase tracking-[0.22em] text-cyan-300/70">
+                Meeting AI
+              </span>
+            </span>
+          )}
+        </button>
+      </DialogTrigger>
       <DialogContent>
         <VisuallyHidden>
           <DialogTitle>About ClawScribe</DialogTitle>
@@ -34,6 +45,6 @@ const Logo = React.forwardRef<HTMLButtonElement, LogoProps>(({ isCollapsed }, re
   );
 });
 
-Logo.displayName = "Logo";
+Logo.displayName = 'Logo';
 
 export default Logo;
