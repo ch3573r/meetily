@@ -462,7 +462,11 @@ impl AudioStreamManager {
                 }
                 Err(e) => {
                     warn!("⚠️ Failed to create system audio stream: {}", e);
-                    // Don't fail if only system audio fails
+                    // Don't fail if only system audio fails — but tell the user,
+                    // since the recording will silently have no system audio.
+                    self.state.report_warning(
+                        "Couldn't capture system audio from the selected device. Some outputs (e.g. a digital/S-PDIF output) can't be captured — pick the output device your meeting audio actually plays through (Settings → audio device).",
+                    );
                 }
             }
         } else {

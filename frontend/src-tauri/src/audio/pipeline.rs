@@ -916,19 +916,6 @@ impl AudioPipeline {
                     self.ring_buffer
                         .add_samples(chunk.device_type.clone(), chunk.data);
 
-                    // Warn once if a system device was chosen but stays silent.
-                    if !silence_warned
-                        && !system_audio_seen
-                        && run_start.elapsed().as_secs() >= SILENCE_GRACE_SECS
-                        && self.state.is_recording()
-                        && self.state.get_system_device().is_some()
-                    {
-                        self.state.report_warning(
-                            "No system audio detected. The selected system-audio device may not be the one your sound plays through — pick the output device your meeting audio actually uses (Settings → audio device).",
-                        );
-                        silence_warned = true;
-                    }
-
                     // STEP 2: Mix audio in fixed windows when both streams have sufficient data
                     while self.ring_buffer.can_mix() {
                         if let Some((mic_window, sys_window)) = self.ring_buffer.extract_window() {
@@ -1004,9 +991,25 @@ impl AudioPipeline {
                     break;
                 }
                 Err(_) => {
-                    // Timeout - just continue, VAD handles all segmentation
-                    continue;
+                    // Timeout - no chunk this tick. Fall through to the silence
+                    // check so a dead/silent system stream is still detected.
                 }
+            }
+
+            // Warn once if a system device was selected but no non-silent system
+            // audio ever arrives (e.g. an idle/loopback-incapable output like a
+            // digital S/PDIF endpoint). Timer-based so it fires even when the
+            // system stream delivers no chunks at all.
+            if !silence_warned
+                && !system_audio_seen
+                && run_start.elapsed().as_secs() >= SILENCE_GRACE_SECS
+                && self.state.is_recording()
+                && self.state.get_system_device().is_some()
+            {
+                self.state.report_warning(
+                    "No system audio detected. The selected system-audio device may not be the one your sound plays through — some outputs (e.g. a digital/S-PDIF output) can't be captured. Pick the output device your meeting audio actually uses (Settings → audio device).",
+                );
+                silence_warned = true;
             }
         }
 
