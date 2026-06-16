@@ -5,7 +5,6 @@ import { Switch } from "./ui/switch"
 import { FolderOpen, RefreshCw, ServerCog } from "lucide-react"
 import { invoke } from "@tauri-apps/api/core"
 import Analytics from "@/lib/analytics"
-import AnalyticsConsentSwitch from "./AnalyticsConsentSwitch"
 import { useConfig, NotificationSettings } from "@/contexts/ConfigContext"
 import { ThemeSettings } from "./ThemeSettings"
 
@@ -348,11 +347,6 @@ export function PreferenceSettings() {
             <strong>Note:</strong> Database and models are stored together in your application data directory for unified management.
           </p>
         </div>
-      </div>
-
-      {/* Analytics Section */}
-      <div className="bg-card rounded-lg border border-border p-6 shadow-sm">
-        <AnalyticsConsentSwitch />
       </div>
     </div>
   )

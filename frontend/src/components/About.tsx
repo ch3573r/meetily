@@ -2,7 +2,6 @@ import React, { useState, useEffect } from "react";
 import { invoke } from '@tauri-apps/api/core';
 import { getVersion } from '@tauri-apps/api/app';
 import Image from 'next/image';
-import AnalyticsConsentSwitch from "./AnalyticsConsentSwitch";
 import { UpdateDialog } from "./UpdateDialog";
 import { updateService, UpdateInfo } from '@/services/updateService';
 import { Button } from './ui/button';
@@ -149,7 +148,6 @@ export function About() {
                     Advanced Codex app-server bundles @openai/codex 0.139.0 for Windows x64 under Apache-2.0. Runtime SHA256: 77a84f8078400467ade4301d827b8bcea2d29b6838c9cd162bf3573b7ef97e10.
                 </p>
             </div>
-            <AnalyticsConsentSwitch />
 
             {/* Update Dialog */}
             <UpdateDialog

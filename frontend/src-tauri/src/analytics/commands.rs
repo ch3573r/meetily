@@ -9,17 +9,10 @@ static ANALYTICS_CLIENT: std::sync::Mutex<Option<Arc<AnalyticsClient>>> =
 
 #[command]
 pub async fn init_analytics() -> Result<(), String> {
-    let config = AnalyticsConfig {
-        api_key: "REDACTED_ANALYTICS_KEY".to_string(),
-        host: Some("https://us.i.posthog.com".to_string()),
-        enabled: true,
-    };
-
-    let client = Arc::new(AnalyticsClient::new(config).await);
-
-    let mut guard = ANALYTICS_CLIENT.lock().unwrap();
-    *guard = Some(client);
-
+    // Telemetry has been removed from ClawScribe. This command is kept as a
+    // no-op so existing callers compile, but it never creates a PostHog client
+    // and never sends any data. The analytics client stays uninitialized.
+    let _ = &ANALYTICS_CLIENT;
     Ok(())
 }
 
