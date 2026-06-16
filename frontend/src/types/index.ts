@@ -7,6 +7,7 @@ export interface Message {
 export interface Transcript {
   id: string;
   text: string;
+  speaker?: string; // "Me" (microphone) or "Participants" (system audio)
   timestamp: string; // Wall-clock time (e.g., "14:30:05")
   sequence_id?: number;
   chunk_start_time?: number; // Legacy field

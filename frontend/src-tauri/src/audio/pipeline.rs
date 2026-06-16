@@ -838,6 +838,13 @@ impl AudioPipeline {
         const SILENCE_GRACE_SECS: u64 = 15;
         const SILENCE_PEAK_THRESHOLD: f32 = 0.001; // ~-60 dBFS
 
+        // Speaker attribution: accumulate microphone vs system energy across the
+        // windows feeding the VAD buffer, then label each emitted speech segment
+        // by whichever source dominated ("Me" = mic, "Participants" = system).
+        // Transcription itself is unchanged — it still runs on the mixed audio.
+        let mut mic_energy_acc = 0.0f32;
+        let mut sys_energy_acc = 0.0f32;
+
         // CRITICAL FIX: Continue processing until channel is closed, not based on recording state
         // This ensures ALL chunks are processed during shutdown, fixing premature meeting completion
         // Previous bug: Loop checked `while self.state.is_recording()` which caused early exit when
@@ -919,6 +926,17 @@ impl AudioPipeline {
                     // STEP 2: Mix audio in fixed windows when both streams have sufficient data
                     while self.ring_buffer.can_mix() {
                         if let Some((mic_window, sys_window)) = self.ring_buffer.extract_window() {
+                            // Accumulate per-source energy for speaker attribution.
+                            let mean_abs = |w: &[f32]| {
+                                if w.is_empty() {
+                                    0.0
+                                } else {
+                                    w.iter().map(|s| s.abs()).sum::<f32>() / w.len() as f32
+                                }
+                            };
+                            mic_energy_acc += mean_abs(&mic_window);
+                            sys_energy_acc += mean_abs(&sys_window);
+
                             // Simple mixing without aggressive ducking
                             let mixed_clean = self.mixer.mix_window(&mic_window, &sys_window);
 
@@ -931,6 +949,14 @@ impl AudioPipeline {
                             // STEP 3: Send mixed audio for transcription (VAD + Whisper)
                             match self.vad_processor.process_audio(&mixed_with_gain) {
                                 Ok(speech_segments) => {
+                                    let had_segments = !speech_segments.is_empty();
+                                    // Whichever source carried more energy since the
+                                    // last segment owns these segments.
+                                    let segment_source = if mic_energy_acc >= sys_energy_acc {
+                                        DeviceType::Microphone
+                                    } else {
+                                        DeviceType::System
+                                    };
                                     for segment in speech_segments {
                                         let duration_ms =
                                             segment.end_timestamp_ms - segment.start_timestamp_ms;
@@ -948,7 +974,7 @@ impl AudioPipeline {
                                                 sample_rate: 16000,
                                                 timestamp: segment.start_timestamp_ms / 1000.0,
                                                 chunk_id: self.chunk_id_counter,
-                                                device_type: DeviceType::Microphone, // Mixed audio
+                                                device_type: segment_source.clone(),
                                             };
 
                                             if let Err(e) =
@@ -962,6 +988,11 @@ impl AudioPipeline {
                                             debug!("⏭️ Dropping short VAD segment: {:.1}ms ({} samples < 800)",
                                                    duration_ms, segment.samples.len());
                                         }
+                                    }
+
+                                    if had_segments {
+                                        mic_energy_acc = 0.0;
+                                        sys_energy_acc = 0.0;
                                     }
                                 }
                                 Err(e) => {

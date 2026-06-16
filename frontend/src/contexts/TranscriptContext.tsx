@@ -306,6 +306,7 @@ export function TranscriptProvider({ children }: { children: ReactNode }) {
           const newTranscript: Transcript = {
             id: `${Date.now()}-${transcriptCounter++}`,
             text: update.text,
+            speaker: update.source,
             timestamp: update.timestamp,
             sequence_id: update.sequence_id,
             chunk_start_time: update.chunk_start_time,
