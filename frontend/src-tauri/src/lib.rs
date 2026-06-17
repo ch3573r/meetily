@@ -626,6 +626,13 @@ pub fn run() {
             parakeet_engine::commands::open_parakeet_models_folder,
             parakeet_engine::commands::set_parakeet_use_directml,
             parakeet_engine::commands::get_parakeet_use_directml,
+            // Nemotron (streaming RNN-T, Beta) commands
+            nemotron_engine::commands::nemotron_init,
+            nemotron_engine::commands::nemotron_get_available_models,
+            nemotron_engine::commands::nemotron_download_model,
+            nemotron_engine::commands::nemotron_cancel_download,
+            nemotron_engine::commands::set_nemotron_use_directml,
+            nemotron_engine::commands::get_nemotron_use_directml,
             // Parallel processing commands
             whisper_engine::parallel_commands::initialize_parallel_processor,
             whisper_engine::parallel_commands::start_parallel_processing,

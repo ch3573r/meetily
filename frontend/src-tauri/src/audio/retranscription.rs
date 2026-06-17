@@ -102,6 +102,7 @@ pub async fn start_retranscription<R: Runtime>(
     RETRANSCRIPTION_CANCELLED.store(false, Ordering::SeqCst);
 
     let use_parakeet = provider.as_deref() == Some("parakeet");
+    let use_nemotron = provider.as_deref() == Some("nemotron");
     let result = run_retranscription(
         app.clone(),
         meeting_id.clone(),
@@ -113,7 +114,7 @@ pub async fn start_retranscription<R: Runtime>(
     .await;
 
     // Unload the engine after the batch job (success, failure, or cancellation)
-    super::common::unload_engine_after_batch(use_parakeet).await;
+    super::common::unload_engine_after_batch_for(use_parakeet, use_nemotron).await;
 
     // Guard will automatically clear flag on drop
     // No need for manual: RETRANSCRIPTION_IN_PROGRESS.store(false, Ordering::SeqCst);
@@ -197,6 +198,7 @@ async fn run_retranscription<R: Runtime>(
 
     // Determine which provider to use (default to whisper)
     let use_parakeet = provider.as_deref() == Some("parakeet");
+    let use_nemotron = provider.as_deref() == Some("nemotron");
 
     info!(
         "Starting retranscription for meeting {} with language {:?}, model {:?}, provider {:?}",
@@ -341,13 +343,18 @@ async fn run_retranscription<R: Runtime>(
     );
 
     // Initialize the appropriate engine once (not per-segment)
-    let whisper_engine = if !use_parakeet {
+    let whisper_engine = if !use_parakeet && !use_nemotron {
         Some(get_or_init_whisper(&app, model.as_deref()).await?)
     } else {
         None
     };
     let parakeet_engine = if use_parakeet {
         Some(get_or_init_parakeet(&app, model.as_deref()).await?)
+    } else {
+        None
+    };
+    let nemotron_engine = if use_nemotron {
+        Some(get_or_init_nemotron(&app, model.as_deref()).await?)
     } else {
         None
     };
@@ -417,7 +424,14 @@ async fn run_retranscription<R: Runtime>(
         }
 
         // Transcribe this segment
-        let (text, conf) = if use_parakeet {
+        let (text, conf) = if use_nemotron {
+            let engine = nemotron_engine.as_ref().unwrap();
+            let text = engine
+                .transcribe_audio(segment.samples.clone())
+                .await
+                .map_err(|e| anyhow!("Nemotron transcription failed on segment {}: {}", i, e))?;
+            (text, 0.9f32)
+        } else if use_parakeet {
             let engine = parakeet_engine.as_ref().unwrap();
             let text = engine
                 .transcribe_audio(segment.samples.clone())
@@ -779,6 +793,41 @@ async fn get_or_init_parakeet<R: Runtime>(
             }
         }
         None => Err(anyhow!("Parakeet engine not initialized")),
+    }
+}
+
+/// Get or initialize the Nemotron engine, auto-loading the model if needed.
+async fn get_or_init_nemotron<R: Runtime>(
+    app: &AppHandle<R>,
+    requested_model: Option<&str>,
+) -> Result<Arc<crate::nemotron_engine::nemotron_engine::NemotronEngine>> {
+    use crate::nemotron_engine::commands::{nemotron_init, NEMOTRON_ENGINE};
+    use crate::nemotron_engine::nemotron_engine::NEMOTRON_MODEL;
+
+    nemotron_init(app.clone())
+        .await
+        .map_err(|e| anyhow!("Failed to initialize Nemotron engine: {}", e))?;
+
+    let engine = {
+        let guard = NEMOTRON_ENGINE.lock().unwrap_or_else(|e| e.into_inner());
+        guard.as_ref().cloned()
+    };
+
+    match engine {
+        Some(e) => {
+            let target_model = requested_model.unwrap_or(NEMOTRON_MODEL).to_string();
+            let current_model = e.get_current_model().await;
+            if current_model.as_deref() != Some(target_model.as_str()) {
+                if let Err(discover_err) = e.discover_models().await {
+                    warn!("Nemotron model discovery error (continuing): {}", discover_err);
+                }
+                e.load_model(&target_model).await.map_err(|load_err| {
+                    anyhow!("Failed to load Nemotron model '{}': {}", target_model, load_err)
+                })?;
+            }
+            Ok(e)
+        }
+        None => Err(anyhow!("Nemotron engine not initialized")),
     }
 }
 

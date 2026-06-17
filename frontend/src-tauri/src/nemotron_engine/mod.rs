@@ -8,5 +8,7 @@
 // landed piece; `model.rs` (streaming RNN-T inference), `nemotron_engine.rs`
 // (catalog/download/load), `commands.rs`, and the provider wrapper follow.
 
+pub mod commands;
 pub mod features;
 pub mod model;
+pub mod nemotron_engine;

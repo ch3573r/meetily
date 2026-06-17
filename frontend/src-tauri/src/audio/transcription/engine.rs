@@ -147,13 +147,37 @@ pub async fn validate_transcription_model_ready<R: Runtime>(
                 }
             }
         }
+        "nemotron" => {
+            info!("🌊 Validating Nemotron model...");
+            if let Err(init_error) =
+                crate::nemotron_engine::commands::nemotron_init(app.clone()).await
+            {
+                warn!("❌ Failed to initialize Nemotron engine: {}", init_error);
+                return Err(format!(
+                    "Failed to initialize Nemotron speech recognition: {}",
+                    init_error
+                ));
+            }
+            match crate::nemotron_engine::commands::nemotron_validate_model_ready_with_config(app)
+                .await
+            {
+                Ok(model_name) => {
+                    info!("✅ Nemotron model validation successful: {} is ready", model_name);
+                    Ok(())
+                }
+                Err(e) => {
+                    warn!("❌ Nemotron model validation failed: {}", e);
+                    Err(e)
+                }
+            }
+        }
         other => {
             warn!(
                 "❌ Unsupported transcription provider for local recording: {}",
                 other
             );
             Err(format!(
-                "Provider '{}' is not supported for local transcription. Please select 'localWhisper' or 'parakeet'.",
+                "Provider '{}' is not supported for local transcription. Please select 'localWhisper', 'parakeet', or 'nemotron'.",
                 other
             ))
         }
@@ -226,6 +250,29 @@ pub async fn get_or_init_transcription_engine<R: Runtime>(
                 }
                 None => Err(
                     "Parakeet engine not initialized. This should not happen after validation."
+                        .to_string(),
+                ),
+            }
+        }
+        "nemotron" => {
+            info!("🌊 Initializing Nemotron transcription engine");
+            let engine = {
+                let guard = crate::nemotron_engine::commands::NEMOTRON_ENGINE.lock().unwrap();
+                guard.as_ref().cloned()
+            };
+            match engine {
+                Some(engine) if engine.is_model_loaded().await => {
+                    let provider = Arc::new(
+                        crate::audio::transcription::NemotronProvider::new(engine),
+                    );
+                    Ok(TranscriptionEngine::Provider(provider))
+                }
+                Some(_) => Err(
+                    "Nemotron engine initialized but no model loaded. This should not happen after validation."
+                        .to_string(),
+                ),
+                None => Err(
+                    "Nemotron engine not initialized. This should not happen after validation."
                         .to_string(),
                 ),
             }
