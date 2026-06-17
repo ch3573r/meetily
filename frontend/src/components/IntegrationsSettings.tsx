@@ -29,7 +29,11 @@ import {
   getExportDestinations,
   setExportDestinations,
 } from "@/lib/exportDestinations";
-import { getAutoRecordEnabled, setAutoRecordEnabled } from "@/lib/autoRecord";
+import {
+  getTeamsDetectionMode,
+  setTeamsDetectionMode,
+  type TeamsDetectionMode,
+} from "@/lib/autoRecord";
 
 type AddonState =
   | "ready"
@@ -886,51 +890,46 @@ function OpenClawPanel() {
   );
 }
 
-// Add-ons: the Teams auto-start toggle only. Live detection status is in Diagnostics.
+// Add-ons: how to react when a Teams meeting is detected. Live detection status
+// is in Diagnostics.
 function TeamsAutoStartPanel() {
-  const [autoRecord, setAutoRecord] = useState(false);
+  const [mode, setMode] = useState<TeamsDetectionMode>("off");
   useEffect(() => {
-    setAutoRecord(getAutoRecordEnabled());
+    setMode(getTeamsDetectionMode());
   }, []);
-  const toggleAutoRecord = () => {
-    const next = !autoRecord;
-    setAutoRecord(next);
-    setAutoRecordEnabled(next);
+  const onChange = (next: TeamsDetectionMode) => {
+    setMode(next);
+    setTeamsDetectionMode(next);
   };
   return (
     <AddonPanel
       icon={Video}
       title="Teams meeting detection"
-      state={autoRecord ? "ready" : "prompt"}
+      state={mode === "off" ? "planned" : "ready"}
       detail="Windows detector for Teams desktop and browser meetings, in several UI languages."
     >
-      <label className="flex cursor-pointer items-start justify-between gap-4 rounded-lg border border-border bg-muted p-3">
-        <span>
-          <span className="block text-sm font-medium text-foreground">
-            Auto-start recording when a meeting is detected
-          </span>
-          <span className="mt-0.5 block text-xs text-muted-foreground">
-            Starts a recording once per detected meeting; re-arms when the meeting
-            ends. You can still stop manually. Live detection status is under
-            Diagnostics.
-          </span>
-        </span>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={autoRecord}
-          onClick={toggleAutoRecord}
-          className={`relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
-            autoRecord ? "bg-primary" : "bg-border"
-          }`}
+      <div className="space-y-2">
+        <label className="block text-sm font-medium text-foreground">
+          When a meeting is detected
+        </label>
+        <select
+          className="w-full rounded-lg border border-border bg-muted px-3 py-2 text-sm"
+          value={mode}
+          onChange={(e) => onChange(e.target.value as TeamsDetectionMode)}
         >
-          <span
-            className={`inline-block h-5 w-5 transform rounded-full bg-background shadow transition-transform ${
-              autoRecord ? "translate-x-5" : "translate-x-0.5"
-            }`}
-          />
-        </button>
-      </label>
+          <option value="off">Do nothing</option>
+          <option value="prompt">Prompt me to record</option>
+          <option value="auto">Auto-start recording</option>
+        </select>
+        <p className="text-xs text-muted-foreground">
+          {mode === "off"
+            ? "Detection runs but takes no action."
+            : mode === "prompt"
+              ? "Shows a prompt once per detected meeting; you choose whether to record."
+              : "Starts a recording once per detected meeting; re-arms when it ends. You can still stop manually."}{" "}
+          Live detection status is under Diagnostics.
+        </p>
+      </div>
     </AddonPanel>
   );
 }

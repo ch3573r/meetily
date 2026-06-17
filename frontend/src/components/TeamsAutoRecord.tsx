@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { toast } from "sonner";
 import { useRecordingState } from "@/contexts/RecordingStateContext";
 import { teamsDetectionService } from "@/services/teamsDetectionService";
-import { getAutoRecordEnabled } from "@/lib/autoRecord";
+import { getTeamsDetectionMode } from "@/lib/autoRecord";
 
 const POLL_INTERVAL_MS = 12_000;
 
@@ -27,7 +28,8 @@ export function TeamsAutoRecord() {
     let cancelled = false;
 
     const tick = async () => {
-      if (!getAutoRecordEnabled()) return;
+      const mode = getTeamsDetectionMode();
+      if (mode === "off") return;
       try {
         const status = await teamsDetectionService.getStatus();
         if (cancelled) return;
@@ -37,10 +39,23 @@ export function TeamsAutoRecord() {
           armedRef.current = true;
           return;
         }
-        // Detected: auto-start once, only if not already recording.
+        // Detected (once per meeting, and only if not already recording).
         if (status.detected && armedRef.current && !isRecordingRef.current) {
           armedRef.current = false;
-          window.dispatchEvent(new CustomEvent("start-recording-from-sidebar"));
+          if (mode === "auto") {
+            window.dispatchEvent(new CustomEvent("start-recording-from-sidebar"));
+          } else {
+            // Prompt-only: ask before recording.
+            toast("Teams meeting detected", {
+              description: "Start recording this meeting?",
+              duration: 20_000,
+              action: {
+                label: "Record",
+                onClick: () =>
+                  window.dispatchEvent(new CustomEvent("start-recording-from-sidebar")),
+              },
+            });
+          }
         }
       } catch {
         // Detection unavailable this tick — try again next interval.
