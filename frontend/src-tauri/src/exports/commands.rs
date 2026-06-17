@@ -493,6 +493,58 @@ pub async fn list_onenote_notebooks(
     discovery::list_notebooks(&client, &token).await
 }
 
+/// OneNote notebook names reject `?*\/:<>|'#` and must be 128 characters or
+/// fewer. Replace forbidden characters with spaces, collapse whitespace, and
+/// truncate on a char boundary.
+fn sanitize_onenote_notebook_name(raw: &str) -> String {
+    const FORBIDDEN: &[char] = &['?', '*', '\\', '/', ':', '<', '>', '|', '\'', '#'];
+    let replaced: String = raw
+        .chars()
+        .map(|c| if FORBIDDEN.contains(&c) { ' ' } else { c })
+        .collect();
+    let collapsed = replaced.split_whitespace().collect::<Vec<_>>().join(" ");
+    let truncated: String = collapsed.chars().take(128).collect();
+    let result = truncated.trim().to_string();
+    if result.is_empty() {
+        "ClawScribe".to_string()
+    } else {
+        result
+    }
+}
+
+/// Create a new OneNote notebook and return it, so the picker can offer a "New
+/// notebook" action when an account has none.
+#[tauri::command]
+pub async fn create_onenote_notebook(
+    state: tauri::State<'_, MicrosoftAuthState>,
+    display_name: String,
+) -> Result<discovery::NotebookInfo, String> {
+    let (token, _, _) = get_token_and_context(&state).await?;
+    let name = sanitize_onenote_notebook_name(&display_name);
+    let transport = ReqwestGraphTransport::new();
+    let client = GraphClient::new(transport, TokioSleeper, RetryPolicy::default());
+    discovery::create_notebook(&client, &token, &name).await
+}
+
+/// Create a new bucket within a plan and return it.
+#[tauri::command]
+pub async fn create_planner_bucket(
+    state: tauri::State<'_, MicrosoftAuthState>,
+    plan_id: String,
+    name: String,
+) -> Result<discovery::BucketInfo, String> {
+    let (token, _, _) = get_token_and_context(&state).await?;
+    let name = name.split_whitespace().collect::<Vec<_>>().join(" ");
+    let name = if name.is_empty() {
+        "Action items".to_string()
+    } else {
+        name.chars().take(255).collect()
+    };
+    let transport = ReqwestGraphTransport::new();
+    let client = GraphClient::new(transport, TokioSleeper, RetryPolicy::default());
+    discovery::create_bucket(&client, &token, &plan_id, &name).await
+}
+
 #[tauri::command]
 pub async fn list_onenote_sections(
     state: tauri::State<'_, MicrosoftAuthState>,

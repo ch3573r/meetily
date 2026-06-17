@@ -140,6 +140,42 @@ export function useMicrosoftExport() {
     }
   }, []);
 
+  // Create a notebook, fold it into the list, and return it so the caller can
+  // select it. Returns null on failure (error surfaced via `error`).
+  const createNotebook = useCallback(
+    async (displayName: string): Promise<NotebookInfo | null> => {
+      setError(null);
+      try {
+        const nb = await microsoftExportService.createNotebook(displayName);
+        setNotebooks((prev) =>
+          prev.some((n) => n.id === nb.id) ? prev : [...prev, nb],
+        );
+        return nb;
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+        return null;
+      }
+    },
+    [],
+  );
+
+  const createBucket = useCallback(
+    async (planId: string, name: string): Promise<BucketInfo | null> => {
+      setError(null);
+      try {
+        const bucket = await microsoftExportService.createBucket(planId, name);
+        setBuckets((prev) =>
+          prev.some((b) => b.id === bucket.id) ? prev : [...prev, bucket],
+        );
+        return bucket;
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+        return null;
+      }
+    },
+    [],
+  );
+
   return {
     connection,
     signingIn,
@@ -158,6 +194,8 @@ export function useMicrosoftExport() {
     loadSections,
     loadPlans,
     loadBuckets,
+    createNotebook,
+    createBucket,
     refreshStatus,
   };
 }

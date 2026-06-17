@@ -157,4 +157,12 @@ export const microsoftExportService = {
   async listBuckets(planId: string): Promise<BucketInfo[]> {
     return invoke<BucketInfo[]>("list_planner_buckets", { planId });
   },
+
+  async createNotebook(displayName: string): Promise<NotebookInfo> {
+    return invoke<NotebookInfo>("create_onenote_notebook", { displayName });
+  },
+
+  async createBucket(planId: string, name: string): Promise<BucketInfo> {
+    return invoke<BucketInfo>("create_planner_bucket", { planId, name });
+  },
 };

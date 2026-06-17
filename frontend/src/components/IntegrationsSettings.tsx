@@ -299,12 +299,37 @@ function MicrosoftSignInPanel() {
   );
 }
 
+// OneNote notebook names reject ? * \ / : < > | ' # and must be <= 128 chars.
+// Mirror the backend sanitizer so the field shows what will actually be created.
+const NOTEBOOK_FORBIDDEN = /[?*\\/:<>|'#]/g;
+function sanitizeNotebookName(raw: string): string {
+  return raw.replace(NOTEBOOK_FORBIDDEN, " ").replace(/\s+/g, " ").trimStart().slice(0, 128);
+}
+
+const NEW_OPTION = "__new__";
+
 function OneNotePanel() {
   const ms = useMicrosoftExport();
   const saved = getExportDestinations();
   const [selectedNotebook, setSelectedNotebook] = useState<string>(
     saved.notebookId ?? "",
   );
+  const [creatingNotebook, setCreatingNotebook] = useState(false);
+  const [newNotebookName, setNewNotebookName] = useState("");
+  const [savingNotebook, setSavingNotebook] = useState(false);
+
+  const submitNewNotebook = async () => {
+    const name = sanitizeNotebookName(newNotebookName).trim();
+    if (!name) return;
+    setSavingNotebook(true);
+    const nb = await ms.createNotebook(name);
+    setSavingNotebook(false);
+    if (nb) {
+      setSelectedNotebook(nb.id);
+      setCreatingNotebook(false);
+      setNewNotebookName("");
+    }
+  };
 
   const isConnected = ms.connection.state === "connected";
 
@@ -361,8 +386,15 @@ function OneNotePanel() {
             </div>
             <select
               className="w-full rounded-lg border border-border bg-muted px-3 py-2 text-sm"
-              value={selectedNotebook}
-              onChange={(e) => setSelectedNotebook(e.target.value)}
+              value={creatingNotebook ? NEW_OPTION : selectedNotebook}
+              onChange={(e) => {
+                if (e.target.value === NEW_OPTION) {
+                  setCreatingNotebook(true);
+                } else {
+                  setCreatingNotebook(false);
+                  setSelectedNotebook(e.target.value);
+                }
+              }}
               disabled={ms.loadingNotebooks}
             >
               <option value="">
@@ -373,8 +405,59 @@ function OneNotePanel() {
                   {nb.displayName}
                 </option>
               ))}
+              <option value={NEW_OPTION}>+ New notebook…</option>
             </select>
           </div>
+
+          {creatingNotebook && (
+            <div className="space-y-2 rounded-lg border border-border bg-muted p-3">
+              <label className="block text-xs font-medium text-muted-foreground">
+                New notebook name
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  autoFocus
+                  value={newNotebookName}
+                  onChange={(e) =>
+                    setNewNotebookName(sanitizeNotebookName(e.target.value))
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void submitNewNotebook();
+                    if (e.key === "Escape") setCreatingNotebook(false);
+                  }}
+                  placeholder="e.g. Meeting Notes"
+                  maxLength={128}
+                  className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => void submitNewNotebook()}
+                  disabled={savingNotebook || !newNotebookName.trim()}
+                >
+                  {savingNotebook ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    "Create"
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setCreatingNotebook(false)}
+                  disabled={savingNotebook}
+                >
+                  Cancel
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Can&apos;t contain {"? * \\ / : < > | ' #"} — those are removed
+                automatically. Max 128 characters.
+              </p>
+            </div>
+          )}
           {ms.error && (
             <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -411,6 +494,22 @@ function PlannerPanel() {
   const [selectedBucket, setSelectedBucket] = useState<string>(
     saved.bucketId ?? "",
   );
+  const [creatingBucket, setCreatingBucket] = useState(false);
+  const [newBucketName, setNewBucketName] = useState("");
+  const [savingBucket, setSavingBucket] = useState(false);
+
+  const submitNewBucket = async () => {
+    const name = newBucketName.replace(/\s+/g, " ").trim();
+    if (!name || !selectedPlan) return;
+    setSavingBucket(true);
+    const bucket = await ms.createBucket(selectedPlan, name);
+    setSavingBucket(false);
+    if (bucket) {
+      setSelectedBucket(bucket.id);
+      setCreatingBucket(false);
+      setNewBucketName("");
+    }
+  };
 
   const isConnected = ms.connection.state === "connected";
 
@@ -493,8 +592,15 @@ function PlannerPanel() {
               </label>
               <select
                 className="w-full rounded-lg border border-border bg-muted px-3 py-2 text-sm"
-                value={selectedBucket}
-                onChange={(e) => setSelectedBucket(e.target.value)}
+                value={creatingBucket ? NEW_OPTION : selectedBucket}
+                onChange={(e) => {
+                  if (e.target.value === NEW_OPTION) {
+                    setCreatingBucket(true);
+                  } else {
+                    setCreatingBucket(false);
+                    setSelectedBucket(e.target.value);
+                  }
+                }}
                 disabled={!selectedPlan || ms.loadingBuckets}
               >
                 <option value="">
@@ -509,9 +615,56 @@ function PlannerPanel() {
                     {b.name}
                   </option>
                 ))}
+                {selectedPlan && (
+                  <option value={NEW_OPTION}>+ New bucket…</option>
+                )}
               </select>
             </div>
           </div>
+
+          {creatingBucket && (
+            <div className="space-y-2 rounded-lg border border-border bg-muted p-3">
+              <label className="block text-xs font-medium text-muted-foreground">
+                New bucket name
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  autoFocus
+                  value={newBucketName}
+                  onChange={(e) => setNewBucketName(e.target.value.slice(0, 255))}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void submitNewBucket();
+                    if (e.key === "Escape") setCreatingBucket(false);
+                  }}
+                  placeholder="e.g. Action items"
+                  maxLength={255}
+                  className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => void submitNewBucket()}
+                  disabled={savingBucket || !newBucketName.trim()}
+                >
+                  {savingBucket ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    "Create"
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setCreatingBucket(false)}
+                  disabled={savingBucket}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
           {ms.error && (
             <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />

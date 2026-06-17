@@ -831,6 +831,8 @@ pub fn run() {
             exports::commands::list_onenote_sections,
             exports::commands::list_planner_plans,
             exports::commands::list_planner_buckets,
+            exports::commands::create_onenote_notebook,
+            exports::commands::create_planner_bucket,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

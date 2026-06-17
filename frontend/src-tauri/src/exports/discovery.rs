@@ -66,6 +66,21 @@ fn map_outcome<T: serde::de::DeserializeOwned>(
     }
 }
 
+fn map_single<T: serde::de::DeserializeOwned>(
+    outcome: GraphOutcome,
+    what: &str,
+) -> Result<T, String> {
+    match outcome {
+        GraphOutcome::Success(resp) => serde_json::from_str::<T>(&resp.body)
+            .map_err(|e| format!("Failed to parse {what}: {e}")),
+        GraphOutcome::Failed(kind, detail) => Err(match detail {
+            Some(d) => format!("Graph error ({}): {d}", kind.code()),
+            None => format!("Graph error: {}", kind.code()),
+        }),
+        GraphOutcome::Unknown(msg) => Err(format!("Network error: {msg}")),
+    }
+}
+
 pub async fn list_notebooks<T: GraphTransport, S: Sleeper>(
     client: &GraphClient<T, S>,
     token: &str,
@@ -111,6 +126,24 @@ pub async fn create_section<T: GraphTransport, S: Sleeper>(
     }
 }
 
+/// Create a new OneNote notebook and return it. Requires the `Notes.Create`
+/// (or `Notes.ReadWrite`) scope, which this app already requests.
+pub async fn create_notebook<T: GraphTransport, S: Sleeper>(
+    client: &GraphClient<T, S>,
+    token: &str,
+    display_name: &str,
+) -> Result<NotebookInfo, String> {
+    let request = GraphRequest {
+        method: "POST".into(),
+        url: format!("{GRAPH_BASE}/me/onenote/notebooks"),
+        content_type: "application/json".into(),
+        body: serde_json::json!({ "displayName": display_name }).to_string(),
+        correlation_id: uuid::Uuid::new_v4().to_string(),
+        headers: Vec::new(),
+    };
+    map_single(client.execute(&request, token).await, "created notebook")
+}
+
 pub async fn list_sections<T: GraphTransport, S: Sleeper>(
     client: &GraphClient<T, S>,
     token: &str,
@@ -141,6 +174,31 @@ pub async fn list_buckets<T: GraphTransport, S: Sleeper>(
         "{GRAPH_BASE}/planner/plans/{plan_id}/buckets?$select=id,name&$top=100"
     ));
     map_outcome(client.execute(&request, token).await)
+}
+
+/// Create a new bucket within a plan and return it. Requires `Tasks.ReadWrite`,
+/// which this app already requests. The `orderHint` " !" places the bucket at
+/// the start of the plan (Graph's documented "beginning" hint).
+pub async fn create_bucket<T: GraphTransport, S: Sleeper>(
+    client: &GraphClient<T, S>,
+    token: &str,
+    plan_id: &str,
+    name: &str,
+) -> Result<BucketInfo, String> {
+    let request = GraphRequest {
+        method: "POST".into(),
+        url: format!("{GRAPH_BASE}/planner/buckets"),
+        content_type: "application/json".into(),
+        body: serde_json::json!({
+            "name": name,
+            "planId": plan_id,
+            "orderHint": " !",
+        })
+        .to_string(),
+        correlation_id: uuid::Uuid::new_v4().to_string(),
+        headers: Vec::new(),
+    };
+    map_single(client.execute(&request, token).await, "created bucket")
 }
 
 #[cfg(test)]
@@ -188,6 +246,34 @@ mod tests {
         let plans = list_plans(&c, "token").await.unwrap();
         assert_eq!(plans.len(), 1);
         assert_eq!(plans[0].title, "Sprint 42");
+    }
+
+    #[tokio::test]
+    async fn create_notebook_parses_created_notebook() {
+        let transport = MockGraphTransport::new();
+        transport.queue_default([GraphResponse::success(
+            201,
+            r#"{"id":"nb-9","displayName":"Meetings"}"#,
+        )]);
+        let c = client(transport);
+        let nb = create_notebook(&c, "token", "Meetings").await.unwrap();
+        assert_eq!(nb.id, "nb-9");
+        assert_eq!(nb.display_name, "Meetings");
+    }
+
+    #[tokio::test]
+    async fn create_bucket_parses_created_bucket() {
+        let transport = MockGraphTransport::new();
+        transport.queue_default([GraphResponse::success(
+            201,
+            r#"{"id":"bk-3","name":"Action items"}"#,
+        )]);
+        let c = client(transport);
+        let bucket = create_bucket(&c, "token", "plan-1", "Action items")
+            .await
+            .unwrap();
+        assert_eq!(bucket.id, "bk-3");
+        assert_eq!(bucket.name, "Action items");
     }
 
     #[tokio::test]

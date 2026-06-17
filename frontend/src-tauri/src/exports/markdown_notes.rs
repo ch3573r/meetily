@@ -236,11 +236,16 @@ fn clean_task_text(text: &str) -> String {
     let without_clock = CLOCK.replace_all(&without_checkbox, " ");
     let mut t = without_clock.split_whitespace().collect::<Vec<_>>().join(" ");
     // Drop a trailing "(...)" or "[...]" annotation if it looks like metadata.
+    // Besides owner/due hints we also strip transcript provenance like
+    // "(timestamp: …; confidence: low)" that can leak into the summary text,
+    // so it never ends up in a Planner task title.
     if let Some(pos) = t.rfind(" (") {
         let tail = &t[pos..].to_lowercase();
         if tail.contains("owner")
             || tail.contains("due")
             || tail.contains('@')
+            || tail.contains("timestamp")
+            || tail.contains("confidence")
             || ISO_DATE.is_match(tail)
         {
             t.truncate(pos);
@@ -401,6 +406,18 @@ Separately, the team also reviewed the budget and noted:
         let items = parse_action_items(md);
         assert_eq!(items.len(), 1);
         assert!(items[0].task.starts_with("File the report"));
+    }
+
+    #[test]
+    fn strips_transcript_provenance_from_task_title() {
+        let md = "\
+## Action Items
+- Follow up with the vendor (timestamp: ; confidence: low)
+- Send notes (timestamp: 12:03; confidence: high)";
+        let items = parse_action_items(md);
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].task, "Follow up with the vendor");
+        assert_eq!(items[1].task, "Send notes");
     }
 
     #[test]
