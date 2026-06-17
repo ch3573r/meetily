@@ -27,6 +27,7 @@ import { ImportDialogProvider } from '@/contexts/ImportDialogContext'
 import { isAudioExtension, getAudioFormatsDisplayList } from '@/constants/audioFormats'
 import { installTeamsDetectionDebugBridge } from '@/services/teamsDetectionService'
 import { ThemeInitializer } from '@/components/ThemeSettings'
+import { TeamsAutoRecord } from '@/components/TeamsAutoRecord'
 
 
 const sourceSans3 = Source_Sans_3({
@@ -267,6 +268,9 @@ export default function RootLayout({
                             <ImportDialogProvider onOpen={handleOpenImportDialog}>
                               {/* Download progress toast provider - listens for background downloads */}
                               <DownloadProgressToastProvider />
+
+                              {/* Auto-start recording when a Teams meeting is detected (opt-in) */}
+                              <TeamsAutoRecord />
 
                               {/* Show onboarding or main app */}
                               {showOnboarding ? (

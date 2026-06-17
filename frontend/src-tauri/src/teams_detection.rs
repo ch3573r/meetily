@@ -602,19 +602,31 @@ fn looks_like_teams_meeting_title(title: &str) -> bool {
     let has_teams_context = title.contains("teams")
         || title.contains("microsoft teams")
         || title.contains("teams.microsoft.com");
-    let has_meeting_context = title.contains("meeting")
-        || title.contains("call")
-        || title.contains("joined")
-        || title.contains("lobby")
-        || title.contains("screen sharing")
-        || title.contains("presenting")
-        || title.contains("participants")
-        || title.contains("mute")
-        || title.contains("unmute")
-        || title.contains("leave");
+    let has_meeting_context = MEETING_TITLE_KEYWORDS
+        .iter()
+        .any(|kw| title.contains(kw));
 
     has_teams_context && has_meeting_context
 }
+
+/// Meeting-context keywords across the languages Teams localizes window titles
+/// into. Teams shows the user's UI language in the title, so an English-only
+/// list misses e.g. German ("Besprechung") meetings entirely.
+const MEETING_TITLE_KEYWORDS: &[&str] = &[
+    // English
+    "meeting", "call", "joined", "lobby", "screen sharing", "presenting",
+    "participants", "mute", "unmute", "leave", "huddle", "waiting room",
+    // German
+    "besprechung", "anruf", "telefonkonferenz", "teilnehmer", "stummschalt",
+    "verlassen", "beitreten", "bildschirm", "präsentation", "freigeben",
+    "warteraum", "wird geteilt",
+    // French
+    "réunion", "appel", "participants", "quitter", "partage d'écran",
+    // Spanish
+    "reunión", "llamada", "participantes", "salir", "silenciar",
+    // Italian / Portuguese / Dutch (common)
+    "riunione", "reunião", "vergadering", "chiamada", "chamada",
+];
 
 #[cfg(target_os = "windows")]
 mod windows {

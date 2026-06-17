@@ -27,6 +27,7 @@ import {
   getExportDestinations,
   setExportDestinations,
 } from "@/lib/exportDestinations";
+import { getAutoRecordEnabled, setAutoRecordEnabled } from "@/lib/autoRecord";
 
 type AddonState =
   | "ready"
@@ -545,6 +546,17 @@ export function IntegrationsSettings() {
   );
   const [isCheckingTeams, setIsCheckingTeams] = useState(false);
   const [teamsError, setTeamsError] = useState<string | null>(null);
+  const [autoRecord, setAutoRecord] = useState(false);
+
+  useEffect(() => {
+    setAutoRecord(getAutoRecordEnabled());
+  }, []);
+
+  const toggleAutoRecord = () => {
+    const next = !autoRecord;
+    setAutoRecord(next);
+    setAutoRecordEnabled(next);
+  };
 
   const teamsState: AddonState = useMemo(() => {
     if (!teamsStatus) return "prompt";
@@ -592,9 +604,36 @@ export function IntegrationsSettings() {
         icon={Video}
         title="Teams meeting detection"
         state={teamsState}
-        detail="Windows detector for Teams desktop and browser meetings. Current safety mode recommends recording; it does not auto-start recording yet."
+        detail="Windows detector for Teams desktop and browser meetings. Detects meetings in several UI languages."
       >
         <div className="space-y-3">
+          <label className="flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-border bg-muted p-3">
+            <span>
+              <span className="block text-sm font-medium text-foreground">
+                Auto-start recording when a meeting is detected
+              </span>
+              <span className="mt-0.5 block text-xs text-muted-foreground">
+                Starts a recording once per detected meeting; re-arms when the
+                meeting ends. You can still stop manually.
+              </span>
+            </span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={autoRecord}
+              onClick={toggleAutoRecord}
+              className={`relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+                autoRecord ? "bg-primary" : "bg-border"
+              }`}
+            >
+              <span
+                className={`inline-block h-5 w-5 transform rounded-full bg-background shadow transition-transform ${
+                  autoRecord ? "translate-x-5" : "translate-x-0.5"
+                }`}
+              />
+            </button>
+          </label>
+
           <DetectionSummary status={teamsStatus} />
           {teamsStatus?.reason && (
             <p className="rounded-xl border border-border bg-muted p-3 text-sm text-muted-foreground">
