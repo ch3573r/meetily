@@ -684,6 +684,27 @@ async fn run_import<R: Runtime>(
         warn!("Failed to write transcripts.json: {}", e);
     }
 
+    // Record the engine + model that actually ran (read back from the live
+    // engine so the metadata reflects reality, not the requested config).
+    let used_provider = if use_nemotron {
+        "nemotron"
+    } else if use_parakeet {
+        "parakeet"
+    } else {
+        "localWhisper"
+    };
+    let used_model = if let Some(e) = &nemotron_engine {
+        e.get_current_model().await
+    } else if let Some(e) = &parakeet_engine {
+        e.get_current_model().await
+    } else if let Some(e) = &whisper_engine {
+        e.get_current_model().await
+    } else {
+        None
+    }
+    .or_else(|| model.clone())
+    .unwrap_or_default();
+
     if let Err(e) = write_import_metadata(
         &meeting_folder,
         &meeting_id,
@@ -691,6 +712,8 @@ async fn run_import<R: Runtime>(
         duration_seconds,
         &dest_filename,
         "import",
+        used_provider,
+        &used_model,
     ) {
         warn!("Failed to write metadata.json: {}", e);
     }
@@ -955,6 +978,8 @@ fn write_import_metadata(
     duration_seconds: f64,
     audio_filename: &str,
     source: &str,
+    transcription_provider: &str,
+    transcription_model: &str,
 ) -> Result<()> {
     let metadata_path = folder.join("metadata.json");
     let temp_path = folder.join(".metadata.json.tmp");
@@ -970,7 +995,10 @@ fn write_import_metadata(
         "audio_file": audio_filename,
         "transcript_file": "transcripts.json",
         "status": "completed",
-        "source": source
+        "source": source,
+        // Which transcription engine + model actually ran (no silent fallback).
+        "transcription_provider": transcription_provider,
+        "transcription_model": transcription_model
     });
 
     let json_string = serde_json::to_string_pretty(&json)?;
@@ -1320,6 +1348,8 @@ mod tests {
             1800.0,
             "audio.mp4",
             "import",
+            "parakeet",
+            "parakeet-tdt-0.6b-v3-int8",
         );
         assert!(result.is_ok(), "write_import_metadata failed: {:?}", result);
 
@@ -1335,6 +1365,8 @@ mod tests {
         assert_eq!(parsed["audio_file"], "audio.mp4");
         assert_eq!(parsed["status"], "completed");
         assert_eq!(parsed["source"], "import");
+        assert_eq!(parsed["transcription_provider"], "parakeet");
+        assert_eq!(parsed["transcription_model"], "parakeet-tdt-0.6b-v3-int8");
     }
 
     /// Integration test that decodes a real audio file and runs VAD.

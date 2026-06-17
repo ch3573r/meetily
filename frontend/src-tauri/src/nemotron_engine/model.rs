@@ -36,13 +36,17 @@ use regex::Regex;
 use std::fs;
 use std::path::Path;
 
-use super::features::{MelExtractor, HOP_LENGTH, N_MELS};
+use super::features::{MelExtractor, N_MELS};
 
-// From genai_config.json.
+// From genai_config.json + the actual ONNX graph signatures.
 const BLANK_ID: i32 = 13087;
 const VOCAB_SIZE: usize = 13088;
-const CHUNK_SAMPLES: usize = 8960; // 560 ms @ 16 kHz
 const MAX_SYMBOLS_PER_STEP: usize = 10;
+/// The encoder takes a FIXED `audio_signal` of [1, 65, 128]: `PRE_ENCODE_CACHE`
+/// carried mel frames followed by `NEW_FRAMES_PER_CHUNK` fresh frames.
+const ENCODER_INPUT_FRAMES: usize = 65;
+const PRE_ENCODE_CACHE: usize = 9;
+const NEW_FRAMES_PER_CHUNK: usize = ENCODER_INPUT_FRAMES - PRE_ENCODE_CACHE; // 56
 /// Default language id for the encoder `lang_id` input. The language→id table
 /// isn't published; 0 is the conventional first/primary (English) slot. Revisit
 /// when the table is resolved (plan §6).
@@ -53,11 +57,11 @@ static DECODE_SPACE_RE: Lazy<Result<Regex, regex::Error>> =
 
 #[derive(thiserror::Error, Debug)]
 pub enum NemotronError {
-    #[error("ORT error")]
+    #[error("ORT error: {0}")]
     Ort(#[from] ort::Error),
-    #[error("I/O error")]
+    #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
-    #[error("ndarray shape error")]
+    #[error("ndarray shape error: {0}")]
     Shape(#[from] ndarray::ShapeError),
     #[error("Model input not found: {0}")]
     InputNotFound(String),
@@ -207,37 +211,54 @@ impl NemotronModel {
             return Ok(String::new());
         }
 
-        // 1. Log-mel features for the whole segment → [N_MELS, T_total].
-        let mel = self.mel.compute(&samples); // mel-major
+        // 1. Log-mel features for the whole segment, transposed to frame-major
+        //    so each entry is one 128-dim mel frame (the encoder wants features
+        //    last: audio_signal is [1, T, 128]).
+        let mel = self.mel.compute(&samples); // mel-major [128][T_total]
         let total_frames = mel.first().map(|r| r.len()).unwrap_or(0);
         if total_frames == 0 {
             return Ok(String::new());
         }
+        let frame = |t: usize| -> [f32; N_MELS] {
+            let mut f = [0.0f32; N_MELS];
+            for (m, fm) in f.iter_mut().enumerate() {
+                *fm = mel[m][t];
+            }
+            f
+        };
 
-        // 2. Stream the features through the encoder in fixed chunks, threading
-        //    the caches. Chunk size in feature frames = CHUNK_SAMPLES / hop.
-        let chunk_frames = (CHUNK_SAMPLES / HOP_LENGTH).max(1); // 56
+        // 2. Stream the features through the encoder in fixed 65-frame windows
+        //    (PRE_ENCODE_CACHE carried frames + NEW_FRAMES_PER_CHUNK fresh),
+        //    threading both the mel-frame carry and the conformer caches.
         let mut cache_channel = Self::zeros_for_input(&self.encoder, "cache_last_channel")?;
         let mut cache_time = Self::zeros_for_input(&self.encoder, "cache_last_time")?;
         let mut cache_len: Array1<i64> = Array1::zeros(1);
+        // Carried mel frames (the previous window's tail); zeros for the first chunk.
+        let mut carry: Vec<[f32; N_MELS]> = vec![[0.0f32; N_MELS]; PRE_ENCODE_CACHE];
 
-        // Accumulated encoder frames: each row is a D-dim encoder output vector.
         let mut enc_frames: Vec<Vec<f32>> = Vec::new();
 
-        let mut start = 0usize;
-        while start < total_frames {
-            let end = (start + chunk_frames).min(total_frames);
-            let t = end - start;
+        let mut pos = 0usize;
+        while pos < total_frames {
+            let new_count = (total_frames - pos).min(NEW_FRAMES_PER_CHUNK);
 
-            // audio_signal: [1, N_MELS, t]
-            let mut audio = Array::zeros((1, N_MELS, t));
-            for m in 0..N_MELS {
-                for (j, frame) in (start..end).enumerate() {
-                    audio[[0, m, j]] = mel[m][frame];
+            // Build [1, 65, 128]: carry frames then new frames, zero-padded.
+            let mut audio = Array::zeros((1, ENCODER_INPUT_FRAMES, N_MELS));
+            for (j, cf) in carry.iter().enumerate() {
+                for m in 0..N_MELS {
+                    audio[[0, j, m]] = cf[m];
+                }
+            }
+            for k in 0..new_count {
+                let f = frame(pos + k);
+                for m in 0..N_MELS {
+                    audio[[0, PRE_ENCODE_CACHE + k, m]] = f[m];
                 }
             }
             let audio = audio.into_dyn();
-            let length: Array1<i64> = Array1::from_vec(vec![t as i64]);
+            // Valid frames provided this step (carry + new), capped at the window.
+            let valid = (PRE_ENCODE_CACHE + new_count).min(ENCODER_INPUT_FRAMES);
+            let length: Array1<i64> = Array1::from_vec(vec![valid as i64]);
             let lang: Array1<i64> = Array1::from_vec(vec![self.lang_id]);
 
             let outputs = self.encoder.run(inputs![
@@ -249,21 +270,38 @@ impl NemotronModel {
                 "lang_id" => TensorRef::from_array_view(lang.view())?,
             ])?;
 
-            // outputs: [B, D, T'] → push each time-step as a D-vector.
+            // outputs: [1, T', D]. Keep only the valid frames (encoded_lengths).
             let enc = outputs
                 .get("outputs")
                 .ok_or_else(|| NemotronError::OutputNotFound("outputs".into()))?
                 .try_extract_array::<f32>()?;
-            let enc = enc.into_dimensionality::<ndarray::Ix3>()?; // [1, D, T']
-            let d = enc.shape()[1];
-            let tp = enc.shape()[2];
-            for ti in 0..tp {
+            let enc = enc.into_dimensionality::<ndarray::Ix3>()?; // [1, T', D]
+            let tp = enc.shape()[1];
+            let d = enc.shape()[2];
+            let valid_out = outputs
+                .get("encoded_lengths")
+                .and_then(|v| v.try_extract_array::<i64>().ok())
+                .and_then(|a| a.iter().next().copied())
+                .map(|n| (n as usize).min(tp))
+                .unwrap_or(tp);
+            for ti in 0..valid_out {
                 let mut v = Vec::with_capacity(d);
                 for di in 0..d {
-                    v.push(enc[[0, di, ti]]);
+                    v.push(enc[[0, ti, di]]);
                 }
                 enc_frames.push(v);
             }
+
+            // Carry the last PRE_ENCODE_CACHE input frames into the next window.
+            let mut next_carry: Vec<[f32; N_MELS]> = Vec::with_capacity(PRE_ENCODE_CACHE);
+            for j in (ENCODER_INPUT_FRAMES - PRE_ENCODE_CACHE)..ENCODER_INPUT_FRAMES {
+                let mut f = [0.0f32; N_MELS];
+                for m in 0..N_MELS {
+                    f[m] = audio[[0, j, m]];
+                }
+                next_carry.push(f);
+            }
+            carry = next_carry;
 
             // Thread caches forward.
             cache_channel = outputs
@@ -283,7 +321,7 @@ impl NemotronModel {
                 .into_dimensionality::<ndarray::Ix1>()?
                 .to_owned();
 
-            start = end;
+            pos += new_count;
         }
 
         // 3. Greedy RNN-T decode over the accumulated encoder frames.
@@ -332,14 +370,14 @@ impl NemotronModel {
     }
 
     /// Run the LSTM prediction network for one target token. Returns
-    /// (decoder_output, h_out, c_out).
+    /// (decoder_output, h_out, c_out). `targets` is INT64 in the graph.
     fn run_decoder(
         &mut self,
         token: i32,
         h_in: &ArrayD<f32>,
         c_in: &ArrayD<f32>,
     ) -> Result<(ArrayD<f32>, ArrayD<f32>, ArrayD<f32>), NemotronError> {
-        let targets = Array2::from_shape_vec((1, 1), vec![token])?.into_dyn();
+        let targets = Array2::from_shape_vec((1, 1), vec![token as i64])?.into_dyn();
         let outputs = self.decoder.run(inputs![
             "targets" => TensorRef::from_array_view(targets.view())?,
             "h_in" => TensorRef::from_array_view(h_in.view())?,
@@ -364,8 +402,9 @@ impl NemotronModel {
     }
 
     /// Run the joint network for one encoder frame + the current decoder output.
-    /// Encoder frame is shaped [1, 1, D] (batch, time=1, feat); the decoder
-    /// output is passed through as the export produced it.
+    /// encoder_output wants [1, time=1, D]; the decoder produces decoder_output
+    /// as [1, 640, target_len=1], but the joint wants [1, target_len=1, 640], so
+    /// we transpose the prediction-net feature/time axes.
     fn run_joint(
         &mut self,
         enc_frame: &[f32],
@@ -373,9 +412,15 @@ impl NemotronModel {
         dec_out: &ArrayD<f32>,
     ) -> Result<Vec<f32>, NemotronError> {
         let enc = Array::from_shape_vec((1, 1, d_enc), enc_frame.to_vec())?.into_dyn();
+        // dec_out: [1, D_pred, U] → [1, U, D_pred] (contiguous copy).
+        let dec_t = dec_out
+            .view()
+            .permuted_axes(IxDyn(&[0, 2, 1]))
+            .as_standard_layout()
+            .to_owned();
         let outputs = self.joint.run(inputs![
             "encoder_output" => TensorRef::from_array_view(enc.view())?,
-            "decoder_output" => TensorRef::from_array_view(dec_out.view())?,
+            "decoder_output" => TensorRef::from_array_view(dec_t.view())?,
         ])?;
         let logits = outputs
             .get("joint_output")

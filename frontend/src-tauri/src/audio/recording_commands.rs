@@ -238,6 +238,10 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
     });
     manager.set_meeting_name(Some(effective_meeting_name));
 
+    // Record which transcription engine + model this session uses.
+    let (tp, tm) = resolve_transcription_info(&app).await;
+    manager.set_transcription_info(tp, tm);
+
     // Set up error callback
     let app_for_error = app.clone();
     manager.set_error_callback(move |error| {
@@ -429,6 +433,10 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
         format!("Meeting {}", now.format("%Y-%m-%d_%H-%M-%S"))
     });
     manager.set_meeting_name(Some(effective_meeting_name));
+
+    // Record which transcription engine + model this session uses.
+    let (tp, tm) = resolve_transcription_info(&app).await;
+    manager.set_transcription_info(tp, tm);
 
     // Set up error callback
     let app_for_error = app.clone();
@@ -1286,6 +1294,18 @@ pub async fn attempt_device_reconnect(
             error!("Manual reconnection error: {}", e);
             Err(e.to_string())
         }
+    }
+}
+
+/// Resolve the configured transcription provider + model so it can be recorded
+/// in the meeting metadata. Live recording has no silent provider fallback, so
+/// the saved config is what actually runs.
+async fn resolve_transcription_info<R: Runtime>(
+    app: &AppHandle<R>,
+) -> (Option<String>, Option<String>) {
+    match crate::api::api::api_get_transcript_config(app.clone(), app.state(), None).await {
+        Ok(Some(c)) => (Some(c.provider), Some(c.model)),
+        _ => (None, None),
     }
 }
 

@@ -38,6 +38,11 @@ pub struct MeetingMetadata {
     pub transcript_file: String,
     pub sample_rate: u32,
     pub status: String, // "recording", "completed", "error"
+    // Which transcription engine + model ran for this meeting (no silent fallback).
+    #[serde(default)]
+    pub transcription_provider: Option<String>,
+    #[serde(default)]
+    pub transcription_model: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -55,6 +60,8 @@ pub struct RecordingSaver {
     transcript_segments: Arc<Mutex<Vec<TranscriptSegment>>>,
     chunk_receiver: Option<mpsc::UnboundedReceiver<AudioChunk>>,
     is_saving: Arc<Mutex<bool>>,
+    transcription_provider: Option<String>,
+    transcription_model: Option<String>,
 }
 
 impl RecordingSaver {
@@ -67,7 +74,16 @@ impl RecordingSaver {
             transcript_segments: Arc::new(Mutex::new(Vec::new())),
             chunk_receiver: None,
             is_saving: Arc::new(Mutex::new(false)),
+            transcription_provider: None,
+            transcription_model: None,
         }
+    }
+
+    /// Record which transcription engine + model this recording uses. Set before
+    /// the meeting folder is initialized so it lands in metadata.json.
+    pub fn set_transcription_info(&mut self, provider: Option<String>, model: Option<String>) {
+        self.transcription_provider = provider;
+        self.transcription_model = model;
     }
 
     /// Set the meeting name for this recording session
@@ -289,6 +305,8 @@ impl RecordingSaver {
             transcript_file: "transcripts.json".to_string(),
             sample_rate: 48000,
             status: "recording".to_string(),
+            transcription_provider: self.transcription_provider.clone(),
+            transcription_model: self.transcription_model.clone(),
         };
 
         // Write initial metadata.json
