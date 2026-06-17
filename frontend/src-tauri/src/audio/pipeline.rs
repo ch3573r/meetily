@@ -950,9 +950,17 @@ impl AudioPipeline {
                             match self.vad_processor.process_audio(&mixed_with_gain) {
                                 Ok(speech_segments) => {
                                     let had_segments = !speech_segments.is_empty();
-                                    // Whichever source carried more energy since the
-                                    // last segment owns these segments.
-                                    let segment_source = if mic_energy_acc >= sys_energy_acc {
+                                    // Attribute the segment to the dominant source. The mic is
+                                    // loudness-normalized at capture (~-23 LUFS) while system audio
+                                    // is raw, and the mic also picks up speaker bleed — so a plain
+                                    // `mic >= sys` almost always reads "Me". Require the mic to
+                                    // *clearly* exceed system to claim "Me": real speech easily does,
+                                    // but normalized room tone / bleed during system-only playback
+                                    // does not. (MIC_DOMINANCE may need on-device calibration.)
+                                    const MIC_DOMINANCE: f32 = 2.0;
+                                    let segment_source = if mic_energy_acc
+                                        >= sys_energy_acc * MIC_DOMINANCE
+                                    {
                                         DeviceType::Microphone
                                     } else {
                                         DeviceType::System

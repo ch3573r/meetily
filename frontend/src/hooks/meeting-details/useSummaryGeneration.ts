@@ -446,8 +446,13 @@ export function useSummaryGeneration({
     };
 
     return {
+      // Prefix each line with the speaker (Me / Participants) when known, so the
+      // summary model gets who-said-what, not just a flat transcript.
       transcriptText: allTranscripts
-        .map(t => `${formatTime(t.audio_start_time, t.timestamp)} ${t.text}`)
+        .map(t => {
+          const who = t.speaker ? `${t.speaker}: ` : '';
+          return `${formatTime(t.audio_start_time, t.timestamp)} ${who}${t.text}`;
+        })
         .join('\n'),
       transcriptTexts: allTranscripts.map(t => t.text),
     };

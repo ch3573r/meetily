@@ -14,8 +14,11 @@ use tokio_util::sync::CancellationToken;
 const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
 const DEFAULT_OPENAI_MODEL: &str = "gpt-4o-mini";
 const DEFAULT_OPENAI_TIMEOUT_SECONDS: u64 = 300;
-const TEST_PROMPT: &str = "Reply exactly with CLAWSCRIBE_OPENAI_COMPATIBLE_OK.";
-const TEST_EXPECTED: &str = "CLAWSCRIBE_OPENAI_COMPATIBLE_OK";
+// A benign, factual prompt. The previous "reply exactly with <UPPERCASE_TOKEN>"
+// pattern tripped prompt-injection guardrails on proxies like LiteLLM
+// (content_safety_violation) even though the endpoint was reachable.
+const TEST_PROMPT: &str = "What is 2 + 2? Reply with only the number.";
+const TEST_EXPECTED: &str = "4";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

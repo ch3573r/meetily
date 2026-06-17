@@ -14,8 +14,10 @@ const PENDING_MARKER: &str = ".openclaw-pending.json";
 const SUBMITTED_MARKER: &str = ".openclaw-submitted.json";
 const FAILED_MARKER: &str = ".openclaw-failed.json";
 const PENDING_STALE_SECONDS: i64 = 15 * 60;
-const DEFAULT_ENDPOINT: &str = "http://openclaw-host.local:8765/meetings/completed";
-const DEFAULT_MODEL_ENDPOINT: &str = "http://openclaw-host.local:8765/v1/chat/completions";
+// No prefilled endpoints — the user supplies their own OpenClaw URLs. (A
+// hardcoded dev IP must never ship as a default.)
+const DEFAULT_ENDPOINT: &str = "";
+const DEFAULT_MODEL_ENDPOINT: &str = "";
 const DEFAULT_SOURCE: &str = "ClawScribe";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -498,12 +500,9 @@ fn normalize_config(mut config: OpenClawConfig) -> OpenClawConfig {
     config.bearer_token = config.bearer_token.trim().to_string();
     config.source = config.source.trim().to_string();
 
-    if config.endpoint.is_empty() {
-        config.endpoint = DEFAULT_ENDPOINT.to_string();
-    }
-    if config.model_endpoint.is_empty() {
-        config.model_endpoint = DEFAULT_MODEL_ENDPOINT.to_string();
-    }
+    // Endpoints stay exactly as the user left them (empty is valid — the
+    // handoff is simply "not ready" until configured). Only the source label
+    // falls back to a default.
     if config.source.is_empty() {
         config.source = DEFAULT_SOURCE.to_string();
     }
