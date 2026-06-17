@@ -673,9 +673,10 @@ function PlannerPanel() {
           )}
           {!ms.loadingPlans && !ms.error && ms.plans.length === 0 && (
             <p className="rounded-lg border border-border bg-muted p-3 text-sm text-muted-foreground">
-              No Planner plans were returned for this account. Confirm you
-              signed in with the right account and that this app has the
-              Tasks.ReadWrite permission, then use Reload.
+              No Planner plans found for this account. Create a plan in Planner
+              or Microsoft Teams, then use Reload to pick it here. (Plans can&apos;t
+              be created from ClawScribe — they must belong to a Microsoft 365
+              group.)
             </p>
           )}
           {selectedBucket && (
