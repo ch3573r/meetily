@@ -60,9 +60,11 @@ export function HomeDashboard({
     return "Working late"; // 22:00–04:59
   }, []);
 
-  // Honest status: reflect actual recording / microphone state.
+  // Honest status: reflect actual recording / microphone / paused state.
   const appStatus = isRecording
-    ? { label: "Recording in progress", dot: "bg-red-400", glow: "shadow-[0_0_16px_rgba(248,113,113,0.7)]" }
+    ? recordingState.isPaused
+      ? { label: "Paused", dot: "bg-amber-400", glow: "shadow-[0_0_16px_rgba(251,191,36,0.7)]" }
+      : { label: "Recording in progress", dot: "bg-red-400", glow: "shadow-[0_0_16px_rgba(248,113,113,0.7)]" }
     : canRecord
       ? { label: "Ready to record", dot: "bg-emerald-400", glow: "shadow-[0_0_16px_rgba(52,211,153,0.7)]" }
       : { label: "Microphone needed", dot: "bg-amber-400", glow: "shadow-[0_0_16px_rgba(251,191,36,0.7)]" };
@@ -130,7 +132,11 @@ export function HomeDashboard({
 
                 <div className="grid gap-2 text-sm text-muted-foreground sm:text-right">
                   <div className="font-medium text-foreground">
-                    {isRecording ? "Recording in progress" : "Ready to start"}
+                    {isRecording
+                      ? recordingState.isPaused
+                        ? "Paused"
+                        : "Recording in progress"
+                      : "Ready to start"}
                   </div>
                   <div>Use the recording controls to pause or stop.</div>
                 </div>

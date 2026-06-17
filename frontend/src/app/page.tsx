@@ -1,6 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import { appDataDir } from '@tauri-apps/api/path';
+import { listen } from '@tauri-apps/api/event';
 import { motion } from 'framer-motion';
 import { useSidebar } from '@/components/Sidebar/SidebarProvider';
 import { usePermissionCheck } from '@/hooks/usePermissionCheck';
@@ -12,6 +15,7 @@ import Analytics from '@/lib/analytics';
 import { SettingsModals } from './_components/SettingsModal';
 import { TranscriptPanel } from './_components/TranscriptPanel';
 import { HomeDashboard } from '@/components/HomeDashboard';
+import { RecordingControls } from '@/components/RecordingControls';
 import { useModalState } from '@/hooks/useModalState';
 import { useRecordingStateSync } from '@/hooks/useRecordingStateSync';
 import { useRecordingStart } from '@/hooks/useRecordingStart';
@@ -30,7 +34,7 @@ export default function Home() {
 
   // Use contexts for state management
   const { meetingTitle, transcripts } = useTranscripts();
-  const { transcriptModelConfig } = useConfig();
+  const { transcriptModelConfig, selectedDevices } = useConfig();
   const recordingState = useRecordingState();
 
   // Extract status from global state
@@ -186,6 +190,28 @@ export default function Home() {
     }
   }, [recordingState.isRecording]);
 
+  // Stop the recording when the sidebar "Recording…" indicator is clicked.
+  // Mirrors RecordingControls.stopRecordingAction so the stop flow is identical
+  // regardless of which control triggered it.
+  useEffect(() => {
+    const onStopFromSidebar = async () => {
+      if (!recordingState.isRecording || isStopping) return;
+      setIsStopping(true);
+      try {
+        const dataDir = await appDataDir();
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const savePath = `${dataDir}/recording-${timestamp}.wav`;
+        await invoke('stop_recording', { args: { save_path: savePath } });
+        await handleRecordingStop(true);
+      } catch (error) {
+        console.error('Failed to stop recording from sidebar:', error);
+        await handleRecordingStop(false);
+      }
+    };
+    window.addEventListener('stop-recording-from-sidebar', onStopFromSidebar);
+    return () => window.removeEventListener('stop-recording-from-sidebar', onStopFromSidebar);
+  }, [recordingState.isRecording, isStopping, handleRecordingStop, setIsStopping]);
+
   // Computed values using global status
   const isProcessingStop = status === RecordingStatus.PROCESSING_TRANSCRIPTS || isProcessing;
 
@@ -220,6 +246,36 @@ export default function Home() {
               isStopping={isStopping}
               showModal={showModal}
             />
+
+            {/* Floating pause/stop controls for the active recording. Hidden once
+                we move into transcript processing/saving (StatusOverlays take over). */}
+            {(hasMicrophone || isRecording) &&
+              status !== RecordingStatus.PROCESSING_TRANSCRIPTS &&
+              status !== RecordingStatus.SAVING && (
+                <div className="fixed bottom-12 left-0 right-0 z-10 pointer-events-none">
+                  <div
+                    className="flex justify-center pl-8 transition-[margin] duration-300"
+                    style={{ marginLeft: sidebarCollapsed ? '4rem' : '16rem' }}
+                  >
+                    <div className="pointer-events-auto rounded-full border border-border shadow-lg">
+                      <RecordingControls
+                        variant="floating"
+                        isRecording={recordingState.isRecording}
+                        onRecordingStop={(callApi = true) => handleRecordingStop(callApi)}
+                        onRecordingStart={handleRecordingStart}
+                        onTranscriptReceived={() => {}}
+                        onStopInitiated={() => setIsStopping(true)}
+                        barHeights={barHeights}
+                        onTranscriptionError={(message) => showModal('errorAlert', message)}
+                        isRecordingDisabled={isRecordingDisabled}
+                        isParentProcessing={isProcessingStop}
+                        selectedDevices={selectedDevices}
+                        meetingName={meetingTitle}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
 
             <StatusOverlays
               isProcessing={status === RecordingStatus.PROCESSING_TRANSCRIPTS && !recordingState.isRecording}

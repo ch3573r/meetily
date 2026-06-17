@@ -22,6 +22,11 @@ const ACTIONS: { key: ActionKey; label: string; description: string }[] = [
   { key: "pauseResume", label: "Pause / resume recording", description: "Pauses or resumes the active recording." },
 ];
 
+const DEFAULT_BINDINGS: ShortcutBindings = {
+  startStop: "Ctrl+Shift+F9",
+  pauseResume: "Ctrl+Shift+F10",
+};
+
 // Combos Windows or common apps reserve — warn (the OS won't let us own these).
 const RESERVED = new Set([
   "Alt+F4", "Alt+Tab", "Super+KeyL", "Super+KeyD", "Super+Tab",
@@ -63,7 +68,13 @@ export function KeyboardShortcutsSettings() {
   useEffect(() => {
     invoke<ShortcutBindings>("get_shortcuts")
       .then(setBindings)
-      .catch(() => setBindings({ startStop: "Ctrl+Shift+F9", pauseResume: "Ctrl+Shift+F10" }));
+      .catch(() => setBindings({ ...DEFAULT_BINDINGS }));
+  }, []);
+
+  const resetToDefaults = useCallback(() => {
+    setCapturing(null);
+    setConflicts([]);
+    setBindings({ ...DEFAULT_BINDINGS });
   }, []);
 
   useEffect(() => {
@@ -156,7 +167,20 @@ export function KeyboardShortcutsSettings() {
         })}
       </div>
 
-      <div className="mt-4 flex justify-end">
+      <div className="mt-4 flex justify-end gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={resetToDefaults}
+          disabled={
+            saving ||
+            capturing !== null ||
+            (bindings.startStop === DEFAULT_BINDINGS.startStop &&
+              bindings.pauseResume === DEFAULT_BINDINGS.pauseResume)
+          }
+        >
+          Reset
+        </Button>
         <Button type="button" onClick={save} disabled={saving || capturing !== null}>
           {saving ? "Saving…" : "Save shortcuts"}
         </Button>

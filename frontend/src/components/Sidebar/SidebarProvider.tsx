@@ -159,6 +159,16 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
 
       // Track recording initiation from sidebar
       Analytics.trackButtonClick('start_recording', 'sidebar');
+    } else {
+      // Already recording - clicking the indicator stops the recording.
+      // The recording screen is the home route, so navigate there if needed
+      // so the stop handler (mounted on Home) can process the stop.
+      console.log('Stopping recording from sidebar');
+      if (pathname !== '/') {
+        router.push('/');
+      }
+      window.dispatchEvent(new CustomEvent('stop-recording-from-sidebar'));
+      Analytics.trackButtonClick('stop_recording', 'sidebar');
     }
     // The actual recording start/stop is handled in the Home component
   };

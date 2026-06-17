@@ -86,7 +86,7 @@ const Sidebar: React.FC = () => {
   } = useSidebar();
 
   // Get recording state from RecordingStateContext (single source of truth)
-  const { isRecording } = useRecordingState();
+  const { isRecording, isPaused } = useRecordingState();
   const { openImportDialog } = useImportDialog();
   const { betaFeatures } = useConfig();
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -364,10 +364,9 @@ const Sidebar: React.FC = () => {
             <TooltipTrigger asChild>
               <button
                 onClick={handleRecordingToggle}
-                disabled={isRecording}
                 className={`flex h-10 w-10 items-center justify-center rounded-md text-foreground shadow-sm transition ${
                   isRecording
-                    ? "cursor-not-allowed bg-red-500/60"
+                    ? "bg-red-500 hover:bg-red-600"
                     : "bg-gradient-to-br from-cyan-400 to-blue-600 shadow-cyan-500/20 hover:scale-105"
                 }`}
               >
@@ -380,7 +379,11 @@ const Sidebar: React.FC = () => {
             </TooltipTrigger>
             <TooltipContent side="right">
               <p>
-                {isRecording ? "Recording in progress..." : "Start Recording"}
+                {isRecording
+                  ? isPaused
+                    ? "Paused — click to stop"
+                    : "Recording — click to stop"
+                  : "Start Recording"}
               </p>
             </TooltipContent>
           </Tooltip>
@@ -645,10 +648,10 @@ const Sidebar: React.FC = () => {
             <div className="flex-shrink-0 space-y-2 border-t border-border p-3">
               <button
                 onClick={handleRecordingToggle}
-                disabled={isRecording}
+                title={isRecording ? "Click to stop recording" : undefined}
                 className={`flex w-full items-center justify-center gap-2 rounded-md px-3 py-3 text-sm font-semibold text-foreground shadow-sm transition ${
                   isRecording
-                    ? "cursor-not-allowed bg-red-500/60"
+                    ? "bg-red-500 hover:bg-red-600"
                     : "bg-gradient-to-r from-cyan-400 to-blue-600 shadow-cyan-500/20 hover:from-cyan-300 hover:to-blue-500"
                 }`}
               >
@@ -658,7 +661,11 @@ const Sidebar: React.FC = () => {
                   <Mic className="h-4 w-4" />
                 )}
                 <span>
-                  {isRecording ? "Recording in progress..." : "Start Recording"}
+                  {isRecording
+                    ? isPaused
+                      ? "Paused — click to stop"
+                      : "Recording — click to stop"
+                    : "Start Recording"}
                 </span>
               </button>
 
@@ -681,10 +688,17 @@ const Sidebar: React.FC = () => {
               </button>
 
               {isRecording ? (
-                <div className="flex items-center gap-2 rounded-md border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-700 dark:text-red-300">
-                  <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />
-                  Recording
-                </div>
+                isPaused ? (
+                  <div className="flex items-center gap-2 rounded-md border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+                    <span className="h-2 w-2 rounded-full bg-amber-500" />
+                    Paused
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 rounded-md border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-700 dark:text-red-300">
+                    <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />
+                    Recording
+                  </div>
+                )
               ) : (
                 <div className="flex items-center gap-2 rounded-md border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300">
                   <span className="h-2 w-2 rounded-full bg-emerald-500" />
