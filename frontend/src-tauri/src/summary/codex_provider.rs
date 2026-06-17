@@ -879,6 +879,16 @@ impl CodexAppServerProvider {
             markdown,
         })
     }
+
+    /// Run a one-off text prompt through the Codex app-server and return the raw
+    /// model output (no meeting contract). Used for Planner title/notes polish so
+    /// Codex has the same AI-polish path as the other providers.
+    pub async fn run_text_prompt(&self, prompt: &str) -> Result<String, String> {
+        validate_codex_runtime_file(&self.app_server_binary)?;
+        let mut session = AppServerSession::start(self).await?;
+        session.require_authenticated().await?;
+        session.process_raw_prompt(&self.config.model, prompt).await
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1354,6 +1364,20 @@ fn app_server_turn_start_request(
     )
 }
 
+/// A turn carrying an arbitrary prompt (no meeting-notes contract). Used for
+/// one-off tasks like Planner title/notes polishing.
+fn raw_turn_start_request(id: u64, thread_id: &str, model: &str, prompt: &str) -> Value {
+    json_rpc_request(
+        id,
+        "turn/start",
+        serde_json::json!({
+            "threadId": thread_id,
+            "model": model,
+            "input": [{ "type": "text", "text": prompt }],
+        }),
+    )
+}
+
 #[derive(Debug, Default)]
 struct CodexAccountState {
     auth_status: Option<String>,
@@ -1540,6 +1564,36 @@ impl AppServerSession {
                 metadata.clone(),
             ))
             .await?;
+            match self.read_turn_result(id).await {
+                Ok(output) => return Ok(output),
+                Err(e) if is_overload_message(&e) && attempt < CODEX_MAX_OVERLOAD_RETRIES => {
+                    self.overload_retries += 1;
+                    let delay = Duration::from_millis(150 * (1 << attempt));
+                    sleep(delay).await;
+                }
+                Err(e) if is_auth_failure_message(&e) => {
+                    return Err(CODEX_REAUTH_MESSAGE.to_string());
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        Err("Codex app-server is overloaded after bounded retries.".to_string())
+    }
+
+    /// Run a single turn with a raw prompt (no meeting contract) and return the
+    /// model's text output. Same thread/start + overload-retry handling as
+    /// `process_turn`.
+    async fn process_raw_prompt(&mut self, model: &str, prompt: &str) -> Result<String, String> {
+        let thread_response = self
+            .request_with_overload_retry("thread/start", serde_json::json!({ "model": model }))
+            .await?;
+        let thread_id = json_string_at(&thread_response, &["thread", "id"])
+            .or_else(|| json_string_at(&thread_response, &["id"]))
+            .ok_or_else(|| "Codex app-server thread/start did not return a thread id".to_string())?;
+        for attempt in 0..=CODEX_MAX_OVERLOAD_RETRIES {
+            let id = self.next_id();
+            self.send(&raw_turn_start_request(id, &thread_id, model, prompt))
+                .await?;
             match self.read_turn_result(id).await {
                 Ok(output) => return Ok(output),
                 Err(e) if is_overload_message(&e) && attempt < CODEX_MAX_OVERLOAD_RETRIES => {
