@@ -217,7 +217,7 @@ fn evaluate_snapshots(
 
     let teams_titles: Vec<&WindowSnapshot> = windows
         .iter()
-        .filter(|window| looks_like_teams_meeting_title(&window.title))
+        .filter(|window| window_looks_like_teams_meeting(window))
         .collect();
     let browser_teams_titles: Vec<&WindowSnapshot> = teams_titles
         .iter()
@@ -609,40 +609,65 @@ fn looks_like_teams_window_context(title: &str) -> bool {
         || title.contains("teams.microsoft.com")
 }
 
+/// Whether a window looks like an active Teams meeting.
+///
+/// Explicit meeting-keyword titles count from any window; the keyword-less
+/// new-Teams subject shape only counts for the **foreground** window, because
+/// the same `<subject> | <org> | <account> | Microsoft Teams` shape also
+/// describes a background chat/channel window and would otherwise false-positive
+/// (e.g. on app launch).
+fn window_looks_like_teams_meeting(window: &WindowSnapshot) -> bool {
+    if looks_like_teams_meeting_title(&window.title) {
+        return true;
+    }
+    if window.is_foreground && !window.is_minimized {
+        let lower = window.title.trim().to_lowercase();
+        return looks_like_teams_meeting_subject(&lower);
+    }
+    false
+}
+
+/// A real Teams surface: the title carries the "Microsoft Teams" product name,
+/// or a browser tab is on teams.microsoft.com. This anchor is essential — without
+/// it any window merely mentioning bare "teams" and "meeting" (a terminal, an
+/// editor, a docs tab, a branch name like "Fix … Teams meeting detection") would
+/// register as a meeting. Bare "Teams" without "Microsoft" is intentionally not
+/// enough.
+fn is_teams_surface(lower_title: &str) -> bool {
+    lower_title.contains("microsoft teams") || lower_title.contains("teams.microsoft.com")
+}
+
+/// The first non-empty `|`-separated segment of a (lowercased) title.
+fn leading_segment(lower_title: &str) -> Option<&str> {
+    lower_title.split('|').map(|s| s.trim()).find(|s| !s.is_empty())
+}
+
+fn is_teams_app_section(segment: &str) -> bool {
+    TEAMS_APP_SECTIONS.iter().any(|section| segment == *section)
+}
+
 fn looks_like_teams_meeting_title(title: &str) -> bool {
     let title = title.trim().to_lowercase();
 
-    if title.is_empty() {
+    if title.is_empty() || !is_teams_surface(&title) {
         return false;
     }
 
-    let has_teams_context = title.contains("teams")
-        || title.contains("microsoft teams")
-        || title.contains("teams.microsoft.com");
-    if !has_teams_context {
+    // A window whose leading segment is a Teams navigation section (Calls, Chat,
+    // Planner, …) is the app shell, never a meeting — even when a keyword like
+    // "calls" is present in the section name.
+    if leading_segment(&title).is_some_and(is_teams_app_section) {
         return false;
     }
 
-    let has_meeting_context = MEETING_TITLE_KEYWORDS
-        .iter()
-        .any(|kw| title.contains(kw));
-    if has_meeting_context {
-        return true;
-    }
-
-    // New Teams opens the in-call window titled with the meeting subject in the
-    // same "<subject> | <org> | <account> | Microsoft Teams" shape as the main
-    // app window — so an explicit meeting keyword is often absent. Treat such a
-    // window as a meeting when its leading segment is *not* one of Teams' own
-    // navigation sections (Chat, Calendar, Planner, …), which is what the main
-    // window shows there instead.
-    looks_like_teams_meeting_subject(&title)
+    MEETING_TITLE_KEYWORDS.iter().any(|kw| title.contains(kw))
 }
 
 /// Heuristic for a new-Teams in-call window where the title carries the meeting
 /// subject rather than a meeting keyword. Requires the desktop "Microsoft Teams"
 /// suffix and the multi-segment `subject | org | account | Microsoft Teams`
-/// shape, and rejects the known app-section names the main window shows.
+/// shape, and rejects the known app-section names the main window shows. Gated on
+/// the foreground check by [`window_looks_like_teams_meeting`].
 fn looks_like_teams_meeting_subject(lower_title: &str) -> bool {
     if !lower_title.ends_with("microsoft teams") {
         return false;
@@ -665,7 +690,7 @@ fn looks_like_teams_meeting_subject(lower_title: &str) -> bool {
         return false;
     }
 
-    !TEAMS_APP_SECTIONS.iter().any(|section| subject == *section)
+    !is_teams_app_section(subject)
 }
 
 /// Leading title segments shown by the main Teams window for its navigation
@@ -856,10 +881,16 @@ mod tests {
             "Weekly sync | Microsoft Teams Meeting"
         ));
         assert!(looks_like_teams_meeting_title(
-            "Budget review - Teams - Call in progress"
+            "Standup call | Microsoft Teams"
         ));
         assert!(!looks_like_teams_meeting_title("Microsoft Teams"));
         assert!(!looks_like_teams_meeting_title("Calendar - meeting notes"));
+        // Bare "Teams" without the "Microsoft Teams" product marker no longer
+        // counts — this looseness is what let terminals/editors mentioning
+        // "teams meeting" false-positive.
+        assert!(!looks_like_teams_meeting_title(
+            "Budget review - Teams - Call in progress"
+        ));
     }
 
     #[test]
@@ -945,35 +976,56 @@ mod tests {
     }
 
     #[test]
-    fn new_teams_in_call_window_subject_is_a_meeting_title() {
-        // The exact in-call window title new Teams shows (no meeting keyword).
-        assert!(looks_like_teams_meeting_title(
-            "Test Appointment Stand Up | Rismondo | alexander.rismondo@rismondo.net | Microsoft Teams"
-        ));
+    fn new_teams_in_call_window_subject_needs_foreground() {
+        let title =
+            "Test Appointment Stand Up | Rismondo | alexander.rismondo@rismondo.net | Microsoft Teams";
+        // The keyword-less in-call subject shape only counts when it's the
+        // foreground window (an active call) — not a backgrounded chat/idle view.
+        assert!(window_looks_like_teams_meeting(&foreground_window(Some(1), title)));
+        assert!(!window_looks_like_teams_meeting(&window(Some(1), title)));
+    }
+
+    #[test]
+    fn non_teams_window_mentioning_teams_meeting_is_not_a_match() {
+        // The real false positive: a terminal/editor window whose title merely
+        // contains the words "Teams" and "meeting". Not a Teams surface → ignored,
+        // even when it's the foreground window.
+        let title = "[screen 0: dev] Fix recording UI and Teams meeting detection";
+        assert!(!looks_like_teams_meeting_title(title));
+        assert!(!window_looks_like_teams_meeting(&foreground_window(Some(1), title)));
     }
 
     #[test]
     fn teams_app_section_windows_are_not_meeting_titles() {
-        // Main app window showing a navigation section — must not be a meeting.
-        assert!(!looks_like_teams_meeting_title(
-            "Planner | Rismondo | alexander.rismondo@rismondo.net | Microsoft Teams"
-        ));
-        assert!(!looks_like_teams_meeting_title(
-            "Chat | Rismondo | alexander.rismondo@rismondo.net | Microsoft Teams"
-        ));
-        // Bare app window and a single-section view are not meetings either.
-        assert!(!looks_like_teams_meeting_title("Microsoft Teams"));
-        assert!(!looks_like_teams_meeting_title("Calendar | Microsoft Teams"));
+        // Main app window showing a navigation section — must not be a meeting,
+        // even when foreground and even when the section name contains a keyword
+        // (e.g. "Calls" contains "call").
+        for section in [
+            "Planner | Rismondo | a@b.net | Microsoft Teams",
+            "Chat | Rismondo | a@b.net | Microsoft Teams",
+            "Calls | Rismondo | a@b.net | Microsoft Teams",
+            "Microsoft Teams",
+            "Calendar | Microsoft Teams",
+        ] {
+            assert!(!looks_like_teams_meeting_title(section), "{section}");
+            assert!(
+                !window_looks_like_teams_meeting(&foreground_window(Some(1), section)),
+                "{section}"
+            );
+        }
     }
 
     #[test]
-    fn explicit_meeting_keyword_still_matches() {
-        assert!(looks_like_teams_meeting_title(
+    fn explicit_meeting_keyword_matches_from_any_window() {
+        // Keyword titles are strong — they count even when not foreground.
+        assert!(window_looks_like_teams_meeting(&window(
+            Some(1),
             "Meeting with Contoso | Microsoft Teams"
-        ));
-        assert!(looks_like_teams_meeting_title(
+        )));
+        assert!(window_looks_like_teams_meeting(&window(
+            Some(1),
             "Wöchentliche Besprechung | Microsoft Teams"
-        ));
+        )));
     }
 
     #[test]
