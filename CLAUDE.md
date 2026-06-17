@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current Handoff - ClawScribe Productization
 
-Updated: 2026-06-16 12:30 Europe/Vienna.
+Updated: 2026-06-17 Europe/Vienna.
 
 ### Start Here
 
@@ -19,17 +19,18 @@ This is the active ClawScribe/Meetily fork. Work is on branch
 `feat/clawscribe-productization-auth-theme-exports`, tracking
 `fork/feat/clawscribe-productization-auth-theme-exports`.
 
-Recent commits, newest first:
+Recent commits, newest first (2026-06-17 session):
 
 ```text
-ab37b96 Fix artifact name containing slash from branch ref
-f36727a Wire live Microsoft Graph exports (auth, transport, UI)
-533beaf Fix parse_meeting_output trailing/leading character tolerance
-7f1f18e Add Microsoft Graph export foundation (mock-tested)
-e31fde5 Fix provider context parity and icon alpha
-9da318b Expose add-ons settings and preserve summary context
-6a0b727 Fix Codex app-server sign-in UX
-33d849f Use new ClawScribe app icon
+3a6c772 CI: opt-in 'directml' input to build Parakeet DirectML (experimental probe)
+5a97080 Planner AI-polish: skip Codex cleanly (titles already model-authored)
+f649fc8 DirectML Parakeet (Phase 1, dormant): cfg-gated EP + Beta toggle
+425955d Persist Me/Participants speaker label for saved meetings
+416d341 Settings: split Add-ons into Add-ons + Diagnostics tabs
+b2951f4 Settings IA cleanup: tab scroll, naming, diagnostics, General order
+1cdb2d3 Settings IA: single-column General, consolidate OpenClaw handoff
+e207042 Route brand-energy UI through the accent token (no hardcoded cyan)
+a6eb9fb Detect new-Teams in-call window via companion-window signal
 ```
 
 ### Product Context
@@ -134,11 +135,60 @@ Settings -> Add-ons now exposes:
 - Planner task export: live with plan/bucket picker
 - Advanced Codex app-server status
 
-### Likely Next Task
+### Shipped this session (2026-06-17)
 
-1. Commit the self-hosted runner workflow change and push.
-2. Trigger a build on the self-hosted runner to validate it works.
-3. Download the artifact and have Alex perform the runtime checks above.
+All committed/pushed on the feature branch; each built green on the self-hosted
+runner (latest plain build artifact `clawscribe-windows-vulkan-<sha>`):
+
+- Recording UX: restored floating pause/stop on the recording screen; sidebar
+  "Recording" indicator stops; "Paused" labels; shortcuts "Reset" button.
+- Accent (Direction B): all brand-energy UI driven by the `--primary` token
+  (no hardcoded cyan); "Kontron" dropped from the light-theme label.
+- Teams detection: fixed false positives (anchor on "Microsoft Teams" + section
+  denylist) AND the missed real meeting (companion-window signal, not foreground).
+  Add-ons detection panel auto-refreshes.
+- Planner export: review/preview dialog (check/uncheck, edit title, per-task
+  bucket defaulting to settings "Default Bucket") + optional AI title/notes
+  polish (Settings → Add-ons toggle, default off; Codex skipped intentionally).
+  OneNote "New notebook" + Planner "New bucket" creation (delegated only).
+- Settings IA: split Add-ons (configure) vs new Diagnostics tab (status: Teams
+  signals, OpenClaw handoff, Codex app-server status); single-column General;
+  tab strip scrolls; widened to 2400px like Home.
+- Transcription: Me/Participants speaker labels render in the transcript AND
+  persist to the DB (the `speaker` column was unused). whisper `set_n_threads`
+  applied; temperature fallback restored; VAD resampler swapped to rubato sinc.
+
+### Open bug backlog (reported 2026-06-17, NOT yet fixed)
+
+1. First-run model-download/setup dialog has dark-mode contrast issues (light
+   mode untested).
+2. **Source attribution broken**: everything labels as "Me" (a YouTube video via
+   system audio should be "Participants"). And the speaker label is NOT included
+   in the transcript text sent to the AI summary — so who-said-what never reaches
+   the LLM. (See `audio/pipeline.rs` energy attribution + summary transcript
+   assembly in `useSummaryGeneration.ts`.)
+3. OpenClaw provider should NOT prefill a default IP/endpoint.
+4. OpenAI-compatible Connection Test fails with LiteLLM `content_safety_violation`
+   while the transcription test succeeds — the connection-test prompt trips a
+   guardrail; use a benign test payload.
+5. Teams detection shows "Prompt only" but no record prompt appears on detection
+   — the prompt-to-record path isn't surfaced.
+6. Import Audio modal: no drag-and-drop; long filenames break layout bounds.
+   Wanted: post-import stats popup (elapsed time + RTF/segments) to use Import as
+   the benchmark harness.
+
+### Parked (see memory + roadmap notes)
+
+- **DirectML Parakeet** — Phase 1 done & toolchain-validated (probe build green,
+  `directml` cargo feature links on the runner); opt-in CI only, not in default
+  build. Pending: benchmark int8-on-DirectML on the i5-1235u, then make default
+  or do Phase 2 (fp32 model). Import on the 1235u "didn't use much GPU with the
+  DirectML switch on" — expected for int8 (ops fall back to CPU); that's the
+  Phase-2/fp32 signal.
+- **ASR alternatives roadmap** — Nemotron 3.5 ASR Streaming 0.6B ONNX INT4 is the
+  standout Parakeet alternative (ONNX/INT4/streaming/multilingual incl. German,
+  DirectML-capable via the onnx-asr family); Moonshine v2 (English-only, ultra-low
+  latency) secondary. See the roadmap memory.
 
 For local Linux validation after changes, prefer focused tests first, then
 `pnpm build`, then broader `cargo test` only when the change justifies the time
