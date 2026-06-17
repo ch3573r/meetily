@@ -772,6 +772,28 @@ export function IntegrationsSettings() {
     void checkTeamsDetection();
   }, []);
 
+  // Auto-refresh the detection status while the panel is open so it reflects the
+  // live state without a manual click. Silent (no spinner / error flash) — the
+  // "Refresh now" button still surfaces errors explicitly.
+  useEffect(() => {
+    let cancelled = false;
+    const id = window.setInterval(async () => {
+      try {
+        const status = await teamsDetectionService.getStatus();
+        if (!cancelled) {
+          setTeamsStatus(status);
+          setTeamsError(null);
+        }
+      } catch {
+        // Keep the last good status; the manual button reports failures.
+      }
+    }, 4000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, []);
+
   return (
     <div className="space-y-5">
       <div className="rounded-lg border border-border bg-card p-5 shadow-sm">
@@ -835,17 +857,22 @@ export function IntegrationsSettings() {
               <span>{teamsError}</span>
             </div>
           )}
-          <Button
-            type="button"
-            variant="outline"
-            onClick={checkTeamsDetection}
-            disabled={isCheckingTeams}
-          >
-            <RefreshCw
-              className={`mr-2 h-4 w-4 ${isCheckingTeams ? "animate-spin" : ""}`}
-            />
-            Check Teams detection
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={checkTeamsDetection}
+              disabled={isCheckingTeams}
+            >
+              <RefreshCw
+                className={`mr-2 h-4 w-4 ${isCheckingTeams ? "animate-spin" : ""}`}
+              />
+              Refresh now
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              Updates automatically every few seconds.
+            </span>
+          </div>
         </div>
       </AddonPanel>
 
