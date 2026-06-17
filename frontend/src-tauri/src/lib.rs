@@ -51,6 +51,7 @@ pub mod openai;
 pub mod openclaw;
 pub mod openrouter;
 pub mod parakeet_engine;
+pub mod nemotron_engine;
 pub mod shortcuts;
 pub mod state;
 pub mod summary;
