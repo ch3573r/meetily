@@ -102,8 +102,11 @@ export function PlannerExportPreview({
 
         // Optional AI polish (Settings → Add-ons → Planner). Reviewed below, so a
         // poor rewrite never lands silently; on failure we keep the raw titles.
+        // Codex is skipped on purpose: its app-server is bound to the meeting
+        // contract (can't do a generic rewrite), and its action items are already
+        // model-authored — so they're treated as already polished, no warning.
         const aiPolish = getExportDestinations().plannerAiPolish ?? false;
-        if (aiPolish && baseRows.length > 0) {
+        if (aiPolish && baseRows.length > 0 && modelConfig.provider !== "codex") {
           setPolishing(true);
           try {
             const polished = await microsoftExportService.polishPlannerTasks(
