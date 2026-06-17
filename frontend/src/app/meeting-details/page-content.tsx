@@ -1,5 +1,6 @@
 "use client";
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { getMeetingContext, setMeetingContext } from '@/lib/meetingContext';
 import { motion } from 'framer-motion';
 import { Summary, SummaryResponse } from '@/types';
 import { useSidebar } from '@/components/Sidebar/SidebarProvider';
@@ -53,8 +54,24 @@ export default function PageContent({
     transcriptsCount: meeting.transcripts?.length
   });
 
-  // State
-  const [customPrompt, setCustomPrompt] = useState<string>('');
+  // State — "Add context" is persisted per meeting so it survives reopening and
+  // is applied on every generate/regenerate.
+  const [customPrompt, setCustomPrompt] = useState<string>(() =>
+    getMeetingContext(meeting.id),
+  );
+  // Reload the stored context when switching meetings without a remount.
+  useEffect(() => {
+    setCustomPrompt(getMeetingContext(meeting.id));
+  }, [meeting.id]);
+  // Persist edits against the current meeting (only on user change, so switching
+  // meetings can't cross-write the previous meeting's text).
+  const handlePromptChange = useCallback(
+    (value: string) => {
+      setCustomPrompt(value);
+      setMeetingContext(meeting.id, value);
+    },
+    [meeting.id],
+  );
   const [isRecording] = useState(false);
   const [summaryResponse] = useState<SummaryResponse | null>(null);
 
@@ -174,7 +191,7 @@ export default function PageContent({
         <TranscriptPanel
           transcripts={meetingData.transcripts}
           customPrompt={customPrompt}
-          onPromptChange={setCustomPrompt}
+          onPromptChange={handlePromptChange}
           onCopyTranscript={copyOperations.handleCopyTranscript}
           onOpenMeetingFolder={meetingOperations.handleOpenMeetingFolder}
           isRecording={isRecording}

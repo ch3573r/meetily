@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import Analytics from '@/lib/analytics';
 import { isOllamaNotInstalledError } from '@/lib/utils';
 import { BuiltInModelInfo } from '@/lib/builtin-ai';
+import { getMeetingContext } from '@/lib/meetingContext';
 import {
   detectAndCacheSummaryLanguage,
   readMeetingSummaryLanguage,
@@ -454,6 +455,10 @@ export function useSummaryGeneration({
 
   // Public API: Generate summary from transcripts
   const handleGenerateSummary = useCallback(async (customPrompt: string = '') => {
+    // Fall back to the meeting's persisted "Add context" if no context was
+    // passed, so every entry point uses it consistently.
+    const effectiveContext = customPrompt.trim() ? customPrompt : getMeetingContext(meeting.id);
+    customPrompt = effectiveContext;
     // Check if model config is still loading
     if (isModelConfigLoading) {
       console.log('⏳ Model configuration is still loading, please wait...');
@@ -618,6 +623,9 @@ export function useSummaryGeneration({
 
   // Public API: Regenerate summary from the current saved transcript
   const handleRegenerateSummary = useCallback(async (customPrompt: string = '') => {
+    // Same fallback as generation: use the persisted per-meeting context when a
+    // caller (e.g. a regenerate button) doesn't pass one.
+    customPrompt = customPrompt.trim() ? customPrompt : getMeetingContext(meeting.id);
     const allTranscripts = await fetchAllTranscripts(meeting.id);
 
     if (!allTranscripts.length) {
