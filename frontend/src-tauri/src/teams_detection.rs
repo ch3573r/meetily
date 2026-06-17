@@ -619,12 +619,70 @@ fn looks_like_teams_meeting_title(title: &str) -> bool {
     let has_teams_context = title.contains("teams")
         || title.contains("microsoft teams")
         || title.contains("teams.microsoft.com");
+    if !has_teams_context {
+        return false;
+    }
+
     let has_meeting_context = MEETING_TITLE_KEYWORDS
         .iter()
         .any(|kw| title.contains(kw));
+    if has_meeting_context {
+        return true;
+    }
 
-    has_teams_context && has_meeting_context
+    // New Teams opens the in-call window titled with the meeting subject in the
+    // same "<subject> | <org> | <account> | Microsoft Teams" shape as the main
+    // app window — so an explicit meeting keyword is often absent. Treat such a
+    // window as a meeting when its leading segment is *not* one of Teams' own
+    // navigation sections (Chat, Calendar, Planner, …), which is what the main
+    // window shows there instead.
+    looks_like_teams_meeting_subject(&title)
 }
+
+/// Heuristic for a new-Teams in-call window where the title carries the meeting
+/// subject rather than a meeting keyword. Requires the desktop "Microsoft Teams"
+/// suffix and the multi-segment `subject | org | account | Microsoft Teams`
+/// shape, and rejects the known app-section names the main window shows.
+fn looks_like_teams_meeting_subject(lower_title: &str) -> bool {
+    if !lower_title.ends_with("microsoft teams") {
+        return false;
+    }
+
+    let segments: Vec<&str> = lower_title
+        .split('|')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+    // Expect at least `subject | … | microsoft teams` (subject plus the suffix,
+    // typically with org/account in between). A bare "Microsoft Teams" window or
+    // a single "<section> | Microsoft Teams" view is not a meeting.
+    if segments.len() < 3 {
+        return false;
+    }
+
+    let subject = segments[0];
+    if subject.is_empty() || subject == "microsoft teams" {
+        return false;
+    }
+
+    !TEAMS_APP_SECTIONS.iter().any(|section| subject == *section)
+}
+
+/// Leading title segments shown by the main Teams window for its navigation
+/// sections (lowercased). When the leading segment is one of these the window is
+/// the app shell, not an in-call window. Covers the English UI plus the German
+/// localization common in this fork's target environment.
+const TEAMS_APP_SECTIONS: &[&str] = &[
+    // English
+    "activity", "chat", "teams", "calendar", "calls", "files", "help", "apps",
+    "store", "planner", "tasks", "tasks by planner and to do", "to do",
+    "onenote", "whiteboard", "settings", "home", "communities", "shifts",
+    "approvals", "viva engage", "viva insights", "lists", "bookings", "praise",
+    "wiki", "people", "search", "feed",
+    // German
+    "aktivität", "kalender", "anrufe", "dateien", "hilfe", "einstellungen",
+    "start", "aufgaben", "communitys", "suche",
+];
 
 /// Meeting-context keywords across the languages Teams localizes window titles
 /// into. Teams shows the user's UI language in the title, so an English-only
@@ -884,6 +942,38 @@ mod tests {
         assert_eq!(status.diagnostics.browser_process_count, 1);
         assert_eq!(status.diagnostics.meeting_title_count, 0);
         assert!(status.diagnostics.confidence_capped_by_title_requirement);
+    }
+
+    #[test]
+    fn new_teams_in_call_window_subject_is_a_meeting_title() {
+        // The exact in-call window title new Teams shows (no meeting keyword).
+        assert!(looks_like_teams_meeting_title(
+            "Test Appointment Stand Up | Rismondo | alexander.rismondo@rismondo.net | Microsoft Teams"
+        ));
+    }
+
+    #[test]
+    fn teams_app_section_windows_are_not_meeting_titles() {
+        // Main app window showing a navigation section — must not be a meeting.
+        assert!(!looks_like_teams_meeting_title(
+            "Planner | Rismondo | alexander.rismondo@rismondo.net | Microsoft Teams"
+        ));
+        assert!(!looks_like_teams_meeting_title(
+            "Chat | Rismondo | alexander.rismondo@rismondo.net | Microsoft Teams"
+        ));
+        // Bare app window and a single-section view are not meetings either.
+        assert!(!looks_like_teams_meeting_title("Microsoft Teams"));
+        assert!(!looks_like_teams_meeting_title("Calendar | Microsoft Teams"));
+    }
+
+    #[test]
+    fn explicit_meeting_keyword_still_matches() {
+        assert!(looks_like_teams_meeting_title(
+            "Meeting with Contoso | Microsoft Teams"
+        ));
+        assert!(looks_like_teams_meeting_title(
+            "Wöchentliche Besprechung | Microsoft Teams"
+        ));
     }
 
     #[test]
