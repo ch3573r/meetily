@@ -148,6 +148,45 @@ function DetectionSummary({ status }: { status: TeamsDetectionStatus | null }) {
           {status.nextRecommendedAction}
         </p>
       </div>
+
+      {/* Diagnostics so detection misses are debuggable in the shipped app. */}
+      <div className="sm:col-span-2 lg:col-span-4 space-y-3 rounded-xl border border-border bg-background p-3">
+        <p className="text-xs font-medium text-muted-foreground">
+          Signals (need a meeting window title to detect a call)
+        </p>
+        <ul className="space-y-1 text-xs">
+          {status.signals.map((s) => (
+            <li key={s.detector} className="flex items-start gap-2">
+              <span className={s.matched ? "text-emerald-500" : "text-muted-foreground"}>
+                {s.matched ? "✓" : "✗"}
+              </span>
+              <span className="text-foreground">
+                <span className="font-medium">{s.detector}</span>
+                <span className="text-muted-foreground"> — {s.detail}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+        <p className="text-xs text-muted-foreground">
+          Teams processes: {status.diagnostics.teamsProcessCount} · Browser:{" "}
+          {status.diagnostics.browserProcessCount} · Windows scanned:{" "}
+          {status.diagnostics.relevantWindowCount} · Meeting titles:{" "}
+          {status.diagnostics.meetingTitleCount}
+        </p>
+        {status.candidates.length > 0 && (
+          <div>
+            <p className="text-xs font-medium text-muted-foreground">Windows detected</p>
+            <ul className="mt-1 space-y-0.5 text-xs text-foreground">
+              {status.candidates.map((c, i) => (
+                <li key={i} className="truncate">
+                  <span className="text-muted-foreground">[{c.source}]</span>{" "}
+                  {c.windowTitle ?? c.processName ?? "(no title)"}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
