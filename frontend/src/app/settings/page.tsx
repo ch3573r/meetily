@@ -25,8 +25,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 const TABS = [
   { value: "general", label: "General", icon: Settings2 },
   { value: "recording", label: "Recording", icon: Mic },
-  { value: "Transcriptionmodels", label: "Transcription", icon: DatabaseIcon },
-  { value: "summaryModels", label: "Summary", icon: SparkleIcon },
+  { value: "transcription", label: "Transcription", icon: DatabaseIcon },
+  { value: "summary", label: "Summary", icon: SparkleIcon },
   { value: "integrations", label: "Add-ons", icon: Plug },
   { value: "beta", label: "Beta", icon: FlaskConical },
 ] as const;
@@ -113,7 +113,7 @@ export default function SettingsPage() {
       <div className="h-[calc(100vh-121px)] overflow-y-auto">
         <div className="mx-auto w-full max-w-[2400px] p-8 pt-6">
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="relative h-auto flex-wrap justify-start gap-1 rounded-none border-b border-border bg-transparent p-0">
+            <TabsList className="relative h-auto flex-nowrap justify-start gap-1 overflow-x-auto rounded-none border-b border-border bg-transparent p-0">
               {TABS.map((tab, index) => {
                 const Icon = tab.icon;
                 return (
@@ -123,7 +123,7 @@ export default function SettingsPage() {
                     ref={(el) => {
                       tabRefs.current[index] = el;
                     }}
-                    className="relative z-10 flex items-center gap-2 rounded-none border-0 bg-transparent px-5 py-4 text-muted-foreground shadow-none transition hover:text-foreground data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none"
+                    className="relative z-10 flex shrink-0 items-center gap-2 rounded-none border-0 bg-transparent px-5 py-4 text-muted-foreground shadow-none transition hover:text-foreground data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none"
                   >
                     <Icon className="h-4 w-4" />
                     {tab.label}
@@ -148,13 +148,13 @@ export default function SettingsPage() {
             <TabsContent value="recording" className="mt-6">
               <RecordingSettings />
             </TabsContent>
-            <TabsContent value="Transcriptionmodels" className="mt-6">
+            <TabsContent value="transcription" className="mt-6">
               <TranscriptSettings
                 transcriptModelConfig={transcriptModelConfig}
                 setTranscriptModelConfig={setTranscriptModelConfig}
               />
             </TabsContent>
-            <TabsContent value="summaryModels" className="mt-6">
+            <TabsContent value="summary" className="mt-6">
               <SummaryModelSettings />
             </TabsContent>
             <TabsContent value="integrations" className="mt-6">

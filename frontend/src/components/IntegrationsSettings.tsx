@@ -817,7 +817,11 @@ function OpenClawPanel() {
             <span>{error}</span>
           </div>
         ) : (
-          <div className="grid gap-3 text-sm md:grid-cols-2">
+          <details className="rounded-lg border border-border bg-muted/40 p-3">
+            <summary className="cursor-pointer select-none text-xs font-medium text-muted-foreground">
+              Diagnostics
+            </summary>
+            <div className="mt-3 grid gap-3 text-sm md:grid-cols-2">
             <div>
               <div className="text-xs font-medium uppercase text-muted-foreground">
                 Endpoint
@@ -873,7 +877,8 @@ function OpenClawPanel() {
                 </div>
               </div>
             )}
-          </div>
+            </div>
+          </details>
         )}
       </div>
     </AddonPanel>

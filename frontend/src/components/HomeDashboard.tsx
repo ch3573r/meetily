@@ -162,7 +162,7 @@ export function HomeDashboard({
                 </span>
               </div>
               <button
-                onClick={() => router.push("/settings?tab=general")}
+                onClick={() => router.push("/settings?tab=integrations")}
                 className="mt-5 inline-flex items-center gap-2 text-sm font-medium text-primary hover:text-primary"
               >
                 View details <ArrowRight className="h-4 w-4" />
@@ -183,7 +183,7 @@ export function HomeDashboard({
                 </ul>
               </div>
               <button
-                onClick={() => router.push("/settings?tab=summaryModels")}
+                onClick={() => router.push("/settings?tab=summary")}
                 className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-primary hover:text-primary"
               >
                 Configure summary <ArrowRight className="h-4 w-4" />
@@ -265,7 +265,7 @@ export function HomeDashboard({
                   label: "Transcription Settings",
                   enabled: true,
                   onClick: () =>
-                    router.push("/settings?tab=Transcriptionmodels"),
+                    router.push("/settings?tab=transcription"),
                 },
                 {
                   icon: Link2,

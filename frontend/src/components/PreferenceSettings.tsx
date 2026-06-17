@@ -173,9 +173,10 @@ export function PreferenceSettings() {
   const notificationsEnabledValue = notificationsEnabled ?? false;
 
   return (
+    // Ordered most-used first (appearance, notifications), then shortcuts, with
+    // data/advanced (storage) last.
     <div className="space-y-5">
       <ThemeSettings />
-      <KeyboardShortcutsSettings />
 
       {/* Notifications Section */}
       <div className="rounded-lg border border-border bg-card p-6 shadow-sm">
@@ -194,6 +195,8 @@ export function PreferenceSettings() {
           />
         </div>
       </div>
+
+      <KeyboardShortcutsSettings />
 
       {/* Data Storage Locations Section */}
       <div className="rounded-lg border border-border bg-card p-6 shadow-sm">
