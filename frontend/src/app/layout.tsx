@@ -90,6 +90,12 @@ export default function RootLayout({
   }, [])
 
   useEffect(() => {
+    // Push the stored source-attribution (Me/Participants) preference to the
+    // backend on startup. Default off until the heuristic is production-quality.
+    void import('@/lib/sourceAttribution').then((m) => m.applySourceAttribution())
+  }, [])
+
+  useEffect(() => {
     // Check onboarding status first
     invoke<{ completed: boolean } | null>('get_onboarding_status')
       .then((status) => {

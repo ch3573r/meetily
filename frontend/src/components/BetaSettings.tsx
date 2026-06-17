@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Switch } from "./ui/switch";
-import { FlaskConical, AlertCircle, Cpu } from "lucide-react";
+import { FlaskConical, AlertCircle, Cpu, Users } from "lucide-react";
 import { useConfig } from "@/contexts/ConfigContext";
 import {
   BetaFeatureKey,
@@ -10,6 +10,10 @@ import {
   BETA_FEATURE_DESCRIPTIONS,
 } from "@/types/betaFeatures";
 import { getParakeetDirectml, setParakeetDirectml } from "@/lib/parakeetAccel";
+import {
+  getSourceAttribution,
+  setSourceAttribution,
+} from "@/lib/sourceAttribution";
 
 export function BetaSettings() {
   const { betaFeatures, toggleBetaFeature } = useConfig();
@@ -26,6 +30,16 @@ export function BetaSettings() {
   const onToggleParakeetDml = (checked: boolean) => {
     setParakeetDml(checked);
     void setParakeetDirectml(checked);
+  };
+
+  // Source attribution (Me/Participants) — experimental, opt-in (default off).
+  const [sourceAttribution, setSourceAttributionState] = useState(false);
+  useEffect(() => {
+    setSourceAttributionState(getSourceAttribution());
+  }, []);
+  const onToggleSourceAttribution = (checked: boolean) => {
+    setSourceAttributionState(checked);
+    void setSourceAttribution(checked);
   };
 
   return (
@@ -98,6 +112,36 @@ export function BetaSettings() {
           </div>
           <div className="ml-6">
             <Switch checked={parakeetDml} onCheckedChange={onToggleParakeetDml} />
+          </div>
+        </div>
+      </div>
+
+      {/* Source attribution (Me / Participants) — experimental, opt-in */}
+      <div className="rounded-lg border border-border bg-card p-6 shadow-sm">
+        <div className="flex items-center justify-between">
+          <div className="flex-1">
+            <div className="mb-2 flex items-center gap-2">
+              <Users className="h-5 w-5 text-muted-foreground" />
+              <h3 className="text-lg font-semibold text-foreground">
+                Source attribution (Me / Participants)
+              </h3>
+              <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800">
+                BETA
+              </span>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Label each transcript line as &quot;Me&quot; (your microphone) or
+              &quot;Participants&quot; (system audio) based on which source was
+              louder. The heuristic still mislabels often, so it&apos;s off by
+              default — when disabled, lines carry no speaker label. Takes effect
+              on the next transcribed segment.
+            </p>
+          </div>
+          <div className="ml-6">
+            <Switch
+              checked={sourceAttribution}
+              onCheckedChange={onToggleSourceAttribution}
+            />
           </div>
         </div>
       </div>

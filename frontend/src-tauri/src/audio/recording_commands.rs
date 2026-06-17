@@ -1288,3 +1288,19 @@ pub async fn attempt_device_reconnect(
         }
     }
 }
+
+/// Beta (opt-in, default off): toggle energy-based "Me"/"Participants" source
+/// attribution. Applies to segments transcribed after the change.
+#[tauri::command]
+pub async fn set_source_attribution_enabled(enabled: bool) -> Result<(), String> {
+    crate::audio::transcription::worker::SOURCE_ATTRIBUTION_ENABLED
+        .store(enabled, Ordering::Relaxed);
+    info!("Source attribution set to {enabled}");
+    Ok(())
+}
+
+/// Read the current source-attribution toggle state.
+#[tauri::command]
+pub async fn get_source_attribution_enabled() -> Result<bool, String> {
+    Ok(crate::audio::transcription::worker::SOURCE_ATTRIBUTION_ENABLED.load(Ordering::Relaxed))
+}

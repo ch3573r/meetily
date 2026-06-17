@@ -17,6 +17,11 @@ static SEQUENCE_COUNTER: AtomicU64 = AtomicU64::new(0);
 // Speech detection flag - reset per recording session
 static SPEECH_DETECTED_EMITTED: AtomicBool = AtomicBool::new(false);
 
+/// Beta (opt-in, default off): energy-based "Me"/"Participants" source
+/// attribution. Set via `set_source_attribution_enabled`. When off, segments
+/// carry no speaker label so nothing mislabels who spoke.
+pub static SOURCE_ATTRIBUTION_ENABLED: AtomicBool = AtomicBool::new(false);
+
 /// Reset the speech detected flag for a new recording session
 pub fn reset_speech_detected_flag() {
     SPEECH_DETECTED_EMITTED.store(false, Ordering::SeqCst);
@@ -156,9 +161,16 @@ pub fn start_transcription_task<R: Runtime>(
 
                             // Speaker label from the segment's dominant source (set
                             // by the pipeline): mic = "Me", system audio = "Participants".
-                            let source_label = match &chunk.device_type {
-                                crate::audio::recording_state::DeviceType::System => "Participants",
-                                _ => "Me",
+                            // Gated behind a Beta toggle (default off) — the energy
+                            // heuristic isn't reliable yet, so when disabled we emit
+                            // no label rather than a wrong one.
+                            let source_label = if SOURCE_ATTRIBUTION_ENABLED.load(Ordering::Relaxed) {
+                                match &chunk.device_type {
+                                    crate::audio::recording_state::DeviceType::System => "Participants",
+                                    _ => "Me",
+                                }
+                            } else {
+                                ""
                             };
 
                             // Transcribe with provider-agnostic approach
