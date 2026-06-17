@@ -227,6 +227,7 @@ mod tests {
                 task: "Send proposal to <Contoso>".into(),
                 owner: None,
                 due_date: Some("2026-06-20".into()),
+                details: None,
             }],
             transcript_excerpt: transcript,
             summary_html: None,

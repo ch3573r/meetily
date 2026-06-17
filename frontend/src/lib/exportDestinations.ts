@@ -16,6 +16,8 @@ export interface ExportDestinations {
   planName?: string;
   bucketId?: string;
   bucketName?: string;
+  /** AI-polish Planner task titles & notes before export (default off). */
+  plannerAiPolish?: boolean;
 }
 
 export function getExportDestinations(): ExportDestinations {

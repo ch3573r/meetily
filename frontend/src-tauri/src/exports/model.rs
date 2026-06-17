@@ -73,6 +73,10 @@ pub struct ExportActionItem {
     pub owner: Option<String>,
     /// Optional ISO-8601 due date, only when explicitly extracted/reviewed.
     pub due_date: Option<String>,
+    /// Optional reviewed task notes (e.g. AI-polished). When set, used as the
+    /// Planner task description instead of the templated default.
+    #[serde(default)]
+    pub details: Option<String>,
 }
 
 /// A decision captured in the meeting.
@@ -153,6 +157,7 @@ mod tests {
                 task: "Send proposal".into(),
                 owner: None,
                 due_date: None,
+                details: None,
             }],
             transcript_excerpt: None,
             summary_html: None,

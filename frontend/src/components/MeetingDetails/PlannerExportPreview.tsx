@@ -17,10 +17,13 @@ import {
   type BucketInfo,
   type ExportReport,
 } from "@/services/microsoftExportService";
+import { getExportDestinations } from "@/lib/exportDestinations";
+import { useConfig } from "@/contexts/ConfigContext";
 
 interface Row {
   localId: string;
   title: string;
+  details: string | null;
   owner: string | null;
   dueDate: string | null;
   bucketId: string;
@@ -58,9 +61,11 @@ export function PlannerExportPreview({
   getMarkdown,
   onReport,
 }: PlannerExportPreviewProps) {
+  const { modelConfig } = useConfig();
   const [rows, setRows] = useState<Row[]>([]);
   const [buckets, setBuckets] = useState<BucketInfo[]>([]);
   const [loading, setLoading] = useState(false);
+  const [polishing, setPolishing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -84,16 +89,47 @@ export function PlannerExportPreview({
           bucketList.find((b) => b.id === defaultBucketId)?.id ??
           bucketList[0]?.id ??
           defaultBucketId;
-        setRows(
-          items.map((item) => ({
-            localId: item.localId,
-            title: item.title,
-            owner: item.owner,
-            dueDate: item.dueDate,
-            bucketId: fallbackBucket,
-            include: true,
-          })),
-        );
+        const baseRows: Row[] = items.map((item) => ({
+          localId: item.localId,
+          title: item.title,
+          details: null,
+          owner: item.owner,
+          dueDate: item.dueDate,
+          bucketId: fallbackBucket,
+          include: true,
+        }));
+        setRows(baseRows);
+
+        // Optional AI polish (Settings → Add-ons → Planner). Reviewed below, so a
+        // poor rewrite never lands silently; on failure we keep the raw titles.
+        const aiPolish = getExportDestinations().plannerAiPolish ?? false;
+        if (aiPolish && baseRows.length > 0) {
+          setPolishing(true);
+          try {
+            const polished = await microsoftExportService.polishPlannerTasks(
+              modelConfig.provider,
+              modelConfig.model,
+              baseRows.map((r) => ({ title: r.title, owner: r.owner, dueDate: r.dueDate })),
+            );
+            if (!cancelled && polished.length === baseRows.length) {
+              setRows((prev) =>
+                prev.map((r, i) => ({
+                  ...r,
+                  title: polished[i].title || r.title,
+                  details: polished[i].details || null,
+                })),
+              );
+            }
+          } catch (e) {
+            if (!cancelled) {
+              toast.info("Couldn't AI-polish tasks — using the original titles.", {
+                description: e instanceof Error ? e.message : String(e),
+              });
+            }
+          } finally {
+            if (!cancelled) setPolishing(false);
+          }
+        }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
       } finally {
@@ -103,7 +139,16 @@ export function PlannerExportPreview({
     return () => {
       cancelled = true;
     };
-  }, [open, meetingId, meetingTitle, planId, defaultBucketId, getMarkdown]);
+  }, [
+    open,
+    meetingId,
+    meetingTitle,
+    planId,
+    defaultBucketId,
+    getMarkdown,
+    modelConfig.provider,
+    modelConfig.model,
+  ]);
 
   const update = useCallback((index: number, patch: Partial<Row>) => {
     setRows((prev) => prev.map((r, i) => (i === index ? { ...r, ...patch } : r)));
@@ -120,6 +165,7 @@ export function PlannerExportPreview({
         owner: r.owner,
         dueDate: r.dueDate,
         bucketId: r.bucketId,
+        details: r.details,
       }));
     if (tasks.length === 0) return;
     setBusy(true);
@@ -183,7 +229,13 @@ export function PlannerExportPreview({
               >
                 {allSelected ? "Deselect all" : "Select all"}
               </button>
-              <span>
+              <span className="flex items-center gap-2">
+                {polishing && (
+                  <span className="flex items-center gap-1 text-primary">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Polishing with AI…
+                  </span>
+                )}
                 {selectedCount} of {rows.length} selected
               </span>
             </div>
@@ -214,6 +266,9 @@ export function PlannerExportPreview({
                         disabled={!row.include}
                         className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm font-medium text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:cursor-not-allowed"
                       />
+                      {row.details && (
+                        <p className="text-xs leading-5 text-muted-foreground">{row.details}</p>
+                      )}
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
                         {row.owner && (
                           <span className="inline-flex items-center gap-1">

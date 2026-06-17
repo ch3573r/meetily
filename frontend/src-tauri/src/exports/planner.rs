@@ -104,7 +104,11 @@ fn to_due_date_time(date: &str) -> Option<String> {
 /// can't: the source meeting, the owner hint, and a short meeting summary.
 pub fn build_task_details_description(meeting: &MeetingExport, action: &ExportActionItem) -> String {
     let mut lines: Vec<String> = Vec::new();
-    lines.push(format!("Action item: {}", normalize_title(&action.task)));
+    // Reviewed/AI-polished notes take the place of the default "Action item: …".
+    match action.details.as_deref().map(str::trim).filter(|d| !d.is_empty()) {
+        Some(details) => lines.push(details.to_string()),
+        None => lines.push(format!("Action item: {}", normalize_title(&action.task))),
+    }
     if let Some(owner) = action.owner.as_deref().filter(|s| !s.trim().is_empty()) {
         lines.push(format!("Owner (suggested): {owner}"));
     }
@@ -186,6 +190,7 @@ mod tests {
             task: task.into(),
             owner: None,
             due_date: None,
+            details: None,
         }
     }
 

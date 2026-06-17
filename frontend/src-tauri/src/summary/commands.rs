@@ -9,10 +9,12 @@ use crate::summary::metadata::{
     write_detected_summary_language_to_metadata, write_summary_language_to_metadata,
 };
 use crate::summary::service::SummaryService;
+use crate::database::repositories::setting::SettingsRepository;
+use crate::summary::llm_client::{generate_summary, LLMProvider};
 use log::{error as log_error, info as log_info, warn as log_warn};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use tauri::{AppHandle, Runtime};
+use tauri::{AppHandle, Manager, Runtime};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SummaryResponse {
@@ -460,4 +462,150 @@ pub async fn api_cancel_summary<R: Runtime>(
             "meeting_id": meeting_id,
         }))
     }
+}
+
+// ── Planner task AI polish ───────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlannerTaskDraft {
+    pub title: String,
+    pub owner: Option<String>,
+    pub due_date: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PolishedPlannerTask {
+    pub title: String,
+    pub details: String,
+}
+
+/// Rewrite raw action items into clean Planner task titles + short notes using
+/// the configured summary provider. Returns one polished task per input, in
+/// order; the caller reviews/edits them in the export preview before anything is
+/// created, so a poor rewrite is never committed silently. Errors (unsupported
+/// provider, parse failure) surface so the UI can fall back to the raw titles.
+#[tauri::command]
+pub async fn polish_planner_tasks<R: Runtime>(
+    app: AppHandle<R>,
+    state: tauri::State<'_, AppState>,
+    model: String,
+    model_name: String,
+    tasks: Vec<PlannerTaskDraft>,
+) -> Result<Vec<PolishedPlannerTask>, String> {
+    if tasks.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let provider = LLMProvider::from_str(&model)?;
+    if matches!(provider, LLMProvider::Codex) {
+        return Err("AI polish isn't available for the Codex provider.".to_string());
+    }
+
+    let pool = state.db_manager.pool().clone();
+
+    let mut api_key = String::new();
+    let mut ollama_endpoint: Option<String> = None;
+    let mut custom_openai_endpoint: Option<String> = None;
+    let mut max_tokens: Option<u32> = None;
+    let mut temperature: Option<f32> = None;
+    let mut top_p: Option<f32> = None;
+
+    match provider {
+        LLMProvider::Ollama | LLMProvider::BuiltInAI => {}
+        LLMProvider::CustomOpenAI => {
+            let cfg = SettingsRepository::get_custom_openai_config(&pool)
+                .await
+                .map_err(|e| format!("Failed to read OpenAI-compatible config: {e}"))?
+                .ok_or("No OpenAI-compatible configuration found")?;
+            custom_openai_endpoint = Some(cfg.endpoint);
+            api_key = cfg.api_key.unwrap_or_default();
+            max_tokens = cfg.max_tokens.map(|t| t as u32);
+            temperature = cfg.temperature;
+            top_p = cfg.top_p;
+        }
+        LLMProvider::OpenClaw => {
+            let cfg = crate::openclaw::load_config(&app)
+                .map_err(|e| format!("Failed to load OpenClaw config: {e}"))?;
+            if !cfg.enabled || cfg.bearer_token.trim().is_empty() {
+                return Err(
+                    "OpenClaw handoff is disabled or missing a bearer token.".to_string()
+                );
+            }
+            custom_openai_endpoint = Some(cfg.model_endpoint);
+            api_key = cfg.bearer_token;
+        }
+        _ => {
+            api_key = SettingsRepository::get_api_key(&pool, &model)
+                .await
+                .map_err(|e| format!("Failed to read API key: {e}"))?
+                .filter(|k| !k.is_empty())
+                .ok_or_else(|| format!("API key not found for {model}"))?;
+        }
+    }
+
+    if provider == LLMProvider::Ollama {
+        ollama_endpoint = SettingsRepository::get_model_config(&pool)
+            .await
+            .ok()
+            .flatten()
+            .and_then(|c| c.ollama_endpoint);
+    }
+
+    let app_data_dir = app.path().app_data_dir().ok();
+
+    let system = "You turn raw meeting action items into clean Microsoft Planner tasks. \
+Respond with ONLY a JSON array — no prose, no code fences.";
+    let mut user = String::from(
+        "Rewrite each action item into a Planner task. Return a STRICT JSON array with one \
+object per item, in the same order and the same count, each with keys \"title\" and \
+\"details\". \"title\": a concise imperative task, at most 10 words, no trailing punctuation. \
+\"details\": a 1-2 sentence description with relevant context. Do not add or remove items.\n\n\
+Action items:\n",
+    );
+    for (i, t) in tasks.iter().enumerate() {
+        user.push_str(&format!("{}. {}", i + 1, t.title.trim()));
+        if let Some(owner) = t.owner.as_deref().filter(|s| !s.trim().is_empty()) {
+            user.push_str(&format!(" (owner: {owner})"));
+        }
+        if let Some(due) = t.due_date.as_deref().filter(|s| !s.trim().is_empty()) {
+            user.push_str(&format!(" (due: {due})"));
+        }
+        user.push('\n');
+    }
+
+    let client = reqwest::Client::new();
+    let raw = generate_summary(
+        &client,
+        &provider,
+        &model_name,
+        &api_key,
+        system,
+        &user,
+        ollama_endpoint.as_deref(),
+        custom_openai_endpoint.as_deref(),
+        max_tokens,
+        temperature,
+        top_p,
+        app_data_dir.as_ref(),
+        None,
+    )
+    .await?;
+
+    // Tolerantly extract the JSON array (some models wrap it in prose/fences).
+    let json_slice = match (raw.find('['), raw.rfind(']')) {
+        (Some(start), Some(end)) if end > start => &raw[start..=end],
+        _ => return Err("AI polish returned no JSON array".to_string()),
+    };
+    let polished: Vec<PolishedPlannerTask> = serde_json::from_str(json_slice)
+        .map_err(|e| format!("Failed to parse AI polish output: {e}"))?;
+    if polished.len() != tasks.len() {
+        return Err(format!(
+            "AI polish returned {} items for {} tasks",
+            polished.len(),
+            tasks.len()
+        ));
+    }
+    Ok(polished)
 }

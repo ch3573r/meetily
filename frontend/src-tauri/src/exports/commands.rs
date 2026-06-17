@@ -532,6 +532,8 @@ pub struct PlannerTaskInput {
     pub owner: Option<String>,
     pub due_date: Option<String>,
     pub bucket_id: String,
+    #[serde(default)]
+    pub details: Option<String>,
 }
 
 /// Export a user-reviewed set of Planner tasks. Each task carries its own bucket,
@@ -582,6 +584,7 @@ pub async fn export_selected_planner_tasks(
                 task: t.title,
                 owner: t.owner,
                 due_date: t.due_date,
+                details: t.details,
             })
             .collect();
         crate::exports::planner::ensure_local_action_ids(&mut action_items);

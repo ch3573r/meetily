@@ -203,6 +203,7 @@ pub fn parse_action_items(markdown: &str) -> Vec<ExportActionItem> {
             task,
             owner,
             due_date,
+            details: None,
         });
     }
 

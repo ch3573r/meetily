@@ -60,6 +60,12 @@ export interface PlannerTaskInput {
   owner: string | null;
   dueDate: string | null;
   bucketId: string;
+  details?: string | null;
+}
+
+export interface PolishedPlannerTask {
+  title: string;
+  details: string;
 }
 
 export const microsoftExportService = {
@@ -199,6 +205,18 @@ export const microsoftExportService = {
       meetingId,
       meetingTitle,
       planId,
+      tasks,
+    });
+  },
+
+  async polishPlannerTasks(
+    model: string,
+    modelName: string,
+    tasks: Array<{ title: string; owner: string | null; dueDate: string | null }>,
+  ): Promise<PolishedPlannerTask[]> {
+    return invoke<PolishedPlannerTask[]>("polish_planner_tasks", {
+      model,
+      modelName,
       tasks,
     });
   },

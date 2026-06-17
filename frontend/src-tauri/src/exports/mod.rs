@@ -69,6 +69,7 @@ pub fn meeting_export_from_notes(
             task: a.task.clone(),
             owner: a.owner.clone(),
             due_date: a.due_date.clone(),
+            details: None,
         })
         .collect();
     planner::ensure_local_action_ids(&mut action_items);

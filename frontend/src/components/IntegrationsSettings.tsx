@@ -497,6 +497,13 @@ function PlannerPanel() {
   const [creatingBucket, setCreatingBucket] = useState(false);
   const [newBucketName, setNewBucketName] = useState("");
   const [savingBucket, setSavingBucket] = useState(false);
+  const [aiPolish, setAiPolish] = useState<boolean>(saved.plannerAiPolish ?? false);
+
+  const toggleAiPolish = () => {
+    const next = !aiPolish;
+    setAiPolish(next);
+    setExportDestinations({ plannerAiPolish: next });
+  };
 
   const submitNewBucket = async () => {
     const name = newBucketName.replace(/\s+/g, " ").trim();
@@ -665,6 +672,34 @@ function PlannerPanel() {
               </div>
             </div>
           )}
+          <label className="flex cursor-pointer items-start justify-between gap-4 rounded-lg border border-border bg-muted p-3">
+            <span>
+              <span className="block text-sm font-medium text-foreground">
+                AI-generate task titles &amp; notes
+              </span>
+              <span className="mt-0.5 block text-xs text-muted-foreground">
+                Rewrite action items into clean titles and notes with your summary
+                model. You review and edit them in the export preview before anything
+                is created.
+              </span>
+            </span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={aiPolish}
+              onClick={toggleAiPolish}
+              className={`relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+                aiPolish ? "bg-primary" : "bg-border"
+              }`}
+            >
+              <span
+                className={`inline-block h-5 w-5 transform rounded-full bg-background shadow transition-transform ${
+                  aiPolish ? "translate-x-5" : "translate-x-0.5"
+                }`}
+              />
+            </button>
+          </label>
+
           {ms.error && (
             <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
