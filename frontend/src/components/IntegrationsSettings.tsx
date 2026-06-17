@@ -70,19 +70,19 @@ function stateClasses(state: AddonState) {
   switch (state) {
     case "ready":
     case "connected":
-      return "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200";
+      return "border-emerald-300 bg-emerald-100 text-emerald-900 dark:border-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-100";
     case "connecting":
     case "signin":
-      return "border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-200";
+      return "border-blue-300 bg-blue-100 text-blue-900 dark:border-blue-700 dark:bg-blue-900/60 dark:text-blue-100";
     case "prompt":
-      return "border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-200";
+      return "border-blue-300 bg-blue-100 text-blue-900 dark:border-blue-700 dark:bg-blue-900/60 dark:text-blue-100";
     case "provider":
-      return "border-primary/20 bg-primary/10 text-primary";
+      return "border-primary/30 bg-primary/15 text-primary";
     case "advanced":
-      return "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200";
+      return "border-amber-300 bg-amber-100 text-amber-900 dark:border-amber-700 dark:bg-amber-900/60 dark:text-amber-100";
     case "planned":
     default:
-      return "border-muted bg-muted text-muted-foreground";
+      return "border-border bg-muted text-foreground";
   }
 }
 
@@ -92,6 +92,10 @@ interface AddonPanelProps {
   state: AddonState;
   detail: string;
   children?: ReactNode;
+  /** Override the default state-derived badge text (the chip still uses the
+   *  state's color classes unless `badgeClasses` is also given). */
+  badgeLabel?: string;
+  badgeClasses?: string;
 }
 
 function AddonPanel({
@@ -100,6 +104,8 @@ function AddonPanel({
   state,
   detail,
   children,
+  badgeLabel,
+  badgeClasses,
 }: AddonPanelProps) {
   return (
     <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
@@ -114,9 +120,9 @@ function AddonPanel({
           </div>
         </div>
         <span
-          className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium ${stateClasses(state)}`}
+          className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium ${badgeClasses ?? stateClasses(state)}`}
         >
-          {stateBadge(state)}
+          {badgeLabel ?? stateBadge(state)}
         </span>
       </div>
       {children && <div className="mt-4">{children}</div>}
@@ -901,11 +907,27 @@ function TeamsAutoStartPanel() {
     setMode(next);
     setTeamsDetectionMode(next);
   };
+  const modeBadge =
+    mode === "off"
+      ? { label: "Off", classes: "border-border bg-muted text-foreground" }
+      : mode === "prompt"
+        ? {
+            label: "Prompt",
+            classes:
+              "border-blue-300 bg-blue-100 text-blue-900 dark:border-blue-700 dark:bg-blue-900/60 dark:text-blue-100",
+          }
+        : {
+            label: "Auto-record",
+            classes:
+              "border-emerald-300 bg-emerald-100 text-emerald-900 dark:border-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-100",
+          };
   return (
     <AddonPanel
       icon={Video}
       title="Teams meeting detection"
       state={mode === "off" ? "planned" : "ready"}
+      badgeLabel={modeBadge.label}
+      badgeClasses={modeBadge.classes}
       detail="Windows detector for Teams desktop and browser meetings, in several UI languages."
     >
       <div className="space-y-2">
@@ -941,10 +963,20 @@ function TeamsDetectionPanel() {
   const [teamsError, setTeamsError] = useState<string | null>(null);
 
   const teamsState: AddonState = useMemo(() => {
-    if (!teamsStatus) return "prompt";
+    if (!teamsStatus) return "connecting";
     if (!teamsStatus.supported) return "planned";
-    return teamsStatus.recordingSafety.automaticRecordingAllowed ? "ready" : "prompt";
+    return teamsStatus.recordingSafety.automaticRecordingAllowed ? "ready" : "advanced";
   }, [teamsStatus]);
+
+  // Detection-status wording (kept distinct from the Add-ons mode dropdown so
+  // the two "Teams meeting detection" panels don't look like they should match).
+  const teamsBadgeLabel = !teamsStatus
+    ? "Checking…"
+    : !teamsStatus.supported
+      ? "Not supported"
+      : teamsStatus.recordingSafety.automaticRecordingAllowed
+        ? "Monitoring"
+        : "Manual only";
 
   const checkTeamsDetection = async () => {
     setIsCheckingTeams(true);
@@ -986,6 +1018,7 @@ function TeamsDetectionPanel() {
       icon={Video}
       title="Teams meeting detection"
       state={teamsState}
+      badgeLabel={teamsBadgeLabel}
       detail="Live signals used to detect an active Teams meeting."
     >
       <div className="space-y-3">

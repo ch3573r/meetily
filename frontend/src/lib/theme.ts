@@ -97,6 +97,10 @@ export const accentColors: AccentColor[] = [
   { id: "magenta", name: "Magenta", primary: "329 75% 52%", foreground: "0 0% 100%" },
   { id: "emerald", name: "Emerald", primary: "152 55% 42%", foreground: "0 0% 100%" },
   { id: "amber", name: "Amber", primary: "38 92% 50%", foreground: "0 0% 10%" },
+  { id: "red", name: "Red", primary: "2 72% 51%", foreground: "0 0% 100%" },
+  { id: "orange", name: "Orange", primary: "24 90% 50%", foreground: "0 0% 100%" },
+  { id: "indigo", name: "Indigo", primary: "244 55% 58%", foreground: "0 0% 100%" },
+  { id: "lime", name: "Lime", primary: "96 50% 40%", foreground: "0 0% 100%" },
 ]
 
 export function getStoredAccentId(): string {

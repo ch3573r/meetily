@@ -71,7 +71,7 @@ export function HomeDashboard({
 
   return (
     <div className="min-h-screen overflow-y-auto bg-background px-8 py-7 text-foreground">
-      <div className="mx-auto flex w-full max-w-[2400px] flex-col gap-6">
+      <div className="flex w-full flex-col gap-6">
         <header className="flex items-start justify-between gap-6">
           <div>
             <h1 className="text-4xl font-semibold tracking-tight text-foreground">
