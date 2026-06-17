@@ -9,6 +9,7 @@ import {
   SparkleIcon,
   FlaskConical,
   Plug,
+  Activity,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { invoke } from "@tauri-apps/api/core";
@@ -18,7 +19,7 @@ import { RecordingSettings } from "@/components/RecordingSettings";
 import { PreferenceSettings } from "@/components/PreferenceSettings";
 import { SummaryModelSettings } from "@/components/SummaryModelSettings";
 import { BetaSettings } from "@/components/BetaSettings";
-import { IntegrationsSettings } from "@/components/IntegrationsSettings";
+import { IntegrationsSettings, DiagnosticsSettings } from "@/components/IntegrationsSettings";
 import { useConfig } from "@/contexts/ConfigContext";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
@@ -28,6 +29,7 @@ const TABS = [
   { value: "transcription", label: "Transcription", icon: DatabaseIcon },
   { value: "summary", label: "Summary", icon: SparkleIcon },
   { value: "integrations", label: "Add-ons", icon: Plug },
+  { value: "diagnostics", label: "Diagnostics", icon: Activity },
   { value: "beta", label: "Beta", icon: FlaskConical },
 ] as const;
 
@@ -159,6 +161,9 @@ export default function SettingsPage() {
             </TabsContent>
             <TabsContent value="integrations" className="mt-6">
               <IntegrationsSettings />
+            </TabsContent>
+            <TabsContent value="diagnostics" className="mt-6">
+              <DiagnosticsSettings />
             </TabsContent>
             <TabsContent value="beta" className="mt-6">
               <BetaSettings />

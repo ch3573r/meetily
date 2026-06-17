@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ElementType, ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
+  Activity,
   AlertTriangle,
   CheckCircle2,
   Cloud,
@@ -885,38 +886,72 @@ function OpenClawPanel() {
   );
 }
 
-export function IntegrationsSettings() {
-  const [teamsStatus, setTeamsStatus] = useState<TeamsDetectionStatus | null>(
-    null,
-  );
-  const [isCheckingTeams, setIsCheckingTeams] = useState(false);
-  const [teamsError, setTeamsError] = useState<string | null>(null);
+// Add-ons: the Teams auto-start toggle only. Live detection status is in Diagnostics.
+function TeamsAutoStartPanel() {
   const [autoRecord, setAutoRecord] = useState(false);
-
   useEffect(() => {
     setAutoRecord(getAutoRecordEnabled());
   }, []);
-
   const toggleAutoRecord = () => {
     const next = !autoRecord;
     setAutoRecord(next);
     setAutoRecordEnabled(next);
   };
+  return (
+    <AddonPanel
+      icon={Video}
+      title="Teams meeting detection"
+      state={autoRecord ? "ready" : "prompt"}
+      detail="Windows detector for Teams desktop and browser meetings, in several UI languages."
+    >
+      <label className="flex cursor-pointer items-start justify-between gap-4 rounded-lg border border-border bg-muted p-3">
+        <span>
+          <span className="block text-sm font-medium text-foreground">
+            Auto-start recording when a meeting is detected
+          </span>
+          <span className="mt-0.5 block text-xs text-muted-foreground">
+            Starts a recording once per detected meeting; re-arms when the meeting
+            ends. You can still stop manually. Live detection status is under
+            Diagnostics.
+          </span>
+        </span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={autoRecord}
+          onClick={toggleAutoRecord}
+          className={`relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+            autoRecord ? "bg-primary" : "bg-border"
+          }`}
+        >
+          <span
+            className={`inline-block h-5 w-5 transform rounded-full bg-background shadow transition-transform ${
+              autoRecord ? "translate-x-5" : "translate-x-0.5"
+            }`}
+          />
+        </button>
+      </label>
+    </AddonPanel>
+  );
+}
+
+// Diagnostics: live Teams meeting-detection signals/status.
+function TeamsDetectionPanel() {
+  const [teamsStatus, setTeamsStatus] = useState<TeamsDetectionStatus | null>(null);
+  const [isCheckingTeams, setIsCheckingTeams] = useState(false);
+  const [teamsError, setTeamsError] = useState<string | null>(null);
 
   const teamsState: AddonState = useMemo(() => {
     if (!teamsStatus) return "prompt";
     if (!teamsStatus.supported) return "planned";
-    return teamsStatus.recordingSafety.automaticRecordingAllowed
-      ? "ready"
-      : "prompt";
+    return teamsStatus.recordingSafety.automaticRecordingAllowed ? "ready" : "prompt";
   }, [teamsStatus]);
 
   const checkTeamsDetection = async () => {
     setIsCheckingTeams(true);
     setTeamsError(null);
     try {
-      const status = await teamsDetectionService.getStatus();
-      setTeamsStatus(status);
+      setTeamsStatus(await teamsDetectionService.getStatus());
     } catch (error) {
       setTeamsError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -928,9 +963,6 @@ export function IntegrationsSettings() {
     void checkTeamsDetection();
   }, []);
 
-  // Auto-refresh the detection status while the panel is open so it reflects the
-  // live state without a manual click. Silent (no spinner / error flash) — the
-  // "Refresh now" button still surfaces errors explicitly.
   useEffect(() => {
     let cancelled = false;
     const id = window.setInterval(async () => {
@@ -951,6 +983,125 @@ export function IntegrationsSettings() {
   }, []);
 
   return (
+    <AddonPanel
+      icon={Video}
+      title="Teams meeting detection"
+      state={teamsState}
+      detail="Live signals used to detect an active Teams meeting."
+    >
+      <div className="space-y-3">
+        <DetectionSummary status={teamsStatus} />
+        {teamsStatus?.reason && (
+          <p className="rounded-lg border border-border bg-muted p-3 text-sm text-muted-foreground">
+            {teamsStatus.reason}
+          </p>
+        )}
+        {teamsError && (
+          <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{teamsError}</span>
+          </div>
+        )}
+        <div className="flex items-center gap-3">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={checkTeamsDetection}
+            disabled={isCheckingTeams}
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${isCheckingTeams ? "animate-spin" : ""}`} />
+            Refresh now
+          </Button>
+          <span className="text-xs text-muted-foreground">
+            Updates automatically every few seconds.
+          </span>
+        </div>
+      </div>
+    </AddonPanel>
+  );
+}
+
+interface CodexStatus {
+  found: boolean;
+  authStatus?: string | null;
+  accountEmail?: string | null;
+  message: string;
+}
+
+// Diagnostics: bundled Codex app-server runtime status.
+function CodexPanel() {
+  const [status, setStatus] = useState<CodexStatus | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setStatus(await invoke<CodexStatus>("codex_check_installation"));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const signedIn = status?.authStatus === "authenticated";
+  const ready = !!status?.found;
+  const panelState: AddonState = signedIn ? "ready" : ready ? "provider" : "signin";
+
+  return (
+    <AddonPanel
+      icon={FileCheck2}
+      title="Codex app-server"
+      state={panelState}
+      detail="Bundled local Codex app-server runtime. Configured under Summary → Codex app-server."
+    >
+      <div className="flex items-center justify-between gap-3">
+        <span className="flex flex-wrap items-center gap-2 text-sm">
+          <span
+            className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+              signedIn
+                ? "bg-green-100 text-green-800 dark:bg-green-950/40 dark:text-green-200"
+                : ready
+                  ? "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-200"
+                  : "bg-muted text-muted-foreground"
+            }`}
+          >
+            {signedIn ? "Signed in" : ready ? "Runtime ready" : "Not available"}
+          </span>
+          <span className="text-muted-foreground">
+            {status?.accountEmail ??
+              status?.message ??
+              (error ? "Status unavailable" : "Loading status…")}
+          </span>
+        </span>
+        <button
+          type="button"
+          onClick={() => void load()}
+          disabled={loading}
+          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border text-muted-foreground transition hover:bg-muted disabled:opacity-50"
+          aria-label="Refresh Codex status"
+        >
+          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+        </button>
+      </div>
+      {error && (
+        <div className="mt-3 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+    </AddonPanel>
+  );
+}
+
+export function IntegrationsSettings() {
+  return (
     <div className="space-y-5">
       <div className="rounded-lg border border-border bg-card p-5 shadow-sm">
         <div className="flex items-start gap-3">
@@ -960,92 +1111,40 @@ export function IntegrationsSettings() {
               Add-ons and integrations
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Current status for meeting detection, handoff, exports, and
-              advanced providers.
+              Meeting auto-start and export destinations. Live status and handoff
+              health are under Diagnostics.
             </p>
           </div>
         </div>
       </div>
 
-      <AddonPanel
-        icon={Video}
-        title="Teams meeting detection"
-        state={teamsState}
-        detail="Windows detector for Teams desktop and browser meetings. Detects meetings in several UI languages."
-      >
-        <div className="space-y-3">
-          <label className="flex cursor-pointer items-start justify-between gap-4 rounded-lg border border-border bg-muted p-3">
-            <span>
-              <span className="block text-sm font-medium text-foreground">
-                Auto-start recording when a meeting is detected
-              </span>
-              <span className="mt-0.5 block text-xs text-muted-foreground">
-                Starts a recording once per detected meeting; re-arms when the
-                meeting ends. You can still stop manually.
-              </span>
-            </span>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={autoRecord}
-              onClick={toggleAutoRecord}
-              className={`relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
-                autoRecord ? "bg-primary" : "bg-border"
-              }`}
-            >
-              <span
-                className={`inline-block h-5 w-5 transform rounded-full bg-background shadow transition-transform ${
-                  autoRecord ? "translate-x-5" : "translate-x-0.5"
-                }`}
-              />
-            </button>
-          </label>
+      <TeamsAutoStartPanel />
+      <MicrosoftSignInPanel />
+      <OneNotePanel />
+      <PlannerPanel />
+    </div>
+  );
+}
 
-          <DetectionSummary status={teamsStatus} />
-          {teamsStatus?.reason && (
-            <p className="rounded-lg border border-border bg-muted p-3 text-sm text-muted-foreground">
-              {teamsStatus.reason}
+export function DiagnosticsSettings() {
+  return (
+    <div className="space-y-5">
+      <div className="rounded-lg border border-border bg-card p-5 shadow-sm">
+        <div className="flex items-start gap-3">
+          <Activity className="mt-0.5 h-5 w-5 text-primary" />
+          <div>
+            <h2 className="text-lg font-semibold text-foreground">Diagnostics</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Live status for meeting detection, OpenClaw handoff, and the Codex
+              app-server.
             </p>
-          )}
-          {teamsError && (
-            <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>{teamsError}</span>
-            </div>
-          )}
-          <div className="flex items-center gap-3">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={checkTeamsDetection}
-              disabled={isCheckingTeams}
-            >
-              <RefreshCw
-                className={`mr-2 h-4 w-4 ${isCheckingTeams ? "animate-spin" : ""}`}
-              />
-              Refresh now
-            </Button>
-            <span className="text-xs text-muted-foreground">
-              Updates automatically every few seconds.
-            </span>
           </div>
         </div>
-      </AddonPanel>
+      </div>
 
+      <TeamsDetectionPanel />
       <OpenClawPanel />
-
-      <MicrosoftSignInPanel />
-
-      <OneNotePanel />
-
-      <PlannerPanel />
-
-      <AddonPanel
-        icon={FileCheck2}
-        title="Advanced: Codex app-server"
-        state="advanced"
-        detail="Configured from Summary → Advanced: Codex app-server. This is a bundled runtime provider, not a global Codex CLI integration."
-      />
+      <CodexPanel />
     </div>
   );
 }
