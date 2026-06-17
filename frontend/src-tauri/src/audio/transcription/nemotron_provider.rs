@@ -22,11 +22,11 @@ impl TranscriptionProvider for NemotronProvider {
     async fn transcribe(
         &self,
         audio: Vec<f32>,
-        _language: Option<String>,
+        language: Option<String>,
     ) -> std::result::Result<TranscriptResult, TranscriptionError> {
-        // Language is selected via the encoder `lang_id`; per-call hints aren't
-        // wired yet (the lang_id table isn't published — see plan §6).
-        match self.engine.transcribe_audio(audio).await {
+        // Language selects the encoder prompt slot (one-hot language_mask) via
+        // languages.json; "auto"/unknown falls back to English.
+        match self.engine.transcribe_audio(audio, language).await {
             Ok(text) => Ok(TranscriptResult {
                 text: text.trim().to_string(),
                 confidence: None,  // RNN-T greedy decode provides no confidence

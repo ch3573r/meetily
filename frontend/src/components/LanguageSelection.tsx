@@ -130,9 +130,9 @@ export function LanguageSelection({
   const [saving, setSaving] = useState(false);
   const { setSelectedLanguage } = useConfig();
 
-  // Parakeet and Nemotron don't take a manual language hint (auto-detect only;
-  // Nemotron selects language via the encoder lang_id, not wired to the picker).
-  const isAutoOnlyEngine = provider === 'parakeet' || provider === 'nemotron';
+  // Parakeet is auto-detect only. Nemotron is prompt-conditioned: it DOES take a
+  // language (selects the encoder prompt slot), so allow the picker for it.
+  const isAutoOnlyEngine = provider === 'parakeet';
   const availableLanguages = isAutoOnlyEngine
     ? LANGUAGES.filter(lang => lang.code === 'auto' || lang.code === 'auto-translate')
     : LANGUAGES;
@@ -201,8 +201,8 @@ export function LanguageSelection({
         {/* Auto-only engine language limitation warning */}
         {isAutoOnlyEngine && (
           <div className="p-2 bg-amber-50 border border-amber-200 rounded text-amber-800">
-            <p className="font-medium">ℹ️ {provider === 'nemotron' ? 'Nemotron' : 'Parakeet'} Language Support</p>
-            <p className="mt-1 text-xs">{provider === 'nemotron' ? 'Nemotron' : 'Parakeet'} currently only supports automatic language detection. Manual language selection is not available. Use Whisper if you need to specify a particular language.</p>
+            <p className="font-medium">ℹ️ Parakeet Language Support</p>
+            <p className="mt-1 text-xs">Parakeet currently only supports automatic language detection. Manual language selection is not available. Use Whisper or Nemotron if you need to specify a particular language.</p>
           </div>
         )}
 

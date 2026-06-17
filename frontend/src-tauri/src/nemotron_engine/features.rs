@@ -47,9 +47,11 @@ impl MelExtractor {
 
     /// Compute log-mel features for a mono 16 kHz waveform.
     ///
-    /// Returns features as `[N_MELS][n_frames]` (mel-major), ready to reshape
-    /// into the encoder's `[1, 128, T]` `audio_signal` input.
-    pub fn compute(&mut self, samples: &[f32]) -> Vec<Vec<f32>> {
+    /// `log_floor` is the additive guard inside `ln(x + floor)` (the soniqo
+    /// export uses 2^-24; the older int4 export used 1e-10). Returns features as
+    /// `[N_MELS][n_frames]` (mel-major), ready to reshape into the encoder's
+    /// `[1, 128, T]` `audio_signal` input.
+    pub fn compute(&mut self, samples: &[f32], log_floor: f32) -> Vec<Vec<f32>> {
         if samples.is_empty() {
             return vec![Vec::new(); N_MELS];
         }
@@ -101,7 +103,7 @@ impl MelExtractor {
                 for b in 0..n_bins {
                     acc += filt[b] * power[b];
                 }
-                out[m].push((acc + LOG_GUARD).ln());
+                out[m].push((acc + log_floor).ln());
             }
         }
 
@@ -234,7 +236,7 @@ mod tests {
             .map(|i| (2.0 * std::f32::consts::PI * 440.0 * i as f32 / SAMPLE_RATE as f32).sin())
             .collect();
         let mut ex = MelExtractor::new();
-        let feats = ex.compute(&tone);
+        let feats = ex.compute(&tone, LOG_GUARD);
         assert_eq!(feats.len(), N_MELS);
         // center=true: n_frames ≈ 1 + n / hop.
         let frames = feats[0].len();
@@ -250,7 +252,7 @@ mod tests {
     #[test]
     fn silence_is_near_log_floor() {
         let mut ex = MelExtractor::new();
-        let feats = ex.compute(&vec![0.0f32; SAMPLE_RATE / 2]);
+        let feats = ex.compute(&vec![0.0f32; SAMPLE_RATE / 2], LOG_GUARD);
         // log(0 + 1e-10) ≈ -23.03; silence should sit near the floor.
         let max = feats
             .iter()

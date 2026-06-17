@@ -187,7 +187,7 @@ export function NemotronModelManager({
               )}
             </div>
             <p className="ml-9 text-sm text-muted-foreground">
-              Streaming, multilingual (incl. German). INT4, ~790 MB.
+              Streaming, multilingual (incl. German). INT8, GPU-capable (DirectML). ~790 MB.
             </p>
           </div>
 

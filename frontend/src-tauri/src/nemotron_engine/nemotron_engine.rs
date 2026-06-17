@@ -23,37 +23,34 @@ use tokio::time::timeout;
 pub static USE_NEMOTRON_DIRECTML: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
-/// The single v1 model id.
-pub const NEMOTRON_MODEL: &str = "nemotron-streaming-0.6b-int4";
+/// The default/main Nemotron model id (int8 — GPU-capable on DirectML, like
+/// Parakeet int8). fp16 is planned as an optional higher-quality variant.
+pub const NEMOTRON_MODEL: &str = "nemotron-streaming-0.6b-int8";
 
 const BASE_URL: &str =
-    "https://huggingface.co/onnx-community/nemotron-3.5-asr-streaming-0.6b-onnx-int4/resolve/main";
+    "https://huggingface.co/soniqo/Nemotron-3.5-ASR-Streaming-Multilingual-0.6B-ONNX-INT8/resolve/main";
 
-/// Files to download (silero_vad.onnx is intentionally skipped — the pipeline
-/// already runs Silero VAD). External-data `.onnx.data` files must sit next to
-/// their `.onnx` graph; ort loads them automatically.
+/// Files to download. The int8 export keeps the encoder weights inline (no
+/// .onnx.data); the decoder/joint use external-data files that must sit next to
+/// their .onnx graph (ort loads them automatically).
 const MODEL_FILES: &[(&str, u64)] = &[
-    ("encoder.onnx", 2_800_000),
-    ("encoder.onnx.data", 690_000_000),
+    ("encoder.onnx", 658_000_000),
     ("decoder.onnx", 5_000),
     ("decoder.onnx.data", 59_800_000),
-    ("joint.onnx", 2_500),
+    ("joint.onnx", 3_000),
     ("joint.onnx.data", 37_800_000),
-    ("tokenizer.json", 643_000),
-    ("vocab.txt", 64_000),
-    ("model_config.json", 400),
-    ("audio_processor_config.json", 420),
-    ("genai_config.json", 1_900),
+    ("vocab.json", 236_000),
+    ("config.json", 700),
+    ("languages.json", 2_100),
 ];
 
 /// Files that must exist (and pass a min-size check) for a model to be Available.
 const REQUIRED_FILES: &[(&str, u64)] = &[
-    ("encoder.onnx", 1_000_000),
-    ("encoder.onnx.data", 600_000_000),
+    ("encoder.onnx", 500_000_000),
     ("decoder.onnx.data", 50_000_000),
     ("joint.onnx.data", 30_000_000),
-    ("vocab.txt", 5_000),
-    ("genai_config.json", 100),
+    ("vocab.json", 50_000),
+    ("languages.json", 500),
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -134,10 +131,10 @@ impl NemotronEngine {
             name: NEMOTRON_MODEL.to_string(),
             path: model_path,
             size_mb: 790,
-            speed: "Streaming (INT4)".to_string(),
+            speed: "Streaming (INT8)".to_string(),
             status,
             description:
-                "NVIDIA Nemotron 3.5 ASR — streaming, multilingual (incl. German). INT4. Beta."
+                "NVIDIA Nemotron 3.5 ASR — streaming, multilingual (incl. German). INT8, GPU-capable (DirectML). Beta."
                     .to_string(),
         };
 
@@ -194,13 +191,18 @@ impl NemotronEngine {
         self.current_model.read().await.is_some()
     }
 
-    pub async fn transcribe_audio(&self, samples: Vec<f32>) -> Result<String> {
+    pub async fn transcribe_audio(
+        &self,
+        samples: Vec<f32>,
+        language: Option<String>,
+    ) -> Result<String> {
         let mut guard = self.current_model.write().await;
         let model = guard
             .as_mut()
             .ok_or_else(|| anyhow!("No Nemotron model loaded"))?;
+        let slot = model.resolve_lang_slot(language.as_deref());
         model
-            .transcribe_samples(samples)
+            .transcribe_samples(samples, slot)
             .map_err(|e| anyhow!("Nemotron transcription failed: {}", e))
     }
 

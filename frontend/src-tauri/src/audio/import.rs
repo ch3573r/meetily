@@ -591,7 +591,7 @@ async fn run_import<R: Runtime>(
         let (text, conf) = if use_nemotron {
             let engine = nemotron_engine.as_ref().unwrap();
             let text = engine
-                .transcribe_audio(segment.samples.clone())
+                .transcribe_audio(segment.samples.clone(), language.clone())
                 .await
                 .map_err(|e| anyhow!("Nemotron transcription failed on segment {}: {}", i, e))?;
             (text, 0.9f32)
