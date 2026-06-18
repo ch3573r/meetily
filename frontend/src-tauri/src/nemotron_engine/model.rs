@@ -112,28 +112,17 @@ impl NemotronModel {
         })
     }
 
-    /// Always tries DirectML (GPU) first when the EP is compiled in, then falls
-    /// back to CPU automatically — no user toggle. Note: the int8 model's
-    /// ConvInteger op has no CPU implementation, so the CPU fallback only
-    /// succeeds for ops the CPU EP supports (fp16); int8 effectively requires a
-    /// DirectML-capable GPU.
+    /// Runs Nemotron on the CPU EP. DirectML miscomputes this conformer encoder
+    /// — its output collapses to ~±0.25 (vs ~±8 on CPU) for BOTH int8 and fp16,
+    /// so the joint only ever sees blank. The decoder/joint are fine on DirectML
+    /// but the encoder isn't, so we keep the whole model on CPU where fp16 is
+    /// verified correct. (Revisit GPU via a DirectML graph-optimization-disabled
+    /// probe or a QDQ re-export — see notes.)
     fn init_session<P: AsRef<Path>>(
         model_dir: P,
         filename: &str,
     ) -> Result<Session, NemotronError> {
         let path = model_dir.as_ref().join(filename);
-        #[cfg(feature = "directml")]
-        {
-            match Self::build_session(&path, true) {
-                Ok(s) => {
-                    log::info!("Nemotron: loaded {filename} with DirectML (GPU)");
-                    return Ok(s);
-                }
-                Err(e) => log::warn!(
-                    "Nemotron: DirectML init failed for {filename} ({e}); falling back to CPU"
-                ),
-            }
-        }
         Self::build_session(&path, false).map_err(|e| {
             let msg = e.to_string();
             if msg.contains("ConvInteger") {
