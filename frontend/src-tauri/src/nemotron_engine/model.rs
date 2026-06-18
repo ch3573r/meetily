@@ -209,6 +209,17 @@ impl NemotronModel {
             return Ok(String::new());
         }
 
+        // Compute ONE continuous log-mel over the whole (zero-padded to a whole
+        // number of 320 ms windows) segment, then slice contiguous 32-frame
+        // windows out of it — matching soniqo's push_chunk/end_stream. (Computing
+        // mel per-window independently adds reflect-padding artifacts at every
+        // boundary and leaves the model under-confident → mostly blank.)
+        let total_windows = samples.len().div_ceil(WIN_SAMPLES);
+        let mut padded = samples;
+        padded.resize(total_windows * WIN_SAMPLES, 0.0);
+        let mel = self.mel.compute(&padded, LOG_FLOOR); // [128][produced]
+        let produced = mel.first().map(|r| r.len()).unwrap_or(0);
+
         // Per-segment streaming state (zeroed; predictor primed with blank).
         let mut pre_cache = ArrayD::<f32>::zeros(IxDyn(&[1, MEL_BINS, PRE_CACHE_SIZE]));
         let mut clc =
@@ -229,13 +240,11 @@ impl NemotronModel {
         let lang_mask = mask.into_dyn();
 
         let mut text = String::new();
-        let mut pos = 0usize;
-        while pos < samples.len() {
-            let end = (pos + WIN_SAMPLES).min(samples.len());
-            let mut window = samples[pos..end].to_vec();
-            window.resize(WIN_SAMPLES, 0.0); // zero-pad the trailing partial window
+        for k in 0..total_windows {
             text.push_str(&self.run_window(
-                &window,
+                &mel,
+                k * CHUNK_MEL_FRAMES,
+                produced,
                 &lang_mask,
                 &mut pre_cache,
                 &mut clc,
@@ -245,7 +254,6 @@ impl NemotronModel {
                 &mut dec_c,
                 &mut dec_hidden,
             )?);
-            pos += WIN_SAMPLES;
         }
         Ok(text)
     }
@@ -253,7 +261,9 @@ impl NemotronModel {
     #[allow(clippy::too_many_arguments)]
     fn run_window(
         &mut self,
-        pcm: &[f32],
+        mel: &[Vec<f32>],
+        f0: usize,
+        produced: usize,
         lang_mask: &ArrayD<f32>,
         pre_cache: &mut ArrayD<f32>,
         clc: &mut ArrayD<f32>,
@@ -263,13 +273,13 @@ impl NemotronModel {
         dec_c: &mut ArrayD<f32>,
         dec_hidden: &mut ArrayD<f32>,
     ) -> Result<String, NemotronError> {
-        // Log-mel for this window, trimmed/padded to CHUNK_MEL_FRAMES (mel-major).
-        let mel = self.mel.compute(pcm, LOG_FLOOR);
-        let produced = mel.first().map(|r| r.len()).unwrap_or(0);
+        // Slice the contiguous 32-frame window [f0 .. f0+32] out of the
+        // segment's continuous mel (zero-pad any frames past the end).
         let mut audio = Array::zeros((1, MEL_BINS, CHUNK_MEL_FRAMES));
         for b in 0..MEL_BINS {
-            for f in 0..CHUNK_MEL_FRAMES {
-                audio[[0, b, f]] = if f < produced { mel[b][f] } else { 0.0 };
+            for i in 0..CHUNK_MEL_FRAMES {
+                let f = f0 + i;
+                audio[[0, b, i]] = if f < produced { mel[b][f] } else { 0.0 };
             }
         }
         let audio = audio.into_dyn();
