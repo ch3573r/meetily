@@ -24,6 +24,7 @@ pub const WIN_LENGTH: usize = 400;
 pub const N_MELS: usize = 128;
 pub const FMIN: f32 = 0.0;
 pub const FMAX: f32 = 8000.0;
+pub const PREEMPH: f32 = 0.97;
 pub const LOG_GUARD: f32 = 1e-10;
 
 /// Precomputed, reusable feature extractor (FFT plan + window + mel filterbank).
@@ -55,14 +56,19 @@ impl MelExtractor {
             return vec![Vec::new(); N_MELS];
         }
 
-        // NOTE: matches soniqo speech-core src/audio/mel.cpp EXACTLY — no
-        // pre-emphasis (the model's runtime path skips it despite config), a
-        // left-aligned symmetric Hann window of win_length inside the n_fft
-        // frame, win_length-based frame count, and no per-feature normalization.
+        // Matches soniqo speech-core: the MULTILINGUAL path (compute_mel) applies
+        // pre-emphasis 0.97, THEN the shared mel.cpp spectrogram (left-aligned
+        // symmetric Hann of win_length, win_length-based framing, reflect center
+        // padding, no per-feature normalization).
+        let mut emph = vec![0.0f32; samples.len()];
+        emph[0] = samples[0];
+        for i in 1..samples.len() {
+            emph[i] = samples[i] - PREEMPH * samples[i - 1];
+        }
 
         // Center padding (reflect) by N_FFT/2.
         let pad = N_FFT / 2;
-        let padded = reflect_pad(samples, pad);
+        let padded = reflect_pad(&emph, pad);
 
         let n_bins = N_FFT / 2 + 1;
         let n_frames = if padded.len() >= WIN_LENGTH {
