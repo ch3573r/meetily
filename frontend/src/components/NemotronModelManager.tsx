@@ -186,7 +186,7 @@ export function NemotronModelManager({
               )}
             </div>
             <p className="ml-9 text-sm text-muted-foreground">
-              Streaming, multilingual (incl. German). FP16 — runs on GPU (DirectML) or CPU. ~1.3 GB.
+              Streaming, multilingual (incl. German). FP16 — tries GPU (DirectML) with CPU fallback. ~1.3 GB.
             </p>
           </div>
 

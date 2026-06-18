@@ -87,11 +87,10 @@ pub struct NemotronModel {
 impl NemotronModel {
     pub fn new<P: AsRef<Path>>(model_dir: P) -> Result<Self, NemotronError> {
         let dir = model_dir.as_ref();
-        // The encoder is the heavy part AND the one DirectML mishandles. Try it
-        // on DirectML (graph optimizations disabled — a DML fusion/layout rewrite
-        // is the prime suspect for the encoder collapse) and self-test the output;
-        // fall back to CPU if it's still collapsed. decoder/joint are tiny and
-        // correct on CPU, so keep them there.
+        // The encoder is the heavy part. Try it on DirectML (graph optimizations
+        // disabled), compare a deterministic probe against CPU, and fall back if
+        // DML disagrees. decoder/joint are tiny and correct on CPU, so keep them
+        // there.
         let encoder = Self::load_encoder(dir)?;
         let decoder = Self::init_session(dir, "decoder.onnx")?;
         let joint = Self::init_session(dir, "joint.onnx")?;
@@ -131,41 +130,97 @@ impl NemotronModel {
     }
 
     /// Load the encoder, preferring DirectML (GPU) with graph optimizations
-    /// DISABLED — the encoder collapses on DML at full optimization, and a buggy
-    /// DML fusion/layout rewrite is the prime suspect. We self-test the loaded
-    /// session and fall back to CPU if the output is still collapsed, so the
-    /// model is always correct (worst case: slower CPU).
+    /// DISABLED. We compare a deterministic probe against CPU and fall back if
+    /// DML disagrees, so the model is always correct (worst case: slower CPU).
     fn load_encoder(dir: &Path) -> Result<Session, NemotronError> {
         let path = dir.join("encoder.onnx");
         #[cfg(feature = "directml")]
         {
+            let mut cpu_session = Self::init_session(dir, "encoder.onnx")?;
             match Self::build_session(&path, true) {
                 Ok(mut session) => {
-                    if Self::encoder_self_test(&mut session) {
+                    if Self::encoder_self_test(&mut session, &mut cpu_session) {
                         log::info!("Nemotron encoder: DirectML (GPU), self-test passed");
                         return Ok(session);
                     }
                     log::warn!(
-                        "Nemotron encoder: DirectML output collapsed (self-test failed); using CPU"
+                        "Nemotron encoder: DirectML output mismatched CPU (self-test failed); using CPU"
                     );
+                    return Ok(cpu_session);
                 }
                 Err(e) => log::warn!("Nemotron encoder: DirectML init failed ({e}); using CPU"),
             }
+            log::info!("Nemotron encoder: CPU");
+            return Ok(cpu_session);
         }
         let session = Self::init_session(dir, "encoder.onnx")?;
         log::info!("Nemotron encoder: CPU");
         Ok(session)
     }
 
-    /// Feed a synthetic energetic mel through the encoder and check the output
-    /// isn't collapsed. A correct encoder yields activations well above ±1; the
-    /// broken-DML path collapses to ~±0.25.
+    /// Feed a deterministic mel-shaped probe through CPU and DML and require the
+    /// DML output to closely match CPU. An absolute activation threshold is too
+    /// brittle: some synthetic probes produce small-but-valid CPU activations.
     #[cfg(feature = "directml")]
-    fn encoder_self_test(enc: &mut Session) -> bool {
+    fn encoder_self_test(candidate: &mut Session, baseline: &mut Session) -> bool {
+        let base = match Self::encoder_probe_output(baseline) {
+            Ok(v) => v,
+            Err(e) => {
+                log::warn!("Nemotron encoder CPU self-test run failed: {e}");
+                return false;
+            }
+        };
+        let cand = match Self::encoder_probe_output(candidate) {
+            Ok(v) => v,
+            Err(e) => {
+                log::warn!("Nemotron encoder DirectML self-test run failed: {e}");
+                return false;
+            }
+        };
+        if base.len() != cand.len() || base.is_empty() {
+            log::warn!(
+                "Nemotron encoder self-test shape mismatch: CPU={} DML={}",
+                base.len(),
+                cand.len()
+            );
+            return false;
+        }
+
+        let mut max_abs_err = 0.0f32;
+        let mut base_max = 0.0f32;
+        let mut cand_max = 0.0f32;
+        let mut dot = 0.0f64;
+        let mut base_norm = 0.0f64;
+        let mut cand_norm = 0.0f64;
+        for (&a, &b) in base.iter().zip(cand.iter()) {
+            max_abs_err = max_abs_err.max((a - b).abs());
+            base_max = base_max.max(a.abs());
+            cand_max = cand_max.max(b.abs());
+            let af = a as f64;
+            let bf = b as f64;
+            dot += af * bf;
+            base_norm += af * af;
+            cand_norm += bf * bf;
+        }
+        let cosine = if base_norm > 0.0 && cand_norm > 0.0 {
+            dot / (base_norm.sqrt() * cand_norm.sqrt())
+        } else {
+            0.0
+        };
+        log::info!(
+            "Nemotron encoder self-test: CPU|max|={base_max:.3} DML|max|={cand_max:.3} max_abs_err={max_abs_err:.4} cosine={cosine:.5}"
+        );
+        max_abs_err <= 0.1 && cosine >= 0.995 && cand_max > 0.5
+    }
+
+    #[cfg(feature = "directml")]
+    fn encoder_probe_output(enc: &mut Session) -> Result<Vec<f32>, NemotronError> {
         let mut audio = Array::zeros((1, MEL_BINS, CHUNK_MEL_FRAMES));
         for b in 0..MEL_BINS {
             for t in 0..CHUNK_MEL_FRAMES {
-                audio[[0, b, t]] = (b as f32 * 0.13 + t as f32 * 0.31).sin() * 3.0;
+                audio[[0, b, t]] =
+                    (b as f32 / (MEL_BINS - 1) as f32) * -14.0
+                        + (t as f32 / (CHUNK_MEL_FRAMES - 1) as f32) * 2.0;
             }
         }
         let audio = audio.into_dyn();
@@ -179,32 +234,20 @@ impl NemotronModel {
             ArrayD::<f32>::zeros(IxDyn(&[ENCODER_LAYERS, 1, ATTN_LEFT_CONTEXT, ENCODER_HIDDEN]));
         let clt =
             ArrayD::<f32>::zeros(IxDyn(&[ENCODER_LAYERS, 1, ENCODER_HIDDEN, CONV_CACHE_SIZE]));
-        let run = (|| -> Result<f32, NemotronError> {
-            let out = enc.run(inputs![
-                "audio_signal" => TensorRef::from_array_view(audio.view())?,
-                "audio_length" => TensorRef::from_array_view(length.view())?,
-                "language_mask" => TensorRef::from_array_view(mask.view())?,
-                "pre_cache" => TensorRef::from_array_view(pre.view())?,
-                "cache_last_channel" => TensorRef::from_array_view(clc.view())?,
-                "cache_last_time" => TensorRef::from_array_view(clt.view())?,
-                "cache_last_channel_len" => TensorRef::from_array_view(chl.view())?,
-            ])?;
-            let e = out
-                .get("encoded_output")
-                .ok_or_else(|| NemotronError::OutputNotFound("encoded_output".into()))?
-                .try_extract_array::<f32>()?;
-            Ok(e.iter().fold(0.0f32, |m, &x| m.max(x.abs())))
-        })();
-        match run {
-            Ok(max_abs) => {
-                log::info!("Nemotron encoder self-test: max|out|={max_abs:.3} (collapsed if <1)");
-                max_abs > 1.0
-            }
-            Err(e) => {
-                log::warn!("Nemotron encoder self-test run failed: {e}");
-                false
-            }
-        }
+        let out = enc.run(inputs![
+            "audio_signal" => TensorRef::from_array_view(audio.view())?,
+            "audio_length" => TensorRef::from_array_view(length.view())?,
+            "language_mask" => TensorRef::from_array_view(mask.view())?,
+            "pre_cache" => TensorRef::from_array_view(pre.view())?,
+            "cache_last_channel" => TensorRef::from_array_view(clc.view())?,
+            "cache_last_time" => TensorRef::from_array_view(clt.view())?,
+            "cache_last_channel_len" => TensorRef::from_array_view(chl.view())?,
+        ])?;
+        let e = out
+            .get("encoded_output")
+            .ok_or_else(|| NemotronError::OutputNotFound("encoded_output".into()))?
+            .try_extract_array::<f32>()?;
+        Ok(e.iter().copied().collect())
     }
 
     fn build_session(path: &Path, directml: bool) -> Result<Session, NemotronError> {

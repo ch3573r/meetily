@@ -18,10 +18,11 @@ use tokio::io::{AsyncWriteExt, BufWriter};
 use tokio::sync::RwLock;
 use tokio::time::timeout;
 
-/// The Nemotron model id. fp16, not int8: DirectML silently miscomputes the
-/// int8 ConvInteger encoder (output collapses ~35x → always blank), and the CPU
-/// EP can't run ConvInteger at all. fp16 has no ConvInteger so it runs correctly
-/// on both DirectML (GPU) and CPU. Verified end-to-end vs the ONNX in Python.
+/// The Nemotron model id. fp16, not int8: DirectML silently miscomputed the
+/// int8 ConvInteger encoder (output collapsed ~35x -> always blank), and the CPU
+/// EP could not run that ConvInteger export. fp16 has no ConvInteger and is
+/// verified on CPU; DirectML is attempted and self-tested at load time, with CPU
+/// fallback when the encoder output collapses.
 pub const NEMOTRON_MODEL: &str = "nemotron-streaming-0.6b-fp16";
 
 const BASE_URL: &str =
@@ -132,7 +133,7 @@ impl NemotronEngine {
             speed: "Streaming (FP16)".to_string(),
             status,
             description:
-                "NVIDIA Nemotron 3.5 ASR — streaming, multilingual (incl. German). FP16, runs on GPU (DirectML) or CPU. Beta."
+                "NVIDIA Nemotron 3.5 ASR — streaming, multilingual (incl. German). FP16; tries DirectML GPU and falls back to CPU if the encoder self-test fails. Beta."
                     .to_string(),
         };
 
