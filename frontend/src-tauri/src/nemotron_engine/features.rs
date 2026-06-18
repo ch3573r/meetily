@@ -24,7 +24,6 @@ pub const WIN_LENGTH: usize = 400;
 pub const N_MELS: usize = 128;
 pub const FMIN: f32 = 0.0;
 pub const FMAX: f32 = 8000.0;
-pub const PREEMPH: f32 = 0.97;
 pub const LOG_GUARD: f32 = 1e-10;
 
 /// Precomputed, reusable feature extractor (FFT plan + window + mel filterbank).
@@ -40,7 +39,7 @@ impl MelExtractor {
     pub fn new() -> Self {
         Self {
             planner: RealFftPlanner::<f32>::new(),
-            window: build_centered_hann(WIN_LENGTH, N_FFT),
+            window: build_hann(WIN_LENGTH),
             mel_filters: build_mel_filterbank(),
         }
     }
@@ -56,21 +55,18 @@ impl MelExtractor {
             return vec![Vec::new(); N_MELS];
         }
 
-        // 1. Pre-emphasis: y[t] = x[t] - 0.97 * x[t-1].
-        let mut sig = vec![0.0f32; samples.len()];
-        sig[0] = samples[0];
-        for t in 1..samples.len() {
-            sig[t] = samples[t] - PREEMPH * samples[t - 1];
-        }
+        // NOTE: matches soniqo speech-core src/audio/mel.cpp EXACTLY — no
+        // pre-emphasis (the model's runtime path skips it despite config), a
+        // left-aligned symmetric Hann window of win_length inside the n_fft
+        // frame, win_length-based frame count, and no per-feature normalization.
 
-        // 2. Center padding (torch.stft center=true → reflect pad by N_FFT/2).
+        // Center padding (reflect) by N_FFT/2.
         let pad = N_FFT / 2;
-        let padded = reflect_pad(&sig, pad);
+        let padded = reflect_pad(samples, pad);
 
-        // 3. Frame, window, FFT, power, mel, log.
         let n_bins = N_FFT / 2 + 1;
-        let n_frames = if padded.len() >= N_FFT {
-            1 + (padded.len() - N_FFT) / HOP_LENGTH
+        let n_frames = if padded.len() >= WIN_LENGTH {
+            1 + (padded.len() - WIN_LENGTH) / HOP_LENGTH
         } else {
             0
         };
@@ -84,7 +80,12 @@ impl MelExtractor {
 
         for f in 0..n_frames {
             let start = f * HOP_LENGTH;
-            for i in 0..N_FFT {
+            // Left-aligned windowed frame: window the first win_length samples,
+            // zero-pad the tail to n_fft.
+            for v in frame_buf.iter_mut() {
+                *v = 0.0;
+            }
+            for i in 0..WIN_LENGTH {
                 frame_buf[i] = padded[start + i] * self.window[i];
             }
             r2c.process(&mut frame_buf, &mut spectrum)
@@ -117,34 +118,30 @@ impl Default for MelExtractor {
     }
 }
 
-/// Hann window of `win` samples, centered inside an `n_fft` frame (zeros on the
-/// outer `(n_fft - win)/2` samples each side) — matches torch.stft window
-/// padding when `win_length < n_fft`.
-fn build_centered_hann(win: usize, n_fft: usize) -> Vec<f32> {
-    let mut w = vec![0.0f32; n_fft];
-    let off = (n_fft - win) / 2;
-    for i in 0..win {
-        // Periodic Hann (matches torch/librosa default).
-        let x = (std::f32::consts::PI * i as f32 / win as f32).sin();
-        w[off + i] = x * x;
-    }
-    w
+/// Symmetric Hann window of `win` samples (denominator `win - 1`), matching
+/// speech-core mel.cpp. Applied to the first `win` samples of the n_fft frame.
+fn build_hann(win: usize) -> Vec<f32> {
+    (0..win)
+        .map(|i| {
+            0.5 * (1.0 - (2.0 * std::f32::consts::PI * i as f32 / (win as f32 - 1.0)).cos())
+        })
+        .collect()
 }
 
-/// Reflect-pad a signal by `pad` samples on each end (mirror without repeating
-/// the edge sample), matching torch.stft(center=true).
+/// Reflect-pad by `pad` on each end, matching speech-core mel.cpp:
+///   left:  padded[pad-1-i] = sig[min(i+1, n-1)]
+///   right: padded[pad+n+i] = sig[max(n-2-i, 0)]
 fn reflect_pad(sig: &[f32], pad: usize) -> Vec<f32> {
     let n = sig.len();
-    let mut out = Vec::with_capacity(n + 2 * pad);
+    let mut out = vec![0.0f32; n + 2 * pad];
     for i in 0..pad {
-        // reflect: sig[pad - i] ... index mirrors around sig[0]
-        let idx = (pad - i).min(n.saturating_sub(1));
-        out.push(sig[idx]);
+        let src = (i + 1).min(n.saturating_sub(1));
+        out[pad - 1 - i] = sig[src];
     }
-    out.extend_from_slice(sig);
+    out[pad..pad + n].copy_from_slice(sig);
     for i in 0..pad {
-        let idx = n.saturating_sub(2).saturating_sub(i);
-        out.push(sig[idx.min(n - 1)]);
+        let src = (n as isize - 2 - i as isize).max(0) as usize;
+        out[pad + n + i] = sig[src.min(n - 1)];
     }
     out
 }
