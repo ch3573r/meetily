@@ -4,10 +4,9 @@
 // validate-and-load, and the DirectML toggle. Mirrors parakeet_engine::commands.
 
 use crate::nemotron_engine::nemotron_engine::{
-    ModelInfo, NemotronEngine, NEMOTRON_MODEL, USE_NEMOTRON_DIRECTML,
+    ModelInfo, NemotronEngine, NEMOTRON_MODEL,
 };
 use crate::parakeet_engine::ModelStatus;
-use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use tauri::{command, AppHandle, Emitter, Manager, Runtime};
 
@@ -141,19 +140,4 @@ pub async fn nemotron_validate_model_ready_with_config<R: Runtime>(
         .await
         .map_err(|e| format!("Failed to load Nemotron model '{}': {}", configured, e))?;
     Ok(configured)
-}
-
-#[command]
-pub async fn set_nemotron_use_directml(enabled: bool) -> Result<(), String> {
-    USE_NEMOTRON_DIRECTML.store(enabled, Ordering::Relaxed);
-    if let Some(engine) = engine() {
-        engine.unload_model().await;
-    }
-    log::info!("Nemotron DirectML set to {enabled}; unloaded model so it reloads with the change");
-    Ok(())
-}
-
-#[command]
-pub async fn get_nemotron_use_directml() -> Result<bool, String> {
-    Ok(USE_NEMOTRON_DIRECTML.load(Ordering::Relaxed))
 }

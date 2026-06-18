@@ -651,8 +651,6 @@ pub fn run() {
             nemotron_engine::commands::nemotron_get_available_models,
             nemotron_engine::commands::nemotron_download_model,
             nemotron_engine::commands::nemotron_cancel_download,
-            nemotron_engine::commands::set_nemotron_use_directml,
-            nemotron_engine::commands::get_nemotron_use_directml,
             // Parallel processing commands
             whisper_engine::parallel_commands::initialize_parallel_processor,
             whisper_engine::parallel_commands::start_parallel_processing,

@@ -18,11 +18,6 @@ use tokio::io::{AsyncWriteExt, BufWriter};
 use tokio::sync::RwLock;
 use tokio::time::timeout;
 
-/// Beta opt-in: route Nemotron inference through DirectML (Windows GPU). No
-/// effect unless the `directml` feature is built.
-pub static USE_NEMOTRON_DIRECTML: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
-
 /// The default/main Nemotron model id (int8 — GPU-capable on DirectML, like
 /// Parakeet int8). fp16 is planned as an optional higher-quality variant.
 pub const NEMOTRON_MODEL: &str = "nemotron-streaming-0.6b-int8";
@@ -164,8 +159,8 @@ impl NemotronEngine {
         self.unload_model().await;
 
         log::info!("Loading Nemotron model: {}", model_name);
-        let use_directml = USE_NEMOTRON_DIRECTML.load(std::sync::atomic::Ordering::Relaxed);
-        let model = NemotronModel::new(&path, use_directml)
+        // Always tries DirectML (GPU) then falls back to CPU automatically.
+        let model = NemotronModel::new(&path)
             .map_err(|e| anyhow!("Failed to load Nemotron model {}: {}", model_name, e))?;
 
         *self.current_model.write().await = Some(model);

@@ -75,6 +75,8 @@ pub enum NemotronError {
     Json(#[from] serde_json::Error),
     #[error("Model output not found: {0}")]
     OutputNotFound(String),
+    #[error("This Nemotron model needs a DirectML-capable GPU (its int8 ops have no CPU implementation). Use a DirectML build/GPU, or pick the fp16 Nemotron or another engine.")]
+    CpuUnsupported,
 }
 
 pub struct NemotronModel {
@@ -87,11 +89,11 @@ pub struct NemotronModel {
 }
 
 impl NemotronModel {
-    pub fn new<P: AsRef<Path>>(model_dir: P, use_directml: bool) -> Result<Self, NemotronError> {
+    pub fn new<P: AsRef<Path>>(model_dir: P) -> Result<Self, NemotronError> {
         let dir = model_dir.as_ref();
-        let encoder = Self::init_session(dir, "encoder.onnx", use_directml)?;
-        let decoder = Self::init_session(dir, "decoder.onnx", use_directml)?;
-        let joint = Self::init_session(dir, "joint.onnx", use_directml)?;
+        let encoder = Self::init_session(dir, "encoder.onnx")?;
+        let decoder = Self::init_session(dir, "decoder.onnx")?;
+        let joint = Self::init_session(dir, "joint.onnx")?;
         let vocab = Self::load_vocab(dir)?;
         let lang_slots = Self::load_lang_slots(dir).unwrap_or_default();
         log::info!(
@@ -110,14 +112,18 @@ impl NemotronModel {
         })
     }
 
+    /// Always tries DirectML (GPU) first when the EP is compiled in, then falls
+    /// back to CPU automatically — no user toggle. Note: the int8 model's
+    /// ConvInteger op has no CPU implementation, so the CPU fallback only
+    /// succeeds for ops the CPU EP supports (fp16); int8 effectively requires a
+    /// DirectML-capable GPU.
     fn init_session<P: AsRef<Path>>(
         model_dir: P,
         filename: &str,
-        use_directml: bool,
     ) -> Result<Session, NemotronError> {
         let path = model_dir.as_ref().join(filename);
         #[cfg(feature = "directml")]
-        if use_directml {
+        {
             match Self::build_session(&path, true) {
                 Ok(s) => {
                     log::info!("Nemotron: loaded {filename} with DirectML (GPU)");
@@ -128,9 +134,14 @@ impl NemotronModel {
                 ),
             }
         }
-        #[cfg(not(feature = "directml"))]
-        let _ = use_directml;
-        Self::build_session(&path, false)
+        Self::build_session(&path, false).map_err(|e| {
+            let msg = e.to_string();
+            if msg.contains("ConvInteger") {
+                NemotronError::CpuUnsupported
+            } else {
+                e
+            }
+        })
     }
 
     fn build_session(path: &Path, directml: bool) -> Result<Session, NemotronError> {
