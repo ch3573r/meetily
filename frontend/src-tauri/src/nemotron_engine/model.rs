@@ -339,13 +339,11 @@ impl NemotronModel {
                     sum += v as f64;
                 }
             }
+            let (dh_mn, dh_mx, dh_abs) = stats(dec_hidden);
             log::info!(
-                "Nemotron enc: shape={:?} min={:.3} max={:.3} mean={:.4} nan={}",
-                enc.shape(),
-                mn,
-                mx,
-                sum / enc.len().max(1) as f64,
-                nan
+                "Nemotron enc: shape={:?} min={:.3} max={:.3} mean={:.4} nan={} | dec_hidden min={:.3} max={:.3} absmean={:.4}",
+                enc.shape(), mn, mx, sum / enc.len().max(1) as f64, nan,
+                dh_mn, dh_mx, dh_abs
             );
         }
 
@@ -363,6 +361,21 @@ impl NemotronModel {
                 let logits = self.joint_step(&enc_frame, dec_hidden)?;
                 let best = argmax(&logits);
                 if dbg && first_best.0 < 0 {
+                    // Best NON-blank token + its logit, to compare against blank.
+                    let mut nb_idx = 0i32;
+                    let mut nb_val = f32::NEG_INFINITY;
+                    for (i, &v) in logits.iter().take(N_LOGITS).enumerate() {
+                        if i as i32 != BLANK_ID && v > nb_val {
+                            nb_val = v;
+                            nb_idx = i as i32;
+                        }
+                    }
+                    log::info!(
+                        "Nemotron joint: best_nonblank=(tok={} logit={:.3}) blank_logit={:.3}",
+                        nb_idx,
+                        nb_val,
+                        logits.get(BLANK_ID as usize).copied().unwrap_or(0.0)
+                    );
                     first_best = (
                         best,
                         logits.get(best as usize).copied().unwrap_or(0.0),
@@ -446,6 +459,19 @@ impl NemotronModel {
             None => String::new(),
         }
     }
+}
+
+/// (min, max, mean-of-abs) over a tensor — for diagnostic logging.
+fn stats(a: &ArrayD<f32>) -> (f32, f32, f64) {
+    let mut mn = f32::INFINITY;
+    let mut mx = f32::NEG_INFINITY;
+    let mut abs = 0.0f64;
+    for &v in a.iter() {
+        mn = mn.min(v);
+        mx = mx.max(v);
+        abs += v.abs() as f64;
+    }
+    (mn, mx, abs / a.len().max(1) as f64)
 }
 
 fn argmax(logits: &[f32]) -> i32 {
