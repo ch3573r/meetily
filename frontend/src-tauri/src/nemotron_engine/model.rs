@@ -119,7 +119,7 @@ impl NemotronModel {
         filename: &str,
     ) -> Result<Session, NemotronError> {
         let path = model_dir.as_ref().join(filename);
-        Self::build_session(&path, false).map_err(|e| {
+        Self::build_cpu_session(&path).map_err(|e| {
             let msg = e.to_string();
             if msg.contains("ConvInteger") {
                 NemotronError::CpuUnsupported
@@ -129,28 +129,38 @@ impl NemotronModel {
         })
     }
 
-    /// Load the encoder, preferring DirectML (GPU) with graph optimizations
-    /// DISABLED. We compare a deterministic probe against CPU and fall back if
-    /// DML disagrees, so the model is always correct (worst case: slower CPU).
+    /// Load the encoder on DirectML (GPU), probing graph-optimization levels
+    /// from fastest (Level3) to slowest (Disable) and using the FIRST one whose
+    /// output matches CPU (Cipher's self-test). Full optimization collapses this
+    /// encoder on DML, but a lower level is usually both correct AND much faster
+    /// than fully-disabled (fewer, fused kernels → real GPU utilization). Falls
+    /// back to CPU if no level matches.
     fn load_encoder(dir: &Path) -> Result<Session, NemotronError> {
         let path = dir.join("encoder.onnx");
         #[cfg(feature = "directml")]
         {
             let mut cpu_session = Self::init_session(dir, "encoder.onnx")?;
-            match Self::build_session(&path, true) {
-                Ok(mut session) => {
-                    if Self::encoder_self_test(&mut session, &mut cpu_session) {
-                        log::info!("Nemotron encoder: DirectML (GPU), self-test passed");
-                        return Ok(session);
+            use GraphOptimizationLevel as G;
+            for opt in [G::Level3, G::Level2, G::Level1, G::Disable] {
+                let lvl = format!("{opt:?}");
+                match Self::build_dml_session(&path, opt) {
+                    Ok(mut session) => {
+                        if Self::encoder_self_test(&mut session, &mut cpu_session) {
+                            log::info!(
+                                "Nemotron encoder: DirectML (GPU) @ graph_opt={lvl}, self-test passed"
+                            );
+                            return Ok(session);
+                        }
+                        log::warn!(
+                            "Nemotron encoder: DirectML @ graph_opt={lvl} mismatched CPU; trying a lower level"
+                        );
                     }
-                    log::warn!(
-                        "Nemotron encoder: DirectML output mismatched CPU (self-test failed); using CPU"
-                    );
-                    return Ok(cpu_session);
+                    Err(e) => {
+                        log::warn!("Nemotron encoder: DirectML init @ graph_opt={lvl} failed ({e})")
+                    }
                 }
-                Err(e) => log::warn!("Nemotron encoder: DirectML init failed ({e}); using CPU"),
             }
-            log::info!("Nemotron encoder: CPU");
+            log::warn!("Nemotron encoder: no DirectML graph_opt level matched CPU; using CPU");
             return Ok(cpu_session);
         }
         let session = Self::init_session(dir, "encoder.onnx")?;
@@ -250,31 +260,34 @@ impl NemotronModel {
         Ok(e.iter().copied().collect())
     }
 
-    fn build_session(path: &Path, directml: bool) -> Result<Session, NemotronError> {
-        let mut providers = Vec::new();
-        #[cfg(feature = "directml")]
-        if directml {
-            providers.push(DirectMLExecutionProvider::default().build());
-        }
-        providers.push(CPUExecutionProvider::default().build());
+    /// CPU session: full graph optimization + parallel execution.
+    fn build_cpu_session(path: &Path) -> Result<Session, NemotronError> {
+        let builder = Session::builder()?
+            .with_optimization_level(GraphOptimizationLevel::Level3)?
+            .with_execution_providers([CPUExecutionProvider::default().build()])?
+            .with_parallel_execution(true)?;
+        Ok(builder.commit_from_file(path)?)
+    }
 
-        // DirectML: disable graph optimizations (suspected fusion bug) + use the
-        // EP-required sequential execution / no memory pattern. CPU: full opt.
-        let opt = if directml {
-            GraphOptimizationLevel::Disable
-        } else {
-            GraphOptimizationLevel::Level3
-        };
-        let mut builder = Session::builder()?
+    /// DirectML session at a given graph-optimization level. Full optimization
+    /// (Level3) collapses this encoder on DML (a fusion/layout bug), but lower
+    /// levels may be both correct AND faster than fully-disabled — load_encoder
+    /// probes levels high→low and self-tests each. DirectML requires sequential
+    /// execution + no memory pattern.
+    #[cfg(feature = "directml")]
+    fn build_dml_session(
+        path: &Path,
+        opt: GraphOptimizationLevel,
+    ) -> Result<Session, NemotronError> {
+        let providers = [
+            DirectMLExecutionProvider::default().build(),
+            CPUExecutionProvider::default().build(),
+        ];
+        let builder = Session::builder()?
             .with_optimization_level(opt)?
-            .with_execution_providers(providers)?;
-        builder = if directml {
-            builder
-                .with_parallel_execution(false)?
-                .with_memory_pattern(false)?
-        } else {
-            builder.with_parallel_execution(true)?
-        };
+            .with_execution_providers(providers)?
+            .with_parallel_execution(false)?
+            .with_memory_pattern(false)?;
         Ok(builder.commit_from_file(path)?)
     }
 
@@ -362,6 +375,7 @@ impl NemotronModel {
         }
         let lang_mask = mask.into_dyn();
 
+        let t0 = std::time::Instant::now();
         let mut text = String::new();
         for k in 0..total_windows {
             text.push_str(&self.run_window(
@@ -378,6 +392,13 @@ impl NemotronModel {
                 &mut dec_hidden,
             )?);
         }
+        let secs = (padded.len() as f32 / 16_000.0).max(0.001);
+        let ms = t0.elapsed().as_secs_f32() * 1000.0;
+        log::info!(
+            "Nemotron segment: {secs:.1}s audio, {windows} windows, {ms:.0}ms compute, RTF {:.2} (lower=faster)",
+            (ms / 1000.0) / secs,
+            windows = total_windows
+        );
         Ok(text)
     }
 
