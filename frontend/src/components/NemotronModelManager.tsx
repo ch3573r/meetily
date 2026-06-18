@@ -26,8 +26,7 @@ interface NemotronModelManagerProps {
 }
 
 /**
- * Settings model manager for the Nemotron streaming engine (Beta). One model
- * for now (~790 MB INT4); downloads/selects mirror the Parakeet manager but the
+ * Settings model manager for the Nemotron streaming engine (Beta). One model for now (fp16, ~1.3 GB); downloads/selects mirror the Parakeet manager but the
  * UI is token-colored for dark mode and self-contained (no lib/nemotron layer).
  */
 export function NemotronModelManager({
@@ -113,7 +112,7 @@ export function NemotronModelManager({
   const download = async () => {
     if (!model) return;
     setModel({ ...model, status: { Downloading: { progress: 0 } } });
-    toast.info('Downloading Nemotron…', { description: 'About 790 MB — this may take a few minutes' });
+    toast.info('Downloading Nemotron…', { description: 'About 1.3 GB — this may take a few minutes' });
     try {
       await invoke('nemotron_download_model', { modelName: model.name });
     } catch (e) {
@@ -187,7 +186,7 @@ export function NemotronModelManager({
               )}
             </div>
             <p className="ml-9 text-sm text-muted-foreground">
-              Streaming, multilingual (incl. German). INT8, GPU-capable (DirectML). ~790 MB.
+              Streaming, multilingual (incl. German). FP16 — runs on GPU (DirectML) or CPU. ~1.3 GB.
             </p>
           </div>
 

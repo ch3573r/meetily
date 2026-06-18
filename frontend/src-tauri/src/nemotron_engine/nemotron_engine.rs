@@ -18,32 +18,35 @@ use tokio::io::{AsyncWriteExt, BufWriter};
 use tokio::sync::RwLock;
 use tokio::time::timeout;
 
-/// The default/main Nemotron model id (int8 — GPU-capable on DirectML, like
-/// Parakeet int8). fp16 is planned as an optional higher-quality variant.
-pub const NEMOTRON_MODEL: &str = "nemotron-streaming-0.6b-int8";
+/// The Nemotron model id. fp16, not int8: DirectML silently miscomputes the
+/// int8 ConvInteger encoder (output collapses ~35x → always blank), and the CPU
+/// EP can't run ConvInteger at all. fp16 has no ConvInteger so it runs correctly
+/// on both DirectML (GPU) and CPU. Verified end-to-end vs the ONNX in Python.
+pub const NEMOTRON_MODEL: &str = "nemotron-streaming-0.6b-fp16";
 
 const BASE_URL: &str =
-    "https://huggingface.co/soniqo/Nemotron-3.5-ASR-Streaming-Multilingual-0.6B-ONNX-INT8/resolve/main";
+    "https://huggingface.co/soniqo/Nemotron-3.5-ASR-Streaming-Multilingual-0.6B-ONNX-FP16/resolve/main";
 
-/// Files to download. The int8 export keeps the encoder weights inline (no
-/// .onnx.data); the decoder/joint use external-data files that must sit next to
-/// their .onnx graph (ort loads them automatically).
+/// Files to download (sizes from the fp16 repo). Each .onnx graph has a sibling
+/// .onnx.data external-weights file that must sit next to it (ort loads it).
 const MODEL_FILES: &[(&str, u64)] = &[
-    ("encoder.onnx", 658_000_000),
-    ("decoder.onnx", 5_000),
-    ("decoder.onnx.data", 59_800_000),
-    ("joint.onnx", 3_000),
-    ("joint.onnx.data", 37_800_000),
-    ("vocab.json", 236_000),
-    ("config.json", 700),
-    ("languages.json", 2_100),
+    ("encoder.onnx", 22_131_503),
+    ("encoder.onnx.data", 1_236_396_032),
+    ("decoder.onnx", 7_040),
+    ("decoder.onnx.data", 29_880_320),
+    ("joint.onnx", 3_207),
+    ("joint.onnx.data", 18_911_296),
+    ("vocab.json", 236_127),
+    ("config.json", 602),
+    ("languages.json", 2_020),
 ];
 
 /// Files that must exist (and pass a min-size check) for a model to be Available.
 const REQUIRED_FILES: &[(&str, u64)] = &[
-    ("encoder.onnx", 500_000_000),
-    ("decoder.onnx.data", 50_000_000),
-    ("joint.onnx.data", 30_000_000),
+    ("encoder.onnx", 10_000_000),
+    ("encoder.onnx.data", 1_100_000_000),
+    ("decoder.onnx.data", 25_000_000),
+    ("joint.onnx.data", 15_000_000),
     ("vocab.json", 50_000),
     ("languages.json", 500),
 ];
@@ -125,11 +128,11 @@ impl NemotronEngine {
         let info = ModelInfo {
             name: NEMOTRON_MODEL.to_string(),
             path: model_path,
-            size_mb: 790,
-            speed: "Streaming (INT8)".to_string(),
+            size_mb: 1310,
+            speed: "Streaming (FP16)".to_string(),
             status,
             description:
-                "NVIDIA Nemotron 3.5 ASR — streaming, multilingual (incl. German). INT8, GPU-capable (DirectML). Beta."
+                "NVIDIA Nemotron 3.5 ASR — streaming, multilingual (incl. German). FP16, runs on GPU (DirectML) or CPU. Beta."
                     .to_string(),
         };
 
@@ -352,6 +355,22 @@ impl NemotronEngine {
                 .flush()
                 .await
                 .map_err(|e| anyhow!("Flush failed for {}: {}", filename, e))?;
+
+            // Sanity-check the downloaded file: a Git-LFS pointer or an HTML
+            // error page is tiny (a few KB) where we expect MB/GB. Reject it so a
+            // flaky CDN response doesn't masquerade as a "downloaded" model.
+            if *expected_size > 1_000_000 {
+                let got = fs::metadata(&file_path).await.map(|m| m.len()).unwrap_or(0);
+                if got < *expected_size / 2 {
+                    let _ = fs::remove_file(&file_path).await;
+                    self.active_downloads.write().await.remove(model_name);
+                    self.mark_missing(model_name).await;
+                    return Err(anyhow!(
+                        "Downloaded {} is too small ({} bytes, expected ~{}): likely a CDN error or LFS pointer, not the real file",
+                        filename, got, expected_size
+                    ));
+                }
+            }
         }
 
         self.active_downloads.write().await.remove(model_name);
