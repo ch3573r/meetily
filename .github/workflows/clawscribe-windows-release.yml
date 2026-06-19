@@ -299,22 +299,28 @@ jobs:
         shell: pwsh
         run: |
           $bundleRoot = "frontend\src-tauri\target\release\bundle"
-          $version = $env:CLAWSCRIBE_SOURCE_VERSION
+          $sourceVersion = $env:CLAWSCRIBE_SOURCE_VERSION
+          $manifestVersion = $env:CLAWSCRIBE_INSTALLER_VERSION
           # Published installer is the source-version-named NSIS setup (renamed by
           # the metadata step). Its signature signs the file bytes, so the .sig from
           # the original-named artifact is valid for the renamed copy too.
-          $nsisName = "ClawScribe_${version}_x64-setup.exe"
+          #
+          # The updater manifest version must match the stripped Windows/Tauri
+          # runtime version. MSI ProductVersion cannot carry prerelease metadata,
+          # so advertising 0.5.0-alpha.N makes an installed 0.5.0 runtime compare
+          # as newer and report "latest".
+          $nsisName = "ClawScribe_${sourceVersion}_x64-setup.exe"
           $sig = Get-ChildItem -Path (Join-Path $bundleRoot "nsis") -Filter "${nsisName}.sig" |
             Select-Object -First 1
           if (-not $sig) {
             throw "No .sig found - is createUpdaterArtifacts true and TAURI_SIGNING_PRIVATE_KEY set?"
           }
           $signature = (Get-Content -LiteralPath $sig.FullName -Raw).Trim()
-          $url = "https://github.com/ch3573r/ClawScribe/releases/download/v$version/$nsisName"
+          $url = "https://github.com/ch3573r/ClawScribe/releases/download/v$sourceVersion/$nsisName"
           $pubDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
           $manifest = [ordered]@{
-            version   = $version
-            notes     = "See https://github.com/ch3573r/ClawScribe/releases/tag/v$version"
+            version   = $manifestVersion
+            notes     = "See https://github.com/ch3573r/ClawScribe/releases/tag/v$sourceVersion"
             pub_date  = $pubDate
             platforms = [ordered]@{
               "windows-x86_64" = [ordered]@{ signature = $signature; url = $url }

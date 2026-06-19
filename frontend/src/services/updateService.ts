@@ -33,6 +33,10 @@ export class UpdateService {
   private lastCheckTime: number | null = null;
   private readonly CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
+  private async getDisplayVersion(): Promise<string> {
+    return process.env.NEXT_PUBLIC_APP_VERSION || getVersion();
+  }
+
   /**
    * Check for available updates
    * @param force Force check even if recently checked
@@ -51,7 +55,7 @@ export class UpdateService {
         console.log('Skipping update check - checked recently');
         return {
           available: false,
-          currentVersion: await getVersion(),
+          currentVersion: await this.getDisplayVersion(),
         };
       }
     }
@@ -60,7 +64,7 @@ export class UpdateService {
     this.lastCheckTime = Date.now();
 
     try {
-      const currentVersion = await getVersion();
+      const currentVersion = await this.getDisplayVersion();
       const update = await check();
 
       if (update?.available) {
@@ -118,7 +122,7 @@ export class UpdateService {
    * @returns Promise with version string
    */
   async getCurrentVersion(): Promise<string> {
-    return getVersion();
+    return this.getDisplayVersion();
   }
 
   /**
