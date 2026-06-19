@@ -49,6 +49,8 @@ Assert-Command "node"
 Assert-Command "pnpm"
 Assert-Command "cargo"
 
+& (Join-Path $PSScriptRoot "verify-brand-icons.ps1") -FrontendRoot $frontendRoot
+
 $windowsTarget = "x86_64-pc-windows-msvc"
 $llamaHelperBinary = Join-Path $tauriRoot "binaries\llama-helper-$windowsTarget.exe"
 Assert-File $llamaHelperBinary "Build it from the repository root with 'cargo build -p llama-helper --release --target $windowsTarget', then copy 'target\$windowsTarget\release\llama-helper.exe' to this path."

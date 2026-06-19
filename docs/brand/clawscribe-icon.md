@@ -27,3 +27,7 @@ The expanded sidebar currently renders the text label `ClawScribe`; the
 collapsed sidebar and About dialog use the regenerated product icon.
 
 Dependencies used: Python 3 and Pillow.
+
+Run `pnpm verify:icons` from `frontend/` before cutting Windows installers. It
+checks the Tauri bundle wiring, NSIS installer/uninstaller icons, app/exe ICO
+sizes, macOS ICNS files, favicon, Windows logo aliases, and public brand assets.

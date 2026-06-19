@@ -128,6 +128,11 @@ jobs:
         run: |
           .\frontend\scripts\stage-codex-runtime.ps1 -TauriRoot "frontend\src-tauri"
 
+      - name: Verify app and installer icons
+        shell: pwsh
+        run: |
+          .\frontend\scripts\verify-brand-icons.ps1 -FrontendRoot "frontend"
+
       - name: Build release installers
         if: ${{ !inputs['check-only'] }}
         shell: pwsh
