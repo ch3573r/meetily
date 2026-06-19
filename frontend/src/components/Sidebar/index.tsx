@@ -316,7 +316,7 @@ const Sidebar: React.FC = () => {
 
     return (
       <TooltipProvider>
-        <div className="flex flex-col items-center gap-4 pt-4">
+        <div className="flex flex-col items-center gap-3 pt-4">
           <Logo isCollapsed={isCollapsed} />
 
           {[
@@ -345,10 +345,10 @@ const Sidebar: React.FC = () => {
                 <TooltipTrigger asChild>
                   <button
                     onClick={item.onClick}
-                    className={`flex h-10 w-10 items-center justify-center rounded-md transition ${
+                    className={`flex h-10 w-10 items-center justify-center rounded-lg transition ${
                       item.active
                         ? "bg-primary/10 text-primary ring-1 ring-primary/20"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                        : "text-muted-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
                     }`}
                   >
                     <Icon className="h-5 w-5" />
@@ -365,10 +365,10 @@ const Sidebar: React.FC = () => {
             <TooltipTrigger asChild>
               <button
                 onClick={handleRecordingToggle}
-                className={`flex h-10 w-10 items-center justify-center rounded-md shadow-sm transition ${
+                className={`flex h-10 w-10 items-center justify-center rounded-lg shadow-sm transition ${
                   isRecording
                     ? "bg-red-500 text-white hover:bg-red-600"
-                    : "bg-gradient-to-br from-primary to-primary/70 text-primary-foreground shadow-primary/20 hover:scale-105"
+                    : "bg-primary text-primary-foreground shadow-primary/20 hover:bg-primary/90"
                 }`}
               >
                 {isRecording ? (
@@ -394,7 +394,7 @@ const Sidebar: React.FC = () => {
               <TooltipTrigger asChild>
                 <button
                   onClick={() => openImportDialog()}
-                  className="flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                  className="flex h-10 w-10 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-sidebar-hover hover:text-sidebar-foreground"
                 >
                   <Upload className="h-5 w-5" />
                 </button>
@@ -436,26 +436,26 @@ const Sidebar: React.FC = () => {
               : `/notes/${item.id}`;
           router.push(basePath);
         }}
-        className={`group cursor-pointer rounded-md border px-3 py-3 transition ${
+        className={`group cursor-pointer rounded-lg border px-2.5 py-2.5 transition ${
           isActive
-            ? "border-primary/30 bg-primary/10 text-primary"
+            ? "border-primary/25 bg-primary/10 text-sidebar-foreground shadow-sm"
             : hasTranscriptMatch
-              ? "border-amber-300/20 bg-amber-300/10 text-foreground"
-              : "border-transparent bg-muted text-muted-foreground hover:border-border hover:bg-muted"
+              ? "border-amber-400/30 bg-amber-400/10 text-sidebar-foreground"
+              : "border-transparent text-sidebar-foreground hover:border-sidebar-border hover:bg-sidebar-hover"
         }`}
       >
-        <div className="flex items-start gap-3">
+        <div className="flex items-start gap-2.5">
           <div
-            className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+            className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${
               isActive
                 ? "bg-primary/10 text-primary"
-                : "bg-muted text-muted-foreground"
+                : "bg-background/60 text-muted-foreground"
             }`}
           >
             <File className="h-4 w-4" />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="line-clamp-2 text-sm font-medium leading-5">
+            <div className="line-clamp-2 text-sm font-medium leading-5 text-sidebar-foreground">
               {item.title}
             </div>
             <div className="mt-1 text-xs text-muted-foreground">Recent meeting</div>
@@ -467,7 +467,7 @@ const Sidebar: React.FC = () => {
                   e.stopPropagation();
                   handleEditStart(item.id, item.title);
                 }}
-                className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                className="rounded-md p-1.5 text-muted-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
                 aria-label="Edit meeting title"
               >
                 <Pencil className="h-3.5 w-3.5" />
@@ -477,7 +477,7 @@ const Sidebar: React.FC = () => {
                   e.stopPropagation();
                   setDeleteModalState({ isOpen: true, itemId: item.id });
                 }}
-                className="rounded-md p-1.5 text-muted-foreground hover:bg-red-500/10 hover:text-red-300"
+                className="rounded-md p-1.5 text-muted-foreground hover:bg-red-500/10 hover:text-red-500"
                 aria-label="Delete meeting"
               >
                 <Trash2 className="h-3.5 w-3.5" />
@@ -487,8 +487,8 @@ const Sidebar: React.FC = () => {
         </div>
 
         {hasTranscriptMatch && (
-          <div className="mt-3 rounded-lg border border-amber-300/20 bg-amber-300/10 p-2 text-xs leading-5 text-amber-100/90">
-            <span className="font-medium text-amber-200">Match:</span>{" "}
+          <div className="mt-2 rounded-md border border-amber-400/30 bg-amber-400/10 p-2 text-xs leading-5 text-amber-800 dark:text-amber-100">
+            <span className="font-medium text-amber-800 dark:text-amber-200">Match:</span>{" "}
             {matchingResult.matchContext}
           </div>
         )}
@@ -545,7 +545,7 @@ const Sidebar: React.FC = () => {
     <div className="fixed left-0 top-0 z-40 h-screen">
       <button
         onClick={toggleCollapse}
-        className="absolute -right-3 top-24 z-50 flex h-7 w-7 items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-sm transition hover:text-foreground"
+        className="absolute -right-3 top-24 z-50 flex h-7 w-7 items-center justify-center rounded-full border border-sidebar-border bg-sidebar text-muted-foreground shadow-sm transition hover:bg-sidebar-hover hover:text-sidebar-foreground"
         aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
       >
         {isCollapsed ? (
@@ -556,7 +556,7 @@ const Sidebar: React.FC = () => {
       </button>
 
       <aside
-        className={`flex h-screen flex-col border-r border-border bg-background text-muted-foreground shadow-sm transition-all duration-300 ${
+        className={`flex h-screen flex-col border-r border-sidebar-border bg-sidebar text-muted-foreground shadow-sm transition-all duration-300 ${
           isCollapsed ? "w-16" : "w-[17.5rem]"
         }`}
       >
@@ -564,11 +564,11 @@ const Sidebar: React.FC = () => {
           renderCollapsedIcons()
         ) : (
           <>
-            <div className="flex-shrink-0 space-y-5 px-4 pb-4 pt-5">
+            <div className="flex-shrink-0 space-y-4 border-b border-sidebar-border px-4 pb-4 pt-5">
               <Logo isCollapsed={isCollapsed} />
 
               <div className="relative">
-                <InputGroup className="rounded-md border-border bg-muted text-foreground">
+                <InputGroup className="rounded-lg border-sidebar-border bg-background/60 text-sidebar-foreground shadow-none">
                   <InputGroupInput
                     placeholder="Search meetings..."
                     value={searchQuery}
@@ -589,20 +589,23 @@ const Sidebar: React.FC = () => {
               </div>
             </div>
 
-            <nav className="flex-shrink-0 space-y-1 px-3">
+            <nav className="flex-shrink-0 space-y-1 px-3 pt-3">
               {navItems.map((item) => {
                 const Icon = item.icon;
                 return (
                   <button
                     key={item.label}
                     onClick={item.onClick}
-                    className={`flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition ${
+                    className={`relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${
                       item.active
-                        ? "bg-primary/10 text-primary shadow-[inset_3px_0_0_hsl(var(--primary))]"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                        ? "bg-primary/10 text-primary ring-1 ring-primary/15"
+                        : "text-muted-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
                     }`}
                   >
-                    <Icon className="h-4 w-4" />
+                    {item.active && (
+                      <span className="absolute bottom-2 left-0 top-2 w-0.5 rounded-full bg-primary" />
+                    )}
+                    <Icon className="h-4 w-4 shrink-0" />
                     <span>{item.label}</span>
                   </button>
                 );
@@ -610,8 +613,8 @@ const Sidebar: React.FC = () => {
             </nav>
 
             <div className="mt-6 flex min-h-0 flex-1 flex-col px-3">
-              <div className="mb-3 flex items-center justify-between px-1">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+              <div className="mb-2 flex items-center justify-between px-1">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                   Recent Meetings
                 </div>
                 {isSearching && (
@@ -619,7 +622,7 @@ const Sidebar: React.FC = () => {
                 )}
               </div>
 
-              <div className="flex-1 space-y-2 overflow-y-auto pr-1 custom-scrollbar">
+              <div className="flex-1 space-y-1.5 overflow-y-auto pr-1 custom-scrollbar">
                 {filteredSidebarItems
                   .filter((item) => item.type === "folder" && item.children)
                   .flatMap((item) => item.children ?? [])
@@ -629,7 +632,7 @@ const Sidebar: React.FC = () => {
                 {filteredSidebarItems.every(
                   (item) => !item.children?.length,
                 ) && (
-                  <div className="rounded-md border border-border bg-muted px-3 py-5 text-center text-sm text-muted-foreground">
+                  <div className="rounded-lg border border-sidebar-border bg-background/60 px-3 py-5 text-center text-sm text-muted-foreground">
                     No meetings found.
                   </div>
                 )}
@@ -638,7 +641,7 @@ const Sidebar: React.FC = () => {
               {!searchQuery && meetings.length > 8 && (
                 <button
                   onClick={() => setShowAllMeetings((value) => !value)}
-                  className="mt-3 flex items-center gap-2 px-1 text-sm font-medium text-primary hover:text-primary"
+                  className="mt-3 flex items-center gap-2 px-1 text-sm font-medium text-primary hover:text-primary/80"
                 >
                   {showAllMeetings ? "Show recent" : "View all meetings"}
                   <ArrowRight className="h-4 w-4" />
@@ -646,14 +649,14 @@ const Sidebar: React.FC = () => {
               )}
             </div>
 
-            <div className="flex-shrink-0 space-y-2 border-t border-border p-3">
+            <div className="flex-shrink-0 space-y-2 border-t border-sidebar-border bg-sidebar p-3">
               <button
                 onClick={handleRecordingToggle}
                 title={isRecording ? "Click to stop recording" : undefined}
-                className={`flex w-full items-center justify-center gap-2 rounded-md px-3 py-3 text-sm font-semibold shadow-sm transition ${
+                className={`flex w-full items-center justify-center gap-2 rounded-lg px-3 py-3 text-sm font-semibold shadow-sm transition ${
                   isRecording
                     ? "bg-red-500 text-white hover:bg-red-600"
-                    : "bg-gradient-to-r from-primary to-primary/70 text-primary-foreground shadow-primary/20 hover:from-primary hover:to-primary/60"
+                    : "bg-primary text-primary-foreground shadow-primary/20 hover:bg-primary/90"
                 }`}
               >
                 {isRecording ? (
@@ -670,38 +673,44 @@ const Sidebar: React.FC = () => {
                 </span>
               </button>
 
-              {betaFeatures.importAndRetranscribe && (
-                <button
-                  onClick={() => openImportDialog()}
-                  className="flex w-full items-center justify-center gap-2 rounded-md border border-border bg-muted px-3 py-2.5 text-sm font-medium text-foreground transition hover:bg-muted"
-                >
-                  <Upload className="h-4 w-4" />
-                  Import Audio
-                </button>
-              )}
-
-              <button
-                onClick={() => router.push("/settings")}
-                className="flex w-full items-center justify-center gap-2 rounded-md border border-border bg-muted px-3 py-2.5 text-sm font-medium text-foreground transition hover:bg-muted"
+              <div
+                className={`grid gap-2 ${
+                  betaFeatures.importAndRetranscribe ? "grid-cols-2" : "grid-cols-1"
+                }`}
               >
-                <Settings className="h-4 w-4" />
-                Settings
-              </button>
+                {betaFeatures.importAndRetranscribe && (
+                  <button
+                    onClick={() => openImportDialog()}
+                    className="flex min-w-0 items-center justify-center gap-2 rounded-lg border border-sidebar-border bg-background/60 px-2.5 py-2.5 text-sm font-medium text-sidebar-foreground transition hover:bg-sidebar-hover"
+                  >
+                    <Upload className="h-4 w-4 shrink-0" />
+                    <span className="truncate">Import</span>
+                  </button>
+                )}
+
+                <button
+                  onClick={() => router.push("/settings")}
+                  className="flex min-w-0 items-center justify-center gap-2 rounded-lg border border-sidebar-border bg-background/60 px-2.5 py-2.5 text-sm font-medium text-sidebar-foreground transition hover:bg-sidebar-hover"
+                >
+                  <Settings className="h-4 w-4 shrink-0" />
+                  <span className="truncate">Settings</span>
+                </button>
+              </div>
 
               {isRecording ? (
                 isPaused ? (
-                  <div className="flex items-center gap-2 rounded-md border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+                  <div className="flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
                     <span className="h-2 w-2 rounded-full bg-amber-500" />
                     Paused
                   </div>
                 ) : (
-                  <div className="flex items-center gap-2 rounded-md border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-700 dark:text-red-300">
+                  <div className="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-700 dark:text-red-300">
                     <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />
                     Recording
                   </div>
                 )
               ) : (
-                <div className="flex items-center gap-2 rounded-md border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300">
+                <div className="flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300">
                   <span className="h-2 w-2 rounded-full bg-emerald-500" />
                   Ready for recording
                 </div>

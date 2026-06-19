@@ -27,7 +27,7 @@ const Logo = React.forwardRef<HTMLButtonElement, LogoProps>(({ isCollapsed }, re
           />
           {!isCollapsed && (
             <span className="flex flex-col leading-none">
-              <span className="text-lg font-semibold tracking-tight text-foreground">ClawScribe</span>
+              <span className="text-lg font-semibold tracking-tight text-sidebar-foreground">ClawScribe</span>
               <span className="mt-1 text-xs font-medium uppercase tracking-[0.22em] text-primary/70">
                 Meeting AI
               </span>

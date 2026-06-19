@@ -5,6 +5,10 @@ import { useUpdateCheck } from '@/hooks/useUpdateCheck';
 import { UpdateInfo } from '@/services/updateService';
 import { UpdateDialog } from './UpdateDialog';
 import { setUpdateDialogCallback, showUpdateNotification } from './UpdateNotification';
+import {
+  AUTO_UPDATE_CHECK_CHANGED_EVENT,
+  getAutoUpdateCheckEnabled,
+} from '@/lib/updatePreferences';
 
 interface UpdateCheckContextType {
   updateInfo: UpdateInfo | null;
@@ -17,18 +21,40 @@ const UpdateCheckContext = createContext<UpdateCheckContextType | undefined>(und
 
 export function UpdateCheckProvider({ children }: { children: React.ReactNode }) {
   const [showDialog, setShowDialog] = useState(false);
+  const [autoUpdateCheckEnabled, setAutoUpdateCheckEnabled] = useState<boolean | null>(null);
 
   const handleShowDialog = useCallback(() => {
     setShowDialog(true);
   }, []);
 
+  useEffect(() => {
+    const syncAutoUpdatePreference = (event?: Event) => {
+      if (event instanceof CustomEvent && typeof event.detail === 'boolean') {
+        setAutoUpdateCheckEnabled(event.detail);
+        return;
+      }
+
+      setAutoUpdateCheckEnabled(getAutoUpdateCheckEnabled());
+    };
+
+    syncAutoUpdatePreference();
+    window.addEventListener('storage', syncAutoUpdatePreference);
+    window.addEventListener(AUTO_UPDATE_CHECK_CHANGED_EVENT, syncAutoUpdatePreference);
+
+    return () => {
+      window.removeEventListener('storage', syncAutoUpdatePreference);
+      window.removeEventListener(AUTO_UPDATE_CHECK_CHANGED_EVENT, syncAutoUpdatePreference);
+    };
+  }, []);
+
+  const handleUpdateAvailable = useCallback((info: UpdateInfo) => {
+    showUpdateNotification(info, handleShowDialog);
+  }, [handleShowDialog]);
+
   const { updateInfo, isChecking, checkForUpdates } = useUpdateCheck({
-    checkOnMount: true,
+    checkOnMount: autoUpdateCheckEnabled === true,
     showNotification: true,
-    onUpdateAvailable: (info) => {
-      // Show notification, dialog will be shown when user clicks notification
-      showUpdateNotification(info, handleShowDialog);
-    },
+    onUpdateAvailable: handleUpdateAvailable,
   });
 
   useEffect(() => {

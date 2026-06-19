@@ -2,12 +2,16 @@
 
 import { useEffect, useState, useRef } from "react";
 import { Switch } from "./ui/switch";
-import { FolderOpen } from "lucide-react";
+import { FolderOpen, RefreshCw } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import Analytics from "@/lib/analytics";
 import { useConfig, NotificationSettings } from "@/contexts/ConfigContext";
 import { ThemeSettings } from "./ThemeSettings";
 import { KeyboardShortcutsSettings } from "./KeyboardShortcutsSettings";
+import {
+  getAutoUpdateCheckEnabled,
+  setAutoUpdateCheckEnabled,
+} from "@/lib/updatePreferences";
 
 export function PreferenceSettings() {
   const {
@@ -24,11 +28,13 @@ export function PreferenceSettings() {
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [previousNotificationsEnabled, setPreviousNotificationsEnabled] =
     useState<boolean | null>(null);
+  const [autoUpdateChecksEnabled, setAutoUpdateChecksEnabled] = useState(true);
   const hasTrackedViewRef = useRef(false);
 
   // Lazy load preferences on mount (only loads if not already cached)
   useEffect(() => {
     loadPreferences();
+    setAutoUpdateChecksEnabled(getAutoUpdateCheckEnabled());
     // Reset tracking ref on mount (every tab visit)
     hasTrackedViewRef.current = false;
   }, [loadPreferences]);
@@ -159,6 +165,16 @@ export function PreferenceSettings() {
     }
   };
 
+  const handleAutoUpdateCheckChange = (enabled: boolean) => {
+    setAutoUpdateChecksEnabled(enabled);
+    setAutoUpdateCheckEnabled(enabled);
+    Analytics.track("update_settings_changed", {
+      automatic_launch_check: enabled.toString(),
+    }).catch((error) => {
+      console.error("Failed to track update preference change:", error);
+    });
+  };
+
   // Show loading only if we're actually loading and don't have cached data
   if (isLoadingPreferences && !notificationSettings && !storageLocations) {
     return <div className="max-w-2xl mx-auto p-6">Loading Preferences...</div>;
@@ -177,6 +193,29 @@ export function PreferenceSettings() {
     // data/advanced (storage) last.
     <div className="space-y-5">
       <ThemeSettings />
+
+      <div className="rounded-lg border border-border bg-card p-6 shadow-sm">
+        <div className="flex items-center justify-between gap-6">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+              <RefreshCw className="h-4 w-4" />
+            </span>
+            <div>
+              <h3 className="text-lg font-semibold text-foreground">
+                Updates
+              </h3>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Check for new ClawScribe releases when the app starts.
+              </p>
+            </div>
+          </div>
+          <Switch
+            checked={autoUpdateChecksEnabled}
+            onCheckedChange={handleAutoUpdateCheckChange}
+            aria-label="Check for updates at launch"
+          />
+        </div>
+      </div>
 
       {/* Notifications Section */}
       <div className="rounded-lg border border-border bg-card p-6 shadow-sm">
