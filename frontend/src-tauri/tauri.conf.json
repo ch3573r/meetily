@@ -83,7 +83,7 @@
             "msi",
             "nsis"
         ],
-        "createUpdaterArtifacts": false,
+        "createUpdaterArtifacts": true,
         "publisher": "OpenClaw",
         "copyright": "Copyright (c) OpenClaw contributors",
         "category": "Productivity",
@@ -128,8 +128,10 @@
     },
     "plugins": {
         "updater": {
-            "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEVDQTYzMUQ3ODc5N0M4MkEKUldRcXlKZUgxekdtN09DRkVWSHNpZlJseEVOUmpNd1dDSTNaLzZ3MXJGTnY3WW1pdnlOYjBpbkIK",
-            "endpoints": []
+            "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQ1OTgxNjI5NkZCOEI1NEIKUldSTHRiaHZLUmFZUlFEU0RQTFl3ZjdTT2RGV25EZGM1VHZYOGE0MWxpdndMNWtwbWN5S2hlMHUK",
+            "endpoints": [
+                "https://github.com/ch3573r/ClawScribe/releases/latest/download/latest.json"
+            ]
         }
     }
 }
