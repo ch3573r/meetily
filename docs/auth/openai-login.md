@@ -129,13 +129,8 @@ Reusable OpenClaw pattern found:
 - Ingest tests assert `OPENAI_API_KEY` is not forwarded into the OpenClaw
   subprocess environment and that prompt command logging is redacted.
 
-Reusable Hermes implementation found: none in the local project checkout.
-
-Local evidence under `projects/` contains ClawScribe, the Windows meeting
-capture agent, openclaw-ingest, and ops-design. No Hermes Agent
-source checkout was present there. Workspace memory mentions Hermes provider and
-auth setup discussions, but those are not an implementation pattern ClawScribe
-can safely reuse without re-checking a live Hermes repo/config.
+ClawScribe implements its own OpenAI/Codex auth path; it does not depend on any
+external Hermes provider implementation.
 
 ## API-Key Fallback
 
