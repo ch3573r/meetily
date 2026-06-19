@@ -107,3 +107,6 @@ frontend/src-tauri/binaries/codex-app-server-runtime/*
 
 # Internal-only docs (plans, QA checklists, scratch) — never published
 docs/internal/
+
+# Local/personal agent notes — committed CLAUDE.md stays evergreen & public
+CLAUDE.local.md
