@@ -1,127 +1,88 @@
-# Meetily Privacy Policy
+# ClawScribe Privacy Policy
 
-*Last updated: [Current Date]*
+*Last updated: 2026-06-19 — applies to ClawScribe 0.5.0-alpha.4 and later.*
 
-## Our Privacy-First Commitment
+ClawScribe is a local-first, open-source (MIT) meeting recorder and summarizer.
+Your meeting data stays on your device unless **you** explicitly configure a
+feature that sends it elsewhere. This policy describes exactly what stays local
+and what leaves the device, and only when.
 
-Meetily is built on the principle that your meeting data should remain private and under your control. This privacy policy explains how we handle data in our open-source meeting assistant.
+## Local-first by default
 
-## Data Processing Philosophy
+With no optional integrations configured, ClawScribe processes everything on your
+device and sends nothing off it:
 
-### Local-First Processing
-- **Meeting transcription**: Processed entirely on your device using local Whisper models
-- **Audio recordings**: Never transmitted to external servers
-- **Meeting content**: Remains on your infrastructure
-- **AI summaries**: Generated locally or through your chosen LLM provider
+- **Audio recording** — captured and stored locally; never uploaded.
+- **Transcription** — runs locally (Whisper / Parakeet / Nemotron models that you
+  download and run on your own machine).
+- **Storage** — meetings, transcripts, and summaries live in a local database and
+  local files under your user profile.
+- **You own your data** — export or delete it at any time; no account is required
+  to record, transcribe, or summarize.
 
-### Your Data Ownership
-- You own all meeting data, transcripts, and recordings
-- Data is stored locally on your device
-- No vendor lock-in - export your data anytime
-- Complete control over data retention and deletion
+## What leaves your device — only when you turn it on
 
-## Usage Analytics
+ClawScribe sends data off-device **only** for the optional features you configure.
+Each is off until you set it up:
 
-### What We Collect
-Usage analytics is optional and off by default. When you choose to enable it, Meetily collects minimal, anonymized usage data:
+- **Cloud AI summaries.** If you choose a cloud summarization provider, your
+  transcript (and any context you add) is sent to that provider to generate the
+  summary. Providers you can choose include OpenAI, OpenAI-compatible endpoints,
+  an OpenClaw endpoint, and the bundled Codex/ChatGPT path. Built-in local AI and
+  local Ollama keep this on-device. Each third party handles your data under its
+  own privacy policy.
+- **OpenClaw handoff.** If enabled, completed meeting artifacts are sent to the
+  OpenClaw endpoint you configure.
+- **Microsoft 365 export (Microsoft Graph).** If you sign in and export, the
+  selected summary/notes/tasks are sent to Microsoft (OneNote/Planner) under your
+  own Microsoft account and Microsoft's privacy terms. ClawScribe uses a
+  delegated, public-client OAuth flow; sign-in tokens are stored in your OS
+  credential store, not transmitted to us.
+- **Model downloads.** Transcription models are downloaded at runtime from their
+  publishers (e.g. Hugging Face) the first time you select them.
 
-**Application Usage:**
-- Feature usage patterns (which tools you use most)
-- Session duration and frequency
-- Performance metrics (transcription success rates, error frequencies)
-- UI interaction patterns (button clicks, navigation flows)
+We (the ClawScribe project) do not operate a backend that receives your meeting
+content. There is no ClawScribe account, license server, or activation check.
 
-**Technical Metrics:**
-- Application version and platform information
-- Error logs and crash reports (anonymized)
-- Performance benchmarks (processing times, resource usage)
+## Usage analytics (optional, off by default)
 
-### What We DON'T Collect
-We never collect:
-- ❌ Meeting content, transcripts, or recordings
-- ❌ Personal information or identifiable data
-- ❌ File names, meeting titles, or metadata
-- ❌ Audio data or voice patterns
-- ❌ Participant names or contact information
-- ❌ LLM conversations or AI-generated content
+If — and only if — you enable analytics in Settings, ClawScribe sends anonymized,
+aggregate usage data via [PostHog](https://posthog.com):
 
-### Why We Collect This Data
-When enabled, analytics helps us with:
-- **Product Quality**: Identifying and fixing bugs that impact user experience
-- **Performance Optimization**: Understanding resource usage and system bottlenecks
-- **Security**: Detecting potential security issues and vulnerabilities
-- **Feature Development**: Making data-driven decisions about new features
-- **Open Source Sustainability**: Ensuring the project meets user needs effectively
+**Collected when enabled:** feature-usage patterns, session frequency/duration,
+performance metrics (e.g. transcription timings, error/crash counts), and app
+version/platform — tied only to a generated random ID.
 
-### Analytics Implementation
-- **Provider**: PostHog (privacy-focused analytics platform)
-- **Default**: Off by default; analytics starts only after you enable it in settings
-- **Anonymization**: All data linked to generated user IDs only - no personal identification
-- **Data retention**: 12 months maximum, then automatically deleted
-- **Encryption**: All data encrypted in transit using industry-standard protocols
-- **Location**: Data processed in accordance with PostHog's privacy policy
-- **Access Control**: Strictly limited to core development team members
+**Never collected:** meeting audio, transcripts, summaries, titles, file names,
+participant names, LLM prompts/responses, API keys, or any meeting content.
 
-## Third-Party Services
+Analytics is **disabled until you opt in**, can be turned off again at any time,
+and the full implementation is open source for review.
 
-### LLM Providers (Optional)
-If you choose to use external LLM providers:
-- **Anthropic Claude**: Subject to Anthropic's privacy policy
-- **Groq**: Subject to Groq's privacy policy
-- **Local Ollama**: Processed entirely on your device
+## Your rights
 
-### Analytics Service (Optional)
-- **PostHog**: Used for usage analytics when enabled
-- **Data**: Only anonymized usage patterns, no meeting content
-- **Control**: Completely optional, off by default, and user-controlled
+- **Access / export / delete** all local data at any time.
+- **Disable** every off-device feature; ClawScribe remains fully functional local-only.
+- **Inspect** everything — the source is MIT-licensed and public.
 
-## Your Privacy Rights
+## Security
 
-### Data Control
-- **Access**: View all data stored locally on your device
-- **Export**: Export your data in standard formats
-- **Delete**: Remove all data from your device
+- Local data is protected by your operating system's file permissions.
+- Credentials (API keys, OAuth tokens, OpenClaw bearer tokens) are stored in the
+  OS credential store where available.
+- Network calls to the services above use TLS.
 
+## Changes
 
-### Analytics Transparency
-- **Open source**: Full analytics implementation available for review in our source code
-- **Opt-in**: New and existing installs have analytics disabled until you turn it on
-- **Questions**: Contact us for any analytics-related concerns
+Material changes are reflected in this document in the public repository and noted
+in release notes.
 
-## Data Security
+## Contact
 
-### Local Security
-- Data encrypted at rest using your device's security features
-- No transmission of sensitive meeting data
-- Standard file system permissions protect your data
+- **Issues / questions:** open an issue in the ClawScribe GitHub repository.
 
-### Open Source Transparency
-- Full source code available for security review
-- Community-audited privacy implementations
-- No hidden data collection or tracking
+## Open source
 
-## Changes to This Policy
-
-We will notify users of any material changes to this privacy policy through:
-- Updates to this document in our GitHub repository
-- Release notes for application updates
-- In-app notifications for significant privacy changes
-
-## Contact Us
-
-For privacy-related questions or concerns:
-- **GitHub Issues**: [Create an issue](https://github.com/Zackriya-Solutions/meeting-minutes/issues)
-- **Email**: [Contact form](https://www.zackriya.com/service-interest-form/)
-- **Community**: [Discord](https://discord.gg/crRymMQBFH)
-
-## Open Source Commitment
-
-As an open-source project under MIT license, you can:
-- Review our complete privacy implementation
-- Modify data handling to meet your requirements
-- Deploy entirely on your own infrastructure
-- Contribute to privacy improvements
-
----
-
-*This privacy policy applies to Meetily v0.0.5 and later versions. For enterprise deployments, additional privacy controls may be available.*
+ClawScribe is distributed under the MIT License (it is a fork of Meetily Community
+Edition; see `LICENSE.md`, `NOTICE.md`, and `UPSTREAM.md`). You may review, modify,
+self-host, and audit every part of its data handling.
