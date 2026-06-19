@@ -26,6 +26,7 @@ import {
   TeamsDetectionStatus,
 } from "@/services/teamsDetectionService";
 import { useMicrosoftExport } from "@/hooks/useMicrosoftExport";
+import { setPendingCalendar } from "@/lib/meetingCalendar";
 import {
   getExportDestinations,
   setExportDestinations,
@@ -1162,6 +1163,7 @@ function attendeeLabel(a: { name: string | null; email: string | null }): string
 function CalendarPanel() {
   const ms = useMicrosoftExport();
   const isConnected = ms.connection.state === "connected";
+  const [usedForNext, setUsedForNext] = useState(false);
 
   useEffect(() => {
     if (
@@ -1224,6 +1226,24 @@ function CalendarPanel() {
                     : ""}
                 </p>
               )}
+              <button
+                type="button"
+                className="mt-2 rounded-md border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20"
+                onClick={() => {
+                  setPendingCalendar({
+                    eventId: current.id,
+                    subject: current.subject,
+                    attendees: current.attendees,
+                    joinUrl: current.joinUrl,
+                  });
+                  setUsedForNext(true);
+                }}
+                title="Title your next recording from this event and add its attendees to the summary"
+              >
+                {usedForNext
+                  ? "✓ Set for your next recording"
+                  : "Use for next recording"}
+              </button>
             </div>
           ) : (
             <p className="rounded-lg border border-border bg-muted/50 p-3 text-xs text-muted-foreground">

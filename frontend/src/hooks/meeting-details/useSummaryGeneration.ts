@@ -9,6 +9,13 @@ import { isOllamaNotInstalledError } from '@/lib/utils';
 import { BuiltInModelInfo } from '@/lib/builtin-ai';
 import { getMeetingContext } from '@/lib/meetingContext';
 import {
+  getMeetingCalendar,
+  setMeetingCalendar,
+  getPendingCalendar,
+  setPendingCalendar,
+  attendeeNames,
+} from '@/lib/meetingCalendar';
+import {
   detectAndCacheSummaryLanguage,
   readMeetingSummaryLanguage,
   readCachedDetectedSummaryLanguage,
@@ -458,12 +465,35 @@ export function useSummaryGeneration({
     };
   }, []);
 
+  // Bind any pending calendar selection to this meeting (on first summary, since
+  // the meeting id isn't known at record-start) and append the event's attendees
+  // to the summary context so the model knows who was in the meeting.
+  const withCalendarContext = useCallback((base: string): string => {
+    let link = getMeetingCalendar(meeting.id);
+    if (!link) {
+      const pending = getPendingCalendar();
+      if (pending) {
+        setMeetingCalendar(meeting.id, pending);
+        setPendingCalendar(null);
+        link = pending;
+      }
+    }
+    if (link) {
+      const names = attendeeNames(link);
+      if (names.length > 0) {
+        const suffix = `Meeting attendees (from the calendar invite): ${names.join(', ')}.`;
+        return base.trim() ? `${base}\n\n${suffix}` : suffix;
+      }
+    }
+    return base;
+  }, [meeting.id]);
+
   // Public API: Generate summary from transcripts
   const handleGenerateSummary = useCallback(async (customPrompt: string = '') => {
     // Fall back to the meeting's persisted "Add context" if no context was
     // passed, so every entry point uses it consistently.
     const effectiveContext = customPrompt.trim() ? customPrompt : getMeetingContext(meeting.id);
-    customPrompt = effectiveContext;
+    customPrompt = withCalendarContext(effectiveContext);
     // Check if model config is still loading
     if (isModelConfigLoading) {
       console.log('⏳ Model configuration is still loading, please wait...');
@@ -630,7 +660,7 @@ export function useSummaryGeneration({
   const handleRegenerateSummary = useCallback(async (customPrompt: string = '') => {
     // Same fallback as generation: use the persisted per-meeting context when a
     // caller (e.g. a regenerate button) doesn't pass one.
-    customPrompt = customPrompt.trim() ? customPrompt : getMeetingContext(meeting.id);
+    customPrompt = withCalendarContext(customPrompt.trim() ? customPrompt : getMeetingContext(meeting.id));
     const allTranscripts = await fetchAllTranscripts(meeting.id);
 
     if (!allTranscripts.length) {

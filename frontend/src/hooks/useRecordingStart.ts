@@ -7,6 +7,7 @@ import { useRecordingState, RecordingStatus } from '@/contexts/RecordingStateCon
 import { recordingService } from '@/services/recordingService';
 import Analytics from '@/lib/analytics';
 import { showRecordingNotification } from '@/lib/recordingNotification';
+import { getPendingCalendar } from '@/lib/meetingCalendar';
 import { toast } from 'sonner';
 
 interface UseRecordingStartReturn {
@@ -108,7 +109,10 @@ export function useRecordingStart(
 
       console.log('Parakeet ready - setting up meeting title and state');
 
-      const randomTitle = generateMeetingTitle();
+      // Prefer the calendar event chosen for the next recording (Settings →
+      // Add-ons → Calendar → "Use for next recording"); else a generated title.
+      const pendingCal = getPendingCalendar();
+      const randomTitle = pendingCal?.subject?.trim() || generateMeetingTitle();
       setMeetingTitle(randomTitle);
 
       // Set STARTING status before initiating backend recording
