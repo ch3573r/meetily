@@ -7,7 +7,7 @@ import { useRecordingState, RecordingStatus } from '@/contexts/RecordingStateCon
 import { recordingService } from '@/services/recordingService';
 import Analytics from '@/lib/analytics';
 import { showRecordingNotification } from '@/lib/recordingNotification';
-import { getPendingCalendar } from '@/lib/meetingCalendar';
+import { getPendingCalendar, beginRecordingCalendar } from '@/lib/meetingCalendar';
 import { toast } from 'sonner';
 
 interface UseRecordingStartReturn {
@@ -130,6 +130,8 @@ export function useRecordingStart(
         randomTitle
       );
       console.log('Backend recording started successfully');
+      // Freeze the calendar selection for this recording (clears pending).
+      beginRecordingCalendar();
 
       // Update state after successful backend start
       // Note: RECORDING status will be set by RecordingStateContext event listener
@@ -199,6 +201,8 @@ export function useRecordingStart(
               generatedMeetingTitle
             );
             console.log('Auto-start backend recording result:', result);
+            // Freeze the calendar selection for this recording (clears pending).
+            beginRecordingCalendar();
 
             // Update UI state after successful backend start
             // Note: RECORDING status will be set by RecordingStateContext event listener
@@ -286,6 +290,8 @@ export function useRecordingStart(
           generatedMeetingTitle
         );
         console.log('Backend recording result:', result);
+        // Freeze the calendar selection for this recording (clears pending).
+        beginRecordingCalendar();
 
         // Update UI state after successful backend start
         // Note: RECORDING status will be set by RecordingStateContext event listener

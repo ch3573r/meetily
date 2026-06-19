@@ -1183,6 +1183,13 @@ function CalendarPanel() {
     : "Sign in with Microsoft above to see your calendar.";
   const current = ms.currentMeeting;
 
+  // The "Set for your next recording" confirmation belongs to the event shown;
+  // reset it whenever the current/next meeting changes (reload or rollover) so
+  // it can't claim a different visible event was selected.
+  useEffect(() => {
+    setUsedForNext(false);
+  }, [current?.id]);
+
   return (
     <AddonPanel icon={CalendarClock} title="Calendar" state={panelState} detail={detail}>
       {isConnected && (

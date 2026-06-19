@@ -8,7 +8,7 @@ import { useRecordingState, RecordingStatus } from '@/contexts/RecordingStateCon
 import { storageService } from '@/services/storageService';
 import { transcriptService } from '@/services/transcriptService';
 import Analytics from '@/lib/analytics';
-import { getPendingCalendar, setMeetingCalendar, clearPendingCalendar } from '@/lib/meetingCalendar';
+import { takeActiveRecordingCalendar, setMeetingCalendar } from '@/lib/meetingCalendar';
 import {
   applyPinnedSummaryLanguageToMeeting,
   detectAndCacheSummaryLanguage,
@@ -266,14 +266,14 @@ export function useRecordingStop(
             throw new Error('No meeting ID received from save operation');
           }
 
-          // Bind any pending calendar selection to THIS saved meeting now that
-          // the real id is known, then clear it — so attendees can't later
-          // attach to a different recording (the prior lazy binding could).
+          // Bind the calendar event that was frozen at THIS recording's start
+          // (consumed here) to the saved meeting id. Using the active snapshot —
+          // not the live pending value — means a "Use for next recording" change
+          // made mid-recording can't rebind this meeting.
           try {
-            const pendingCal = getPendingCalendar();
-            if (pendingCal) {
-              setMeetingCalendar(meetingId, pendingCal);
-              clearPendingCalendar();
+            const activeCal = takeActiveRecordingCalendar();
+            if (activeCal) {
+              setMeetingCalendar(meetingId, activeCal);
             }
           } catch (error) {
             console.warn('Failed to bind calendar selection to meeting:', error);

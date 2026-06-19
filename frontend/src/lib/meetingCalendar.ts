@@ -22,6 +22,7 @@ export interface MeetingCalendarLink {
 
 const MEETING_PREFIX = "clawscribe.meetingCalendar.";
 const PENDING_KEY = "clawscribe.pendingCalendar";
+const ACTIVE_KEY = "clawscribe.activeRecordingCalendar";
 
 function read(store: Storage | undefined, key: string): MeetingCalendarLink | null {
   try {
@@ -58,6 +59,26 @@ export function clearPendingCalendar(): void {
   write(session(), PENDING_KEY, null);
 }
 
+/**
+ * Snapshot the pending selection as the *active* recording's calendar event and
+ * clear pending. Call at successful record-start: this freezes the choice for
+ * the in-flight recording, so changing "Use for next recording" mid-recording
+ * can't rebind it. Writing pending (possibly null) also clears any stale active
+ * slot left by a discarded recording.
+ */
+export function beginRecordingCalendar(): void {
+  const pending = getPendingCalendar();
+  write(session(), ACTIVE_KEY, pending);
+  clearPendingCalendar();
+}
+
+/** Consume (read + clear) the active recording's event, to bind to its meeting. */
+export function takeActiveRecordingCalendar(): MeetingCalendarLink | null {
+  const active = read(session(), ACTIVE_KEY);
+  write(session(), ACTIVE_KEY, null);
+  return active;
+}
+
 /** The calendar event bound to a specific saved meeting. */
 export function getMeetingCalendar(meetingId: string): MeetingCalendarLink | null {
   if (!meetingId) return null;
@@ -74,6 +95,7 @@ export function setMeetingCalendar(
 /** Drop all calendar associations + the pending selection (on MS sign-out). */
 export function clearAllCalendarLinks(): void {
   clearPendingCalendar();
+  write(session(), ACTIVE_KEY, null);
   const store = local();
   if (!store) return;
   try {
