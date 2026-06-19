@@ -345,7 +345,7 @@ const Sidebar: React.FC = () => {
                 <TooltipTrigger asChild>
                   <button
                     onClick={item.onClick}
-                    className={`flex h-10 w-10 items-center justify-center rounded-lg transition ${
+                    className={`flex h-10 w-10 items-center justify-center rounded-md transition ${
                       item.active
                         ? "bg-primary/10 text-primary ring-1 ring-primary/20"
                         : "text-muted-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
@@ -365,7 +365,7 @@ const Sidebar: React.FC = () => {
             <TooltipTrigger asChild>
               <button
                 onClick={handleRecordingToggle}
-                className={`flex h-10 w-10 items-center justify-center rounded-lg shadow-sm transition ${
+                className={`flex h-10 w-10 items-center justify-center rounded-md shadow-sm transition ${
                   isRecording
                     ? "bg-red-500 text-white hover:bg-red-600"
                     : "bg-primary text-primary-foreground shadow-primary/20 hover:bg-primary/90"
@@ -394,7 +394,7 @@ const Sidebar: React.FC = () => {
               <TooltipTrigger asChild>
                 <button
                   onClick={() => openImportDialog()}
-                  className="flex h-10 w-10 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-sidebar-hover hover:text-sidebar-foreground"
+                  className="flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground transition hover:bg-sidebar-hover hover:text-sidebar-foreground"
                 >
                   <Upload className="h-5 w-5" />
                 </button>
@@ -436,7 +436,7 @@ const Sidebar: React.FC = () => {
               : `/notes/${item.id}`;
           router.push(basePath);
         }}
-        className={`group cursor-pointer rounded-lg border px-2.5 py-2.5 transition ${
+        className={`group cursor-pointer rounded-md border px-2.5 py-2.5 transition ${
           isActive
             ? "border-primary/25 bg-primary/10 text-sidebar-foreground shadow-sm"
             : hasTranscriptMatch
@@ -568,7 +568,7 @@ const Sidebar: React.FC = () => {
               <Logo isCollapsed={isCollapsed} />
 
               <div className="relative">
-                <InputGroup className="rounded-lg border-sidebar-border bg-background/60 text-sidebar-foreground shadow-none">
+                <InputGroup className="rounded-md border-sidebar-border bg-background/60 text-sidebar-foreground shadow-none">
                   <InputGroupInput
                     placeholder="Search meetings..."
                     value={searchQuery}
@@ -596,7 +596,7 @@ const Sidebar: React.FC = () => {
                   <button
                     key={item.label}
                     onClick={item.onClick}
-                    className={`relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${
+                    className={`relative flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition ${
                       item.active
                         ? "bg-primary/10 text-primary ring-1 ring-primary/15"
                         : "text-muted-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
@@ -632,7 +632,7 @@ const Sidebar: React.FC = () => {
                 {filteredSidebarItems.every(
                   (item) => !item.children?.length,
                 ) && (
-                  <div className="rounded-lg border border-sidebar-border bg-background/60 px-3 py-5 text-center text-sm text-muted-foreground">
+                  <div className="rounded-md border border-sidebar-border bg-background/60 px-3 py-5 text-center text-sm text-muted-foreground">
                     No meetings found.
                   </div>
                 )}
@@ -653,7 +653,7 @@ const Sidebar: React.FC = () => {
               <button
                 onClick={handleRecordingToggle}
                 title={isRecording ? "Click to stop recording" : undefined}
-                className={`flex w-full items-center justify-center gap-2 rounded-lg px-3 py-3 text-sm font-semibold shadow-sm transition ${
+                className={`flex w-full items-center justify-center gap-2 rounded-md px-3 py-3 text-sm font-semibold shadow-sm transition ${
                   isRecording
                     ? "bg-red-500 text-white hover:bg-red-600"
                     : "bg-primary text-primary-foreground shadow-primary/20 hover:bg-primary/90"
@@ -681,7 +681,7 @@ const Sidebar: React.FC = () => {
                 {betaFeatures.importAndRetranscribe && (
                   <button
                     onClick={() => openImportDialog()}
-                    className="flex min-w-0 items-center justify-center gap-2 rounded-lg border border-sidebar-border bg-background/60 px-2.5 py-2.5 text-sm font-medium text-sidebar-foreground transition hover:bg-sidebar-hover"
+                    className="flex min-w-0 items-center justify-center gap-2 rounded-md border border-sidebar-border bg-background/60 px-2.5 py-2.5 text-sm font-medium text-sidebar-foreground transition hover:bg-sidebar-hover"
                   >
                     <Upload className="h-4 w-4 shrink-0" />
                     <span className="truncate">Import</span>
@@ -690,7 +690,7 @@ const Sidebar: React.FC = () => {
 
                 <button
                   onClick={() => router.push("/settings")}
-                  className="flex min-w-0 items-center justify-center gap-2 rounded-lg border border-sidebar-border bg-background/60 px-2.5 py-2.5 text-sm font-medium text-sidebar-foreground transition hover:bg-sidebar-hover"
+                  className="flex min-w-0 items-center justify-center gap-2 rounded-md border border-sidebar-border bg-background/60 px-2.5 py-2.5 text-sm font-medium text-sidebar-foreground transition hover:bg-sidebar-hover"
                 >
                   <Settings className="h-4 w-4 shrink-0" />
                   <span className="truncate">Settings</span>
@@ -699,18 +699,18 @@ const Sidebar: React.FC = () => {
 
               {isRecording ? (
                 isPaused ? (
-                  <div className="flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+                  <div className="flex items-center gap-2 rounded-md border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
                     <span className="h-2 w-2 rounded-full bg-amber-500" />
                     Paused
                   </div>
                 ) : (
-                  <div className="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-700 dark:text-red-300">
+                  <div className="flex items-center gap-2 rounded-md border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-700 dark:text-red-300">
                     <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />
                     Recording
                   </div>
                 )
               ) : (
-                <div className="flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300">
+                <div className="flex items-center gap-2 rounded-md border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300">
                   <span className="h-2 w-2 rounded-full bg-emerald-500" />
                   Ready for recording
                 </div>

@@ -194,7 +194,7 @@ export function PreferenceSettings() {
     <div className="space-y-5">
       <ThemeSettings />
 
-      <div className="rounded-lg border border-border bg-card p-6 shadow-sm">
+      <div className="rounded-md border border-border bg-card p-6 shadow-sm">
         <div className="flex items-center justify-between gap-6">
           <div className="flex min-w-0 items-start gap-3">
             <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
@@ -218,7 +218,7 @@ export function PreferenceSettings() {
       </div>
 
       {/* Notifications Section */}
-      <div className="rounded-lg border border-border bg-card p-6 shadow-sm">
+      <div className="rounded-md border border-border bg-card p-6 shadow-sm">
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-lg font-semibold text-foreground mb-2">
@@ -238,7 +238,7 @@ export function PreferenceSettings() {
       <KeyboardShortcutsSettings />
 
       {/* Data Storage Locations Section */}
-      <div className="rounded-lg border border-border bg-card p-6 shadow-sm">
+      <div className="rounded-md border border-border bg-card p-6 shadow-sm">
         <h3 className="text-lg font-semibold text-foreground mb-4">
           Data Storage Locations
         </h3>
@@ -278,14 +278,14 @@ export function PreferenceSettings() {
           </div> */}
 
           {/* Recordings Location */}
-          <div className="p-4 border rounded-lg bg-muted">
+          <div className="p-4 border rounded-md bg-muted">
             <div className="font-medium mb-2">Meeting Recordings</div>
             <div className="text-sm text-muted-foreground mb-3 break-all font-mono text-xs">
               {storageLocations?.recordings || "Loading..."}
             </div>
             <button
               onClick={() => handleOpenFolder("recordings")}
-              className="flex items-center gap-2 px-3 py-2 text-sm border border-border rounded-lg hover:bg-muted transition-colors"
+              className="flex items-center gap-2 px-3 py-2 text-sm border border-border rounded-md hover:bg-muted transition-colors"
             >
               <FolderOpen className="w-4 h-4" />
               Open Folder
@@ -293,7 +293,7 @@ export function PreferenceSettings() {
           </div>
         </div>
 
-        <div className="mt-4 rounded-lg bg-muted p-3">
+        <div className="mt-4 rounded-md bg-muted p-3">
           <p className="text-xs text-foreground">
             <strong>Note:</strong> Database and models are stored together in
             your application data directory for unified management.
