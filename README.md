@@ -122,6 +122,14 @@ OpenAI and OpenAI-compatible auth behavior is documented in
 Microsoft export setup and verification notes are under `docs/integrations/`
 and `docs/verification/`.
 
+## Support
+
+ClawScribe remains MIT licensed and free to use, modify, and redistribute under
+the terms in [LICENSE.md](LICENSE.md). If it saves you time or you want to
+support local-first meeting AI work, you can support development here:
+
+[Buy me a coffee](https://buymeacoffee.com/ch3573r)
+
 ## Build Documentation
 
 - [docs/BUILDING.md](docs/BUILDING.md)
