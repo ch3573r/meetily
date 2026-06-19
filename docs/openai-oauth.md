@@ -82,7 +82,7 @@ In the current OpenClaw deployment, this endpoint is the ingest service's
 OpenAI-compatible model bridge:
 
 ```text
-http://openclaw-host.local:8765/v1/chat/completions
+your-openclaw-host:8765/v1/chat/completions
 ```
 
 That bridge runs `openclaw infer model run --gateway --model openai/gpt-5.4` on
@@ -96,8 +96,8 @@ Configuration shape:
 {
   "mode": "openclaw_codex_managed",
   "openclawCodexManaged": {
-    "endpoint": "http://openclaw-host.local:8765/v1/chat/completions",
-    "statusEndpoint": "http://openclaw-host.local:8765/readyz",
+    "endpoint": "your-openclaw-host:8765/v1/chat/completions",
+    "statusEndpoint": "your-openclaw-host:8765/readyz",
     "label": "OpenClaw managed auth bridge"
   }
 }

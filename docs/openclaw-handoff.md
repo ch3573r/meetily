@@ -13,21 +13,21 @@ the Settings page to see the exact resolved config path on the recorder.
 ```json
 {
   "enabled": true,
-  "endpoint": "http://openclaw-host.local:8765/meetings/completed",
-  "model_endpoint": "http://openclaw-host.local:8765/v1/chat/completions",
+  "endpoint": "your-openclaw-host:8765/meetings/completed",
+  "model_endpoint": "your-openclaw-host:8765/v1/chat/completions",
   "bearer_token": "replace-me",
   "source": "ClawScribe",
   "include_audio_path": false
 }
 ```
 
-`http://openclaw-host.local:8765/meetings/completed` is the production default in
+`your-openclaw-host:8765/meetings/completed` is the production default in
 this fork. Use `http://127.0.0.1:8765/meetings/completed` only when the
 OpenClaw ingest service runs on the same Windows machine.
 
 When the summarization provider is set to `OpenClaw managed auth`, ClawScribe
 uses `model_endpoint` as an OpenAI-compatible chat-completions bridge. The
-default is `http://openclaw-host.local:8765/v1/chat/completions`; that endpoint is
+default is `your-openclaw-host:8765/v1/chat/completions`; that endpoint is
 implemented by the OpenClaw ingest service and routes through the host's
 existing OpenClaw gateway/Codex auth. ClawScribe sends only the configured
 handoff bearer token and does not store ChatGPT/Codex tokens.
@@ -90,7 +90,7 @@ From the Windows recorder, validate reachability before enabling automatic
 handoff:
 
 ```powershell
-Invoke-RestMethod http://openclaw-host.local:8765/readyz
+Invoke-RestMethod your-openclaw-host:8765/readyz
 ```
 
 ## Behavior

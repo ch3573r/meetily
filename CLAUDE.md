@@ -72,13 +72,12 @@ Current app behavior belongs in `frontend/src-tauri/src` and the Tauri/Next UI.
      - `frontend/src/components/IntegrationsSettings.tsx`
 
 3. **Self-hosted GitHub Actions runner** (this session)
-   - Proxmox VM `build-runner` (VMID 103) at `build-host.local` (node `pve`,
-     `infra-host.local:8006`), cloned from the `WinSrv2025` template (VMID 10000).
-   - Windows Server 2025, **6 cores**, 6GB RAM, 128GB disk.
+   - A dedicated self-hosted **Windows Server 2025** VM (6 cores, 6GB RAM,
+     128GB disk).
    - Runner labels: `self-hosted, windows, x64, clawscribe`.
    - Workflow `runs-on: [self-hosted, windows, clawscribe]`.
-   - Service `actions.runner.runner-service.build-runner` runs as a **local admin
-     user `.\builder`** (NOT a service account — see gotchas below).
+   - The runner service runs as a **dedicated local admin user** (NOT a service
+     account — see gotchas below).
    - Toolchain installed via choco/rustup: VS Build Tools 2022 (C++ workload),
      **LLVM 20.1.8** (pinned), Rust 1.96.0, Node 24.16.0, pnpm 10.34.3,
      Git 2.54.0, CMake 4.3.3, PowerShell 7, NSIS 3.12, Vulkan SDK 1.4.350.
@@ -92,8 +91,8 @@ Current app behavior belongs in `frontend/src-tauri/src` and the Tauri/Next UI.
      fails). LocalSystem has privileges but its profile is under
      `C:\WINDOWS\system32\...`, and 32-bit `makensis.exe` then hits WoW64
      `system32`→`SysWOW64` redirection and can't load `zlib1.dll`
-     (STATUS_DLL_NOT_FOUND / "os error 2"). A local admin user
-     (`C:\Users\builder`) satisfies both.
+     (STATUS_DLL_NOT_FOUND / "os error 2"). A normal local admin user profile
+     (under `C:\Users\<builder>`) satisfies both.
    - **Windows Defender was uninstalled** (`Uninstall-WindowsFeature
      Windows-Defender`). It was content-flagging NSIS `makensis.exe` and
      silently truncating it to a 2560-byte stub. Do not reinstall.
