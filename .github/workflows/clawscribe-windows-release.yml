@@ -28,6 +28,11 @@ on:
         required: false
         type: boolean
         default: true
+      publish:
+        description: Publish the installers to a GitHub Release (tag = v<package.json version>). Release assets don't count against the Actions-artifact quota.
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: clawscribe-windows-release-${{ github.ref }}
@@ -42,7 +47,7 @@ jobs:
     name: Build ClawScribe Windows installers
     runs-on: [self-hosted, windows, clawscribe]
     permissions:
-      contents: read
+      contents: write # create/update GitHub Releases when publish=true
 
     steps:
       - name: Checkout repository
@@ -214,7 +219,10 @@ jobs:
           .\scripts\build-windows-release.ps1 -Feature ${{ inputs.feature }} -CheckOnly
 
       - name: Upload Windows installers
-        if: ${{ !inputs['check-only'] }}
+        # Skip on publish runs: the GitHub Release is the distribution there, so
+        # we avoid the Actions-artifact quota entirely. Dev (non-publish) runs
+        # still get a downloadable artifact.
+        if: ${{ !inputs['check-only'] && !inputs.publish }}
         uses: actions/upload-artifact@v4
         with:
           # Stable per-variant name (no per-commit sha) + overwrite so each
@@ -233,3 +241,43 @@ jobs:
           if-no-files-found: error
           overwrite: true
           retention-days: 7
+
+      - name: Prepare release notes
+        if: ${{ inputs.publish && !inputs['check-only'] }}
+        shell: pwsh
+        run: |
+          $bundleRoot = "frontend\src-tauri\target\release\bundle"
+          $version = $env:CLAWSCRIBE_SOURCE_VERSION
+          $short = git rev-parse --short HEAD
+          # Built line-by-line (no backticks) to avoid PowerShell here-string escaping.
+          $lines = @(
+            "ClawScribe $version ($short) - ${{ inputs.feature }} build (DirectML: ${{ inputs.directml }}).",
+            "",
+            "> Unsigned installer. ClawScribe is not yet code-signed, so Windows",
+            "> SmartScreen may warn on first run: click More info -> Run anyway to",
+            "> install. Code signing is planned for a later release.",
+            "",
+            "### Install",
+            "- Recommended: the ``*_x64-setup.exe`` (NSIS) installer",
+            "- Or the ``*_x64_en-US.msi``",
+            "",
+            "### SHA-256 checksums",
+            ""
+          )
+          $lines += (Get-Content -LiteralPath (Join-Path $bundleRoot "SHA256SUMS.txt"))
+          $lines | Set-Content -LiteralPath (Join-Path $bundleRoot "RELEASE-NOTES.md") -Encoding utf8
+
+      - name: Publish GitHub Release
+        if: ${{ inputs.publish && !inputs['check-only'] }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.CLAWSCRIBE_SOURCE_VERSION }}
+          name: ClawScribe v${{ env.CLAWSCRIBE_SOURCE_VERSION }}
+          body_path: frontend/src-tauri/target/release/bundle/RELEASE-NOTES.md
+          prerelease: ${{ contains(env.CLAWSCRIBE_SOURCE_VERSION, '-') }}
+          fail_on_unmatched_files: true
+          files: |
+            frontend/src-tauri/target/release/bundle/msi/*.msi
+            frontend/src-tauri/target/release/bundle/nsis/*.exe
+            frontend/src-tauri/target/release/bundle/SHA256SUMS.txt
+            frontend/src-tauri/target/release/bundle/BUILD-METADATA.txt
