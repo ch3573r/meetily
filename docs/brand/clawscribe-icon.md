@@ -1,14 +1,14 @@
 # ClawScribe Icon
 
 The ClawScribe icon is generated from the current product mark. The source mark
-has an outer white border/background; generation flood-fills only edge-connected
-white pixels, removes that border, crops to the visible rounded-square mark, and
-exports transparent-corner assets.
+is `docs/brand/clawscribe-logo.png`: an abstract claw, waveform, and scribe
+mark. App-icon exports fit that mark into a rounded-square mask and keep
+transparent corners where the target format supports alpha.
 
 ## Generated Assets
 
-Regenerate from the source mark with the icon generation script (Python 3 +
-NumPy + ffmpeg), which produces the assets below.
+Regenerate from the source mark with Python 3 and Pillow, producing the assets
+below.
 
 Covered surfaces:
 
@@ -19,10 +19,11 @@ Covered surfaces:
 - Next/web favicon: `frontend/src/app/favicon.ico`
 - About/public icon: `frontend/public/icon_128x128.png`, `icon_32x32@2x.png`
 - Sidebar collapsed logo: `frontend/public/logo-collapsed.png`
+- Public horizontal logo: `frontend/public/logo.png`
 - Public brand sizes: `frontend/public/brand/clawscribe-icon-*`
 - Microsoft Store/Windows logo aliases under `frontend/src-tauri/icons/`
 
 The expanded sidebar currently renders the text label `ClawScribe`; the
 collapsed sidebar and About dialog use the regenerated product icon.
 
-Dependencies used: `ffmpeg`/`ffprobe`, Python 3 stdlib, and NumPy.
+Dependencies used: Python 3 and Pillow.
