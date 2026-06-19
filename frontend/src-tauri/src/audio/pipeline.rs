@@ -838,12 +838,21 @@ impl AudioPipeline {
         const SILENCE_GRACE_SECS: u64 = 15;
         const SILENCE_PEAK_THRESHOLD: f32 = 0.001; // ~-60 dBFS
 
-        // Speaker attribution: accumulate microphone vs system energy across the
-        // windows feeding the VAD buffer, then label each emitted speech segment
-        // by whichever source dominated ("Me" = mic, "Participants" = system).
-        // Transcription itself is unchanged — it still runs on the mixed audio.
-        let mut mic_energy_acc = 0.0f32;
-        let mut sys_energy_acc = 0.0f32;
+        // Speaker attribution ("Me" = mic, "Participants" = system). We compare
+        // each source's energy *relative to its own rolling noise floor* (an
+        // SNR-style measure), not raw level. This matters because the mic is
+        // loudness-normalized to ~-23 LUFS at capture while system audio stays
+        // raw: a raw-level comparison is structurally biased toward the mic, so
+        // system-only playback (e.g. a YouTube video) mislabeled as "Me".
+        // Measuring excess-over-floor cancels that bias. Transcription itself is
+        // unchanged — it still runs on the mixed audio.
+        let mut mic_snr_acc = 0.0f32;
+        let mut sys_snr_acc = 0.0f32;
+        // Per-stream noise floors, tracked across the whole meeting (NOT reset
+        // per segment): fall fast toward a new quiet level, rise slowly so brief
+        // speech doesn't inflate the baseline.
+        let mut mic_floor = 1e-4f32;
+        let mut sys_floor = 1e-4f32;
 
         // CRITICAL FIX: Continue processing until channel is closed, not based on recording state
         // This ensures ALL chunks are processed during shutdown, fixing premature meeting completion
@@ -926,16 +935,32 @@ impl AudioPipeline {
                     // STEP 2: Mix audio in fixed windows when both streams have sufficient data
                     while self.ring_buffer.can_mix() {
                         if let Some((mic_window, sys_window)) = self.ring_buffer.extract_window() {
-                            // Accumulate per-source energy for speaker attribution.
-                            let mean_abs = |w: &[f32]| {
+                            // Per-source SNR (energy above each stream's own rolling
+                            // noise floor). Comparing SNRs — not raw levels — keeps the
+                            // loudness-normalized mic from structurally dominating the
+                            // raw system stream.
+                            let rms = |w: &[f32]| -> f32 {
                                 if w.is_empty() {
                                     0.0
                                 } else {
-                                    w.iter().map(|s| s.abs()).sum::<f32>() / w.len() as f32
+                                    (w.iter().map(|s| s * s).sum::<f32>() / w.len() as f32).sqrt()
                                 }
                             };
-                            mic_energy_acc += mean_abs(&mic_window);
-                            sys_energy_acc += mean_abs(&sys_window);
+                            let mic_rms = rms(&mic_window);
+                            let sys_rms = rms(&sys_window);
+                            // Asymmetric floor tracker: fall fast (0.10) toward a new low,
+                            // rise slowly (0.001) so sustained speech can't raise the floor.
+                            let track = |floor: &mut f32, rms: f32| {
+                                let a = if rms < *floor { 0.10 } else { 0.001 };
+                                *floor += a * (rms - *floor);
+                                if *floor < 1e-6 {
+                                    *floor = 1e-6;
+                                }
+                            };
+                            track(&mut mic_floor, mic_rms);
+                            track(&mut sys_floor, sys_rms);
+                            mic_snr_acc += mic_rms / mic_floor;
+                            sys_snr_acc += sys_rms / sys_floor;
 
                             // Simple mixing without aggressive ducking
                             let mixed_clean = self.mixer.mix_window(&mic_window, &sys_window);
@@ -950,21 +975,25 @@ impl AudioPipeline {
                             match self.vad_processor.process_audio(&mixed_with_gain) {
                                 Ok(speech_segments) => {
                                     let had_segments = !speech_segments.is_empty();
-                                    // Attribute the segment to the dominant source. The mic is
-                                    // loudness-normalized at capture (~-23 LUFS) while system audio
-                                    // is raw, and the mic also picks up speaker bleed — so a plain
-                                    // `mic >= sys` almost always reads "Me". Require the mic to
-                                    // *clearly* exceed system to claim "Me": real speech easily does,
-                                    // but normalized room tone / bleed during system-only playback
-                                    // does not. (MIC_DOMINANCE may need on-device calibration.)
-                                    const MIC_DOMINANCE: f32 = 2.0;
-                                    let segment_source = if mic_energy_acc
-                                        >= sys_energy_acc * MIC_DOMINANCE
+                                    // Attribute the segment to the dominant source by SNR
+                                    // accumulated over the windows feeding it. "Me" only when
+                                    // the mic's SNR clearly leads the system's — real mic speech
+                                    // does; normalized room tone or speaker bleed during system
+                                    // playback does not. The /n averaging cancels in the ratio,
+                                    // so the accumulators are compared directly.
+                                    // (MIC_DOMINANCE may need on-device calibration.)
+                                    const MIC_DOMINANCE: f32 = 1.5;
+                                    let segment_source = if mic_snr_acc
+                                        >= sys_snr_acc * MIC_DOMINANCE
                                     {
                                         DeviceType::Microphone
                                     } else {
                                         DeviceType::System
                                     };
+                                    perf_debug!(
+                                        "🗣️ attribution: mic_snr={:.1} sys_snr={:.1} floors(mic={:.5},sys={:.5}) -> {:?}",
+                                        mic_snr_acc, sys_snr_acc, mic_floor, sys_floor, segment_source
+                                    );
                                     for segment in speech_segments {
                                         let duration_ms =
                                             segment.end_timestamp_ms - segment.start_timestamp_ms;
@@ -999,8 +1028,10 @@ impl AudioPipeline {
                                     }
 
                                     if had_segments {
-                                        mic_energy_acc = 0.0;
-                                        sys_energy_acc = 0.0;
+                                        // Reset per-segment SNR sums; floors persist as
+                                        // long-running baselines.
+                                        mic_snr_acc = 0.0;
+                                        sys_snr_acc = 0.0;
                                     }
                                 }
                                 Err(e) => {
