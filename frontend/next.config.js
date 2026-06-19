@@ -7,6 +7,9 @@ const resolveFromTiptapPm = (pkg) =>
 const nextConfig = {
   reactStrictMode: false, // Disabled for BlockNote compatibility
   output: 'export',
+  env: {
+    NEXT_PUBLIC_APP_VERSION: require('./package.json').version,
+  },
   images: {
     unoptimized: true,
   },

@@ -24,6 +24,7 @@ import type { CurrentMeeting } from "@/components/Sidebar/SidebarProvider";
 import { ConfirmationModal } from "../ConfirmationModel/confirmation-modal";
 import Analytics from "@/lib/analytics";
 import { invoke } from "@tauri-apps/api/core";
+import { getVersion } from "@tauri-apps/api/app";
 import {
   Tooltip,
   TooltipContent,
@@ -91,6 +92,17 @@ const Sidebar: React.FC = () => {
   const { betaFeatures } = useConfig();
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [showAllMeetings, setShowAllMeetings] = useState(false);
+  const [appVersion, setAppVersion] = useState(
+    process.env.NEXT_PUBLIC_APP_VERSION ?? "",
+  );
+
+  useEffect(() => {
+    getVersion()
+      .then(setAppVersion)
+      .catch(() => {
+        // Browser/dev fallback is injected from package.json by next.config.js.
+      });
+  }, []);
 
   const [deleteModalState, setDeleteModalState] = useState<{
     isOpen: boolean;
@@ -707,7 +719,7 @@ const Sidebar: React.FC = () => {
               )}
 
               <div className="px-1 text-center text-xs text-muted-foreground">
-                v0.5.0-alpha.2
+                {appVersion ? `v${appVersion}` : null}
               </div>
             </div>
           </>
