@@ -24,3 +24,12 @@ Additional upstream acknowledgments retained from the original project:
 - Code or implementation ideas from [transcribe-rs](https://crates.io/crates/transcribe-rs)
 - NVIDIA for the Parakeet model
 - [istupakov](https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx) for the ONNX conversion of the Parakeet model
+- NVIDIA for the Nemotron 3.5 ASR Streaming model
+- [soniqo](https://huggingface.co/soniqo) for the ONNX (INT8/INT4) conversions of the Nemotron model
+- [Silero VAD](https://github.com/snakers4/silero-vad) (MIT) for voice-activity detection
+- [ONNX Runtime](https://github.com/microsoft/onnxruntime) (MIT), used via the [`ort`](https://crates.io/crates/ort) crate, for Parakeet/Nemotron inference
+- [OpenAI Whisper](https://github.com/openai/whisper) (MIT) models, run via [`whisper-rs`](https://crates.io/crates/whisper-rs)
+
+NVIDIA Parakeet and Nemotron models are governed by NVIDIA's model license terms;
+ClawScribe downloads them at runtime from their published sources rather than
+bundling them in the installer.
