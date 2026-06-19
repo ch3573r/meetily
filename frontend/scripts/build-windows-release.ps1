@@ -86,13 +86,16 @@ if ($CheckOnly) {
 
 pnpm build
 
+$bundleRoot = Join-Path $tauriRoot "target\release\bundle"
+Remove-Item -LiteralPath (Join-Path $bundleRoot "msi") -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath (Join-Path $bundleRoot "nsis") -Recurse -Force -ErrorAction SilentlyContinue
+
 if ($Feature -eq "cpu") {
     pnpm exec tauri build
 } else {
     pnpm exec tauri build -- @featureArgs
 }
 
-$bundleRoot = Join-Path $tauriRoot "target\release\bundle"
 $sourceVersion = (node -p "require('./package.json').version").Trim()
 $commit = (git -C (Join-Path $frontendRoot "..") rev-parse HEAD).Trim()
 $shortCommit = (git -C (Join-Path $frontendRoot "..") rev-parse --short HEAD).Trim()

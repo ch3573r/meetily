@@ -149,6 +149,8 @@ jobs:
           if ("${{ inputs.directml }}" -eq "true") {
             $features = if ($features) { "$features,directml" } else { "directml" }
           }
+          Remove-Item -LiteralPath "frontend\src-tauri\target\release\bundle\msi" -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item -LiteralPath "frontend\src-tauri\target\release\bundle\nsis" -Recurse -Force -ErrorAction SilentlyContinue
           cd frontend
           pnpm install --frozen-lockfile
           pnpm build
@@ -169,19 +171,19 @@ jobs:
           $shortCommit = git rev-parse --short HEAD
           $buildDateUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
           $upstreamBaseVersion = "0.4.0"
-          $sourceMsi = Get-ChildItem -Path "." -Recurse -File -Filter "*.msi" |
-            Where-Object { $_.Name -like "ClawScribe_*" } |
+          $expectedMsi = "ClawScribe_${installerVersion}_x64_en-US.msi"
+          $expectedNsis = "ClawScribe_${installerVersion}_x64-setup.exe"
+          $sourceMsi = Get-ChildItem -Path "." -Recurse -File -Filter $expectedMsi |
             Sort-Object LastWriteTimeUtc -Descending |
             Select-Object -First 1
-          $sourceNsis = Get-ChildItem -Path "." -Recurse -File -Filter "*.exe" |
-            Where-Object { $_.Name -like "ClawScribe_*setup.exe" } |
+          $sourceNsis = Get-ChildItem -Path "." -Recurse -File -Filter $expectedNsis |
             Sort-Object LastWriteTimeUtc -Descending |
             Select-Object -First 1
           if (-not $sourceMsi) {
-            throw "No ClawScribe MSI artifact was found after the Windows build."
+            throw "No current-version ClawScribe MSI artifact '$expectedMsi' was found after the Windows build."
           }
           if (-not $sourceNsis) {
-            throw "No ClawScribe NSIS setup artifact was found after the Windows build."
+            throw "No current-version ClawScribe NSIS setup artifact '$expectedNsis' was found after the Windows build."
           }
           New-Item -ItemType Directory -Force -Path (Join-Path $bundleRoot "msi") | Out-Null
           New-Item -ItemType Directory -Force -Path (Join-Path $bundleRoot "nsis") | Out-Null
@@ -191,11 +193,25 @@ jobs:
             $msiName = $msiName.Replace($installerVersion, $sourceVersion)
             $nsisName = $nsisName.Replace($installerVersion, $sourceVersion)
           }
-          Copy-Item -LiteralPath $sourceMsi.FullName -Destination (Join-Path $bundleRoot "msi\$msiName") -Force
-          Copy-Item -LiteralPath $sourceNsis.FullName -Destination (Join-Path $bundleRoot "nsis\$nsisName") -Force
-          $artifactFiles = @()
-          $artifactFiles += Get-ChildItem -Path (Join-Path $bundleRoot "msi\*.msi") -ErrorAction SilentlyContinue
-          $artifactFiles += Get-ChildItem -Path (Join-Path $bundleRoot "nsis\*.exe") -ErrorAction SilentlyContinue
+          $destMsi = Join-Path $bundleRoot "msi\$msiName"
+          $destNsis = Join-Path $bundleRoot "nsis\$nsisName"
+          $destMsiFull = [System.IO.Path]::GetFullPath($destMsi)
+          $destNsisFull = [System.IO.Path]::GetFullPath($destNsis)
+          if ($sourceMsi.FullName -ne $destMsiFull) {
+            Move-Item -LiteralPath $sourceMsi.FullName -Destination $destMsi -Force
+          }
+          if ($sourceNsis.FullName -ne $destNsisFull) {
+            $sourceNsisSig = "$($sourceNsis.FullName).sig"
+            $destNsisSig = "$destNsis.sig"
+            Move-Item -LiteralPath $sourceNsis.FullName -Destination $destNsis -Force
+            if (Test-Path -LiteralPath $sourceNsisSig -PathType Leaf) {
+              Move-Item -LiteralPath $sourceNsisSig -Destination $destNsisSig -Force
+            }
+          }
+          $artifactFiles = @(
+            Get-Item -LiteralPath $destMsi
+            Get-Item -LiteralPath $destNsis
+          )
           $resolvedBundleRoot = (Resolve-Path -LiteralPath $bundleRoot).Path
           $checksumLines = foreach ($artifact in $artifactFiles | Sort-Object FullName) {
             $hash = Get-FileHash -Algorithm SHA256 -LiteralPath $artifact.FullName
@@ -288,8 +304,8 @@ jobs:
           # the metadata step). Its signature signs the file bytes, so the .sig from
           # the original-named artifact is valid for the renamed copy too.
           $nsisName = "ClawScribe_${version}_x64-setup.exe"
-          $sig = Get-ChildItem -Path (Join-Path $bundleRoot "nsis") -Filter "*setup.exe.sig" |
-            Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+          $sig = Get-ChildItem -Path (Join-Path $bundleRoot "nsis") -Filter "${nsisName}.sig" |
+            Select-Object -First 1
           if (-not $sig) {
             throw "No .sig found - is createUpdaterArtifacts true and TAURI_SIGNING_PRIVATE_KEY set?"
           }
