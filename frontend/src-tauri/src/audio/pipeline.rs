@@ -786,10 +786,18 @@ impl AudioPipeline {
         // For mac os core audio, 900ms, for windows 400ms seems good
 
         let redemption_time = if cfg!(target_os = "macos") { 400 } else { 400 };
+        const LIVE_MAX_SEGMENT_MS: u32 = 6_000;
 
-        let vad_processor = match ContinuousVadProcessor::new(sample_rate, redemption_time) {
+        let vad_processor = match ContinuousVadProcessor::new_with_max_segment_duration(
+            sample_rate,
+            redemption_time,
+            Some(LIVE_MAX_SEGMENT_MS),
+        ) {
             Ok(processor) => {
-                info!("VAD-driven pipeline: VAD segments will be sent directly to Whisper (no time-based accumulation)");
+                info!(
+                    "VAD-driven pipeline: live speech segments capped at {}ms for lower latency",
+                    LIVE_MAX_SEGMENT_MS
+                );
                 processor
             }
             Err(e) => {
@@ -1000,7 +1008,7 @@ impl AudioPipeline {
 
                                         if segment.samples.len() >= 800 {
                                             // Minimum 50ms at 16kHz - matches Parakeet capability
-                                            info!(
+                                            debug!(
                                                 "📤 Sending VAD segment: {:.1}ms, {} samples",
                                                 duration_ms,
                                                 segment.samples.len()
@@ -1104,7 +1112,7 @@ impl AudioPipeline {
 
                     // Send segments >= 50ms (800 samples at 16kHz) - matches main pipeline filter
                     if segment.samples.len() >= 800 {
-                        info!(
+                        debug!(
                             "📤 Sending final VAD segment to Whisper: {:.1}ms duration, {} samples",
                             duration_ms,
                             segment.samples.len()
