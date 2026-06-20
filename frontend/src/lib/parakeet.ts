@@ -45,12 +45,6 @@ export const MODEL_DISPLAY_CONFIG: Record<string, ModelDisplayInfo> = {
     recommended: true,
     tier: 'fastest'
   },
-  'parakeet-tdt-0.6b-v3-fp16': {
-    friendlyName: 'FP16 Lab',
-    icon: '🧪',
-    tagline: 'Experimental • GPU accuracy candidate',
-    tier: 'precise'
-  },
   'parakeet-tdt-0.6b-v3-smoothquant-int8': {
     friendlyName: 'SmoothQuant',
     icon: '🔬',
@@ -67,7 +61,7 @@ export const MODEL_DISPLAY_CONFIG: Record<string, ModelDisplayInfo> = {
 
 // Model configuration for Parakeet models (matching Rust implementation)
 // Supported models: parakeet-tdt-0.6b in v2 and v3 variants
-// Sources: istupakov v2/v3 ONNX, grikdotnet fp16, and Olicorne SmoothQuant variants.
+// Sources: istupakov v2/v3 ONNX and Olicorne SmoothQuant variants.
 export const PARAKEET_MODEL_CONFIGS: Record<string, Partial<ParakeetModelInfo>> = {
   'parakeet-tdt-0.6b-v3-int8': {
     description: 'Fastest default. Stock v3 int8; measured around 22x realtime on the 9070 XT.',
@@ -75,13 +69,6 @@ export const PARAKEET_MODEL_CONFIGS: Record<string, Partial<ParakeetModelInfo>> 
     accuracy: 'High',
     speed: 'Ultra Fast',
     quantization: 'Int8'
-  },
-  'parakeet-tdt-0.6b-v3-fp16': {
-    description: 'Experimental GPU fp16 export. Larger than stock int8; test for quality and robustness.',
-    size_mb: 1276,
-    accuracy: 'High',
-    speed: 'Fast',
-    quantization: 'FP16'
   },
   'parakeet-tdt-0.6b-v3-smoothquant-int8': {
     description: 'Experimental SmoothQuant int8 export aimed at better long-audio accuracy than stock int8.',

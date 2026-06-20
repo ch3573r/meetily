@@ -215,13 +215,6 @@ impl ParakeetEngine {
                 "Fastest default. Stock v3 int8; measured ~22x realtime on the 9070 XT.",
             ),
             (
-                "parakeet-tdt-0.6b-v3-fp16",
-                1276,
-                QuantizationType::FP16,
-                "Experimental (fp16)",
-                "GPU-oriented fp16 export. Larger than int8; useful as an accuracy/robustness candidate.",
-            ),
-            (
                 "parakeet-tdt-0.6b-v3-smoothquant-int8",
                 813,
                 QuantizationType::Int8,
