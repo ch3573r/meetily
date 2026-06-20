@@ -6,8 +6,6 @@ import { FolderOpen, RefreshCw } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import Analytics from "@/lib/analytics";
 import { useConfig, NotificationSettings } from "@/contexts/ConfigContext";
-import { ThemeSettings } from "./ThemeSettings";
-import { KeyboardShortcutsSettings } from "./KeyboardShortcutsSettings";
 import {
   getAutoUpdateCheckEnabled,
   setAutoUpdateCheckEnabled,
@@ -189,11 +187,9 @@ export function PreferenceSettings() {
   const notificationsEnabledValue = notificationsEnabled ?? false;
 
   return (
-    // Ordered most-used first (appearance, notifications), then shortcuts, with
-    // data/advanced (storage) last.
+    // General workspace prefs. Appearance and Shortcuts are their own Settings
+    // sections now, so they aren't duplicated here.
     <div className="space-y-5">
-      <ThemeSettings />
-
       <div className="rounded-md border border-border bg-card p-6 shadow-sm">
         <div className="flex items-center justify-between gap-6">
           <div className="flex min-w-0 items-start gap-3">
@@ -234,8 +230,6 @@ export function PreferenceSettings() {
           />
         </div>
       </div>
-
-      <KeyboardShortcutsSettings />
 
       {/* Data Storage Locations Section */}
       <div className="rounded-md border border-border bg-card p-6 shadow-sm">
