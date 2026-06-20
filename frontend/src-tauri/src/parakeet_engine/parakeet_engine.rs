@@ -566,10 +566,25 @@ impl ParakeetEngine {
         );
 
         // Transcribe using Parakeet model
+        let start = Instant::now();
         let result = model
             .transcribe_samples(audio_data)
             .map_err(|e| anyhow!("Parakeet transcription failed: {}", e))?;
+        let elapsed = start.elapsed();
+        let elapsed_seconds = elapsed.as_secs_f64();
+        let speed = if elapsed_seconds > 0.0 {
+            duration_seconds / elapsed_seconds
+        } else {
+            0.0
+        };
 
+        log::info!(
+            "Parakeet segment: audio={:.1}s elapsed={:.0}ms speed={:.2}x text_len={}",
+            duration_seconds,
+            elapsed.as_secs_f64() * 1000.0,
+            speed,
+            result.text.chars().count()
+        );
         log::debug!("Parakeet transcription result: '{}'", result.text);
 
         Ok(result.text)

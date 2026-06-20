@@ -69,6 +69,8 @@ impl ParakeetModel {
         precision_suffix: Option<&str>,
         use_directml: bool,
     ) -> Result<Self, ParakeetError> {
+        let decoder_use_directml = Self::decoder_directml_enabled(precision_suffix, use_directml);
+
         let encoder = Self::init_session(
             &model_dir,
             "encoder-model",
@@ -81,7 +83,7 @@ impl ParakeetModel {
             "decoder_joint-model",
             None,
             precision_suffix,
-            use_directml,
+            decoder_use_directml,
         )?;
         // Preprocessor is tiny — keep it on CPU to avoid DirectML transfer overhead.
         let preprocessor = Self::init_session(&model_dir, "nemo128", None, None, false)?;
@@ -103,6 +105,44 @@ impl ParakeetModel {
             blank_idx,
             vocab_size,
         })
+    }
+
+    fn decoder_directml_enabled(precision_suffix: Option<&str>, use_directml: bool) -> bool {
+        if !use_directml {
+            return false;
+        }
+
+        match std::env::var("PARAKEET_DECODER_EP") {
+            Ok(value) => match value.trim().to_ascii_lowercase().as_str() {
+                "dml" | "directml" | "gpu" => {
+                    log::info!("Parakeet decoder/joint EP override: DirectML");
+                    true
+                }
+                "cpu" => {
+                    log::info!("Parakeet decoder/joint EP override: CPU");
+                    false
+                }
+                other => {
+                    log::warn!(
+                        "Ignoring invalid PARAKEET_DECODER_EP='{}' (expected cpu or dml)",
+                        other
+                    );
+                    Self::default_decoder_directml_enabled(precision_suffix)
+                }
+            },
+            Err(_) => Self::default_decoder_directml_enabled(precision_suffix),
+        }
+    }
+
+    fn default_decoder_directml_enabled(precision_suffix: Option<&str>) -> bool {
+        if precision_suffix == Some("fp16") {
+            log::info!(
+                "Parakeet: keeping fp16 decoder_joint-model on CPU; DirectML decoder is too fine-grained for the TDT loop"
+            );
+            false
+        } else {
+            true
+        }
     }
 
     fn init_session<P: AsRef<Path>>(
