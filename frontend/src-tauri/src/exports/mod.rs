@@ -18,6 +18,8 @@
 pub mod auth;
 pub mod client;
 pub mod commands;
+pub mod calendar;
+pub mod confluence;
 pub mod discovery;
 pub mod error;
 pub mod exporter;

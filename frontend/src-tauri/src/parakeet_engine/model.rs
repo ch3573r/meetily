@@ -66,15 +66,27 @@ impl Drop for ParakeetModel {
 impl ParakeetModel {
     pub fn new<P: AsRef<Path>>(
         model_dir: P,
-        quantized: bool,
+        precision_suffix: Option<&str>,
         use_directml: bool,
     ) -> Result<Self, ParakeetError> {
-        let encoder =
-            Self::init_session(&model_dir, "encoder-model", None, quantized, use_directml)?;
-        let decoder_joint =
-            Self::init_session(&model_dir, "decoder_joint-model", None, quantized, use_directml)?;
+        let decoder_use_directml = Self::decoder_directml_enabled(precision_suffix, use_directml);
+
+        let encoder = Self::init_session(
+            &model_dir,
+            "encoder-model",
+            None,
+            precision_suffix,
+            use_directml,
+        )?;
+        let decoder_joint = Self::init_session(
+            &model_dir,
+            "decoder_joint-model",
+            None,
+            precision_suffix,
+            decoder_use_directml,
+        )?;
         // Preprocessor is tiny — keep it on CPU to avoid DirectML transfer overhead.
-        let preprocessor = Self::init_session(&model_dir, "nemo128", None, false, false)?;
+        let preprocessor = Self::init_session(&model_dir, "nemo128", None, None, false)?;
 
         let (vocab, blank_idx) = Self::load_vocab(&model_dir)?;
         let vocab_size = vocab.len();
@@ -95,16 +107,55 @@ impl ParakeetModel {
         })
     }
 
+    fn decoder_directml_enabled(precision_suffix: Option<&str>, use_directml: bool) -> bool {
+        if !use_directml {
+            return false;
+        }
+
+        match std::env::var("PARAKEET_DECODER_EP") {
+            Ok(value) => match value.trim().to_ascii_lowercase().as_str() {
+                "dml" | "directml" | "gpu" => {
+                    log::info!("Parakeet decoder/joint EP override: DirectML");
+                    true
+                }
+                "cpu" => {
+                    log::info!("Parakeet decoder/joint EP override: CPU");
+                    false
+                }
+                other => {
+                    log::warn!(
+                        "Ignoring invalid PARAKEET_DECODER_EP='{}' (expected cpu or dml)",
+                        other
+                    );
+                    Self::default_decoder_directml_enabled(precision_suffix)
+                }
+            },
+            Err(_) => Self::default_decoder_directml_enabled(precision_suffix),
+        }
+    }
+
+    fn default_decoder_directml_enabled(precision_suffix: Option<&str>) -> bool {
+        if precision_suffix == Some("fp16") {
+            log::info!(
+                "Parakeet: keeping fp16 decoder_joint-model on CPU; DirectML decoder is too fine-grained for the TDT loop"
+            );
+            false
+        } else {
+            true
+        }
+    }
+
     fn init_session<P: AsRef<Path>>(
         model_dir: P,
         model_name: &str,
         intra_threads: Option<usize>,
-        try_quantized: bool,
+        precision_suffix: Option<&str>,
         use_directml: bool,
     ) -> Result<Session, ParakeetError> {
         // DirectML (Windows GPU) when compiled in and enabled; CPU is always the
-        // fallback so unsupported ops — and non-directml builds — still run.
+        // fallback so unsupported ops and non-directml builds still run.
         let mut providers = Vec::new();
+        let using_directml = cfg!(feature = "directml") && use_directml;
         #[cfg(feature = "directml")]
         if use_directml {
             log::info!("Parakeet: registering DirectML execution provider for {model_name}");
@@ -114,23 +165,17 @@ impl ParakeetModel {
         let _ = use_directml;
         providers.push(CPUExecutionProvider::default().build());
 
-        // Try quantized version first if requested, fallback to regular version
-        let model_filename = if try_quantized {
-            let quantized_name = format!("{}.int8.onnx", model_name);
-            let quantized_path = model_dir.as_ref().join(&quantized_name);
-            if quantized_path.exists() {
-                log::info!(
-                    "Loading quantized Parakeet model from {}...",
-                    quantized_name
-                );
-                quantized_name
+        let model_filename = if let Some(suffix) = precision_suffix {
+            let precision_name = format!("{model_name}.{suffix}.onnx");
+            let precision_path = model_dir.as_ref().join(&precision_name);
+            if precision_path.exists() {
+                log::info!("Loading {suffix} Parakeet model from {}...", precision_name);
+                precision_name
             } else {
-                let regular_name = format!("{}.onnx", model_name);
-                log::info!(
-                    "Quantized model not found, loading regular Parakeet model from {}...",
-                    regular_name
-                );
-                regular_name
+                return Err(ParakeetError::Io(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("{} not found", precision_name),
+                )));
             }
         } else {
             let regular_name = format!("{}.onnx", model_name);
@@ -140,8 +185,17 @@ impl ParakeetModel {
 
         let mut builder = Session::builder()?
             .with_optimization_level(GraphOptimizationLevel::Level3)?
-            .with_execution_providers(providers)?
-            .with_parallel_execution(true)?;
+            .with_execution_providers(providers)?;
+
+        if using_directml {
+            // DirectML requires sequential execution and disabled memory pattern
+            // optimization. Keep CPU sessions parallel for throughput.
+            builder = builder
+                .with_parallel_execution(false)?
+                .with_memory_pattern(false)?;
+        } else {
+            builder = builder.with_parallel_execution(true)?;
+        }
 
         if let Some(threads) = intra_threads {
             builder = builder

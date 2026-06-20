@@ -1,9 +1,12 @@
 //! Tauri commands for Microsoft Graph auth and exports.
 
+use std::path::PathBuf;
+
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 use crate::exports::auth;
+use crate::exports::calendar;
 use crate::exports::client::{GraphClient, RetryPolicy, TokioSleeper};
 use crate::exports::discovery;
 use crate::exports::exporter::{self, ExportContext, OneNoteTarget};
@@ -195,6 +198,57 @@ pub async fn microsoft_connection_status(
     })
 }
 
+// ── Export idempotency ledger persistence ────────────────────────────────
+// The exporter dedupes via an ExportLedger, but that only prevents duplicates
+// if the ledger is loaded before an export and saved after. We key it by
+// meeting id under the app data dir (not the recording folder, which may be
+// gone for imported meetings), so re-exporting the same meeting skips
+// already-created OneNote pages / Planner tasks across sessions.
+
+fn export_ledger_dir<R: Runtime>(app: &AppHandle<R>, meeting_id: &str) -> Result<PathBuf, String> {
+    let base = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to resolve app data dir: {e}"))?;
+    let safe: String = meeting_id
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+        .collect();
+    let safe = if safe.trim_matches('-').is_empty() {
+        "meeting".to_string()
+    } else {
+        safe
+    };
+    Ok(base.join("export-ledgers").join(safe))
+}
+
+/// Load the persisted ledger for a meeting, or a fresh one if absent/unreadable.
+/// A failure here only disables dedupe for this run; it never blocks an export.
+fn load_ledger<R: Runtime>(app: &AppHandle<R>, meeting_id: &str) -> ExportLedger {
+    match export_ledger_dir(app, meeting_id) {
+        Ok(dir) => ExportLedger::load_or_new(&dir, meeting_id).unwrap_or_else(|e| {
+            log::warn!("Export ledger load failed ({e}); dedupe disabled this run");
+            ExportLedger::new(meeting_id)
+        }),
+        Err(e) => {
+            log::warn!("Export ledger dir unresolved ({e}); dedupe disabled this run");
+            ExportLedger::new(meeting_id)
+        }
+    }
+}
+
+/// Best-effort persist; a save failure only risks a future duplicate export.
+fn save_ledger<R: Runtime>(app: &AppHandle<R>, meeting_id: &str, ledger: &ExportLedger) {
+    match export_ledger_dir(app, meeting_id) {
+        Ok(dir) => {
+            if let Err(e) = ledger.save(&dir) {
+                log::warn!("Export ledger save failed ({e}); future runs may re-export");
+            }
+        }
+        Err(e) => log::warn!("Export ledger dir unresolved ({e}); not persisted"),
+    }
+}
+
 // ── Export commands ──────────────────────────────────────────────────────
 
 async fn get_token_and_context(
@@ -222,7 +276,8 @@ async fn get_token_and_context(
 }
 
 #[tauri::command]
-pub async fn export_to_onenote(
+pub async fn export_to_onenote<R: Runtime>(
+    app: AppHandle<R>,
     state: tauri::State<'_, MicrosoftAuthState>,
     meeting_id: String,
     meeting_title: String,
@@ -240,7 +295,7 @@ pub async fn export_to_onenote(
 
     let transport = ReqwestGraphTransport::new();
     let client = GraphClient::new(transport, TokioSleeper, RetryPolicy::default());
-    let mut ledger = ExportLedger::new(&meeting_id);
+    let mut ledger = load_ledger(&app, &meeting_id);
 
     let ctx = ExportContext {
         tenant_id: &tenant_id,
@@ -256,6 +311,7 @@ pub async fn export_to_onenote(
         &ctx,
     )
     .await;
+    save_ledger(&app, &meeting_id, &ledger);
 
     if report.connection_state == Some(MicrosoftConnectionState::Expired) {
         let mut inner = state.inner.write().await;
@@ -266,7 +322,8 @@ pub async fn export_to_onenote(
 }
 
 #[tauri::command]
-pub async fn export_to_planner(
+pub async fn export_to_planner<R: Runtime>(
+    app: AppHandle<R>,
     state: tauri::State<'_, MicrosoftAuthState>,
     meeting_id: String,
     meeting_title: String,
@@ -285,7 +342,7 @@ pub async fn export_to_planner(
 
     let transport = ReqwestGraphTransport::new();
     let client = GraphClient::new(transport, TokioSleeper, RetryPolicy::default());
-    let mut ledger = ExportLedger::new(&meeting_id);
+    let mut ledger = load_ledger(&app, &meeting_id);
     let destination = PlannerDestination { plan_id, bucket_id };
 
     let ctx = ExportContext {
@@ -294,9 +351,10 @@ pub async fn export_to_planner(
         bearer_token: &token,
     };
 
-    let report = exporter::export_planner(&client, &mut ledger, &meeting_export, &destination, &ctx)
-        .await
-        .map_err(|e| e.to_string())?;
+    let result = exporter::export_planner(&client, &mut ledger, &meeting_export, &destination, &ctx)
+        .await;
+    save_ledger(&app, &meeting_id, &ledger);
+    let report = result.map_err(|e| e.to_string())?;
 
     if report.connection_state == Some(MicrosoftConnectionState::Expired) {
         let mut inner = state.inner.write().await;
@@ -319,7 +377,8 @@ pub fn summary_has_action_items(markdown: String) -> bool {
 }
 
 #[tauri::command]
-pub async fn export_meeting_markdown_to_onenote(
+pub async fn export_meeting_markdown_to_onenote<R: Runtime>(
+    app: AppHandle<R>,
     state: tauri::State<'_, MicrosoftAuthState>,
     meeting_id: String,
     meeting_title: String,
@@ -337,7 +396,7 @@ pub async fn export_meeting_markdown_to_onenote(
 
     let transport = ReqwestGraphTransport::new();
     let client = GraphClient::new(transport, TokioSleeper, RetryPolicy::default());
-    let mut ledger = ExportLedger::new(&meeting_id);
+    let mut ledger = load_ledger(&app, &meeting_id);
 
     let ctx = ExportContext {
         tenant_id: &tenant_id,
@@ -353,6 +412,7 @@ pub async fn export_meeting_markdown_to_onenote(
         &ctx,
     )
     .await;
+    save_ledger(&app, &meeting_id, &ledger);
 
     if report.connection_state == Some(MicrosoftConnectionState::Expired) {
         let mut inner = state.inner.write().await;
@@ -388,7 +448,8 @@ fn sanitize_onenote_section_name(raw: &str) -> String {
 /// enumeration limit (error 10008), so this works for notebooks whose OneDrive
 /// library is too large to list sections from.
 #[tauri::command]
-pub async fn export_meeting_to_onenote_section(
+pub async fn export_meeting_to_onenote_section<R: Runtime>(
+    app: AppHandle<R>,
     state: tauri::State<'_, MicrosoftAuthState>,
     meeting_id: String,
     meeting_title: String,
@@ -403,7 +464,11 @@ pub async fn export_meeting_to_onenote_section(
     let transport = ReqwestGraphTransport::new();
     let client = GraphClient::new(transport, TokioSleeper, RetryPolicy::default());
 
-    let section = discovery::create_section(&client, &token, &notebook_id, &section_name).await?;
+    // Reuse an existing same-named section instead of creating a fresh one each
+    // time: the section id feeds the OneNote dedupe key, so a new section per
+    // export would defeat the idempotency ledger and duplicate the page.
+    let (section, section_created) =
+        discovery::ensure_section(&client, &token, &notebook_id, &section_name).await?;
 
     let meeting_export = crate::exports::markdown_notes::meeting_export_for_onenote(
         &meeting_id,
@@ -412,7 +477,7 @@ pub async fn export_meeting_to_onenote_section(
         &markdown,
     );
 
-    let mut ledger = ExportLedger::new(&meeting_id);
+    let mut ledger = load_ledger(&app, &meeting_id);
     let ctx = ExportContext {
         tenant_id: &tenant_id,
         user_id: &user_id,
@@ -423,10 +488,23 @@ pub async fn export_meeting_to_onenote_section(
         &client,
         &mut ledger,
         &meeting_export,
-        &OneNoteTarget { section_id: section.id },
+        &OneNoteTarget { section_id: section.id.clone() },
         &ctx,
     )
     .await;
+    save_ledger(&app, &meeting_id, &ledger);
+
+    // If we created the section just now and no page landed in it, delete it so a
+    // failed export doesn't leave an empty orphan section behind. Only ever
+    // delete a section we created this call — never a pre-existing one we reused.
+    if section_created && !report.items.iter().any(|i| i.status.is_terminal_success()) {
+        if let Err(e) = discovery::delete_section(&client, &token, &section.id).await {
+            log::warn!(
+                "OneNote: couldn't clean up empty section {} after a failed export: {e}",
+                section.id
+            );
+        }
+    }
 
     if report.connection_state == Some(MicrosoftConnectionState::Expired) {
         let mut inner = state.inner.write().await;
@@ -437,7 +515,8 @@ pub async fn export_meeting_to_onenote_section(
 }
 
 #[tauri::command]
-pub async fn export_meeting_markdown_to_planner(
+pub async fn export_meeting_markdown_to_planner<R: Runtime>(
+    app: AppHandle<R>,
     state: tauri::State<'_, MicrosoftAuthState>,
     meeting_id: String,
     meeting_title: String,
@@ -460,7 +539,7 @@ pub async fn export_meeting_markdown_to_planner(
 
     let transport = ReqwestGraphTransport::new();
     let client = GraphClient::new(transport, TokioSleeper, RetryPolicy::default());
-    let mut ledger = ExportLedger::new(&meeting_id);
+    let mut ledger = load_ledger(&app, &meeting_id);
     let destination = PlannerDestination { plan_id, bucket_id };
 
     let ctx = ExportContext {
@@ -469,9 +548,10 @@ pub async fn export_meeting_markdown_to_planner(
         bearer_token: &token,
     };
 
-    let report = exporter::export_planner(&client, &mut ledger, &meeting_export, &destination, &ctx)
-        .await
-        .map_err(|e| e.to_string())?;
+    let result = exporter::export_planner(&client, &mut ledger, &meeting_export, &destination, &ctx)
+        .await;
+    save_ledger(&app, &meeting_id, &ledger);
+    let report = result.map_err(|e| e.to_string())?;
 
     if report.connection_state == Some(MicrosoftConnectionState::Expired) {
         let mut inner = state.inner.write().await;
@@ -528,6 +608,12 @@ pub async fn preview_planner_tasks(
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlannerTaskInput {
+    /// The preview's stable `local_id` for this task, carried back from
+    /// `preview_planner_tasks`. It feeds the Planner dedupe key, so it must
+    /// survive reordering/deselection; regenerating it per bucket would shift
+    /// the key and create duplicate tasks on re-export.
+    #[serde(default)]
+    pub local_id: String,
     pub title: String,
     pub owner: Option<String>,
     pub due_date: Option<String>,
@@ -541,7 +627,8 @@ pub struct PlannerTaskInput {
 /// grouped by bucket and created through the normal Planner exporter (dedupe +
 /// retries per bucket), then the per-bucket reports are merged.
 #[tauri::command]
-pub async fn export_selected_planner_tasks(
+pub async fn export_selected_planner_tasks<R: Runtime>(
+    app: AppHandle<R>,
     state: tauri::State<'_, MicrosoftAuthState>,
     meeting_id: String,
     meeting_title: String,
@@ -575,18 +662,25 @@ pub async fn export_selected_planner_tasks(
 
     let mut merged_items: Vec<ExportItemResult> = Vec::new();
     let mut expired = false;
+    // One ledger for the whole meeting, shared across buckets, so re-exporting
+    // the same reviewed tasks skips ones already created in Planner.
+    let mut ledger = load_ledger(&app, &meeting_id);
 
     for (bucket_id, group) in by_bucket {
         let mut action_items: Vec<crate::exports::model::ExportActionItem> = group
             .into_iter()
             .map(|t| crate::exports::model::ExportActionItem {
-                local_action_id: String::new(),
+                // Preserve the preview's local id so the dedupe key is stable
+                // across reordering/deselection; do not regenerate per bucket.
+                local_action_id: t.local_id,
                 task: t.title,
                 owner: t.owner,
                 due_date: t.due_date,
                 details: t.details,
             })
             .collect();
+        // Fallback only: fills ids for any task that arrived without one (older
+        // clients); preserves the preview ids set above.
         crate::exports::planner::ensure_local_action_ids(&mut action_items);
 
         let meeting_export = crate::exports::model::MeetingExport {
@@ -600,22 +694,28 @@ pub async fn export_selected_planner_tasks(
             summary_html: None,
         };
 
-        let mut ledger = ExportLedger::new(&meeting_id);
         let destination = PlannerDestination {
             plan_id: plan_id.clone(),
             bucket_id,
         };
 
-        let report =
+        let result =
             exporter::export_planner(&client, &mut ledger, &meeting_export, &destination, &ctx)
-                .await
-                .map_err(|e| e.to_string())?;
+                .await;
+        let report = match result {
+            Ok(report) => report,
+            Err(e) => {
+                save_ledger(&app, &meeting_id, &ledger);
+                return Err(e.to_string());
+            }
+        };
         if report.connection_state == Some(MicrosoftConnectionState::Expired) {
             expired = true;
         }
         let resp: ExportReportResponse = report.into();
         merged_items.extend(resp.items);
     }
+    save_ledger(&app, &meeting_id, &ledger);
 
     if expired {
         let mut inner = state.inner.write().await;
@@ -654,6 +754,30 @@ pub async fn list_onenote_notebooks(
     let transport = ReqwestGraphTransport::new();
     let client = GraphClient::new(transport, TokioSleeper, RetryPolicy::default());
     discovery::list_notebooks(&client, &token).await
+}
+
+/// Calendar events within an explicit ISO-8601 UTC window (recurrences expanded).
+#[tauri::command]
+pub async fn list_calendar_events(
+    state: tauri::State<'_, MicrosoftAuthState>,
+    start_iso: String,
+    end_iso: String,
+) -> Result<Vec<calendar::CalendarEvent>, String> {
+    let (token, _, _) = get_token_and_context(&state).await?;
+    let transport = ReqwestGraphTransport::new();
+    let client = GraphClient::new(transport, TokioSleeper, RetryPolicy::default());
+    calendar::list_calendar_events(&client, &token, &start_iso, &end_iso).await
+}
+
+/// The meeting happening now, else the next one within ~12h (with attendees).
+#[tauri::command]
+pub async fn current_or_next_meeting(
+    state: tauri::State<'_, MicrosoftAuthState>,
+) -> Result<Option<calendar::CalendarEvent>, String> {
+    let (token, _, _) = get_token_and_context(&state).await?;
+    let transport = ReqwestGraphTransport::new();
+    let client = GraphClient::new(transport, TokioSleeper, RetryPolicy::default());
+    calendar::current_or_next_meeting(&client, &token).await
 }
 
 /// OneNote notebook names reject `?*\/:<>|'#` and must be 128 characters or

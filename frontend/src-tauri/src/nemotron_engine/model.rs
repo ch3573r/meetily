@@ -89,13 +89,57 @@ impl NemotronModel {
         let dir = model_dir.as_ref();
         // The encoder is the heavy part. fp16 (cpu_capable) tries DirectML with a
         // CPU-vs-DML self-test and CPU fallback; int8 is DirectML(GPU)-only. The
-        // decoder/joint are tiny and run on CPU for both (int8's are MatMul-based,
-        // not ConvInteger, so the CPU EP handles them).
+        // decoder/joint default to CPU for both variants (int8's are MatMul-based,
+        // not ConvInteger, so the CPU EP handles them). fp16 can opt into a
+        // DirectML decoder/joint probe by default on fp16 DirectML builds. The
+        // self-test keeps CPU as the correctness fallback, and
+        // NEMOTRON_DECODE_EP=cpu remains the opt-out for benchmarking.
         let encoder = Self::load_encoder(dir, cpu_capable)?;
-        let decoder = Self::init_session(dir, "decoder.onnx")?;
-        let joint = Self::init_session(dir, "joint.onnx")?;
+        // Variant-aware decoder/joint CPU threading. The joint is a large
+        // 640x13088 matmul called hundreds of times per segment: int8 weights run
+        // fast single-threaded, but fp16 weights upconvert to fp32 and need a
+        // small CPU thread pool. On the 7900X3D, ORT auto oversubscribes this
+        // path; 4 threads is the measured knee. Override either variant with
+        // NEMOTRON_DECODE_THREADS=auto|1|2|4|8.
+        let default_decode_threads = if cpu_capable { Some(4) } else { Some(1) };
+        let decode_threads: Option<usize> =
+            match std::env::var("NEMOTRON_DECODE_THREADS").ok().as_deref() {
+                Some("auto") => None,
+                Some(n) => n
+                    .parse::<usize>()
+                    .ok()
+                    .filter(|&t| t >= 1)
+                    .or(default_decode_threads),
+                None => default_decode_threads,
+            };
+        let decode_mode = match decode_threads {
+            None => "auto threads".to_string(),
+            Some(1) => "1 thread".to_string(),
+            Some(n) => format!("{n} threads"),
+        };
+        let (decoder, joint) =
+            Self::load_decode_sessions(dir, cpu_capable, decode_threads, &decode_mode)?;
         let vocab = Self::load_vocab(dir)?;
-        let lang_slots = Self::load_lang_slots(dir).unwrap_or_default();
+        // Degrading to an empty slot map is survivable (every language falls back
+        // to DEFAULT_LANG_SLOT), but it silently ignores the user's language
+        // selection — so make the failure visible rather than swallowing it.
+        let lang_slots = match Self::load_lang_slots(dir) {
+            Ok(slots) if !slots.is_empty() => slots,
+            Ok(_) => {
+                log::warn!(
+                    "Nemotron: languages.json had no usable promptDictionary entries; \
+                     language selection will be ignored (all audio uses default slot {DEFAULT_LANG_SLOT})"
+                );
+                HashMap::new()
+            }
+            Err(e) => {
+                log::warn!(
+                    "Nemotron: failed to load languages.json ({e}); language selection \
+                     will be ignored (all audio uses default slot {DEFAULT_LANG_SLOT})"
+                );
+                HashMap::new()
+            }
+        };
         log::info!(
             "Loaded Nemotron: {} vocab tokens, {} language slots, blank_id={}",
             vocab.len(),
@@ -129,32 +173,36 @@ impl NemotronModel {
         })
     }
 
-    /// Load the encoder on DirectML (GPU), probing graph-optimization levels
-    /// from fastest (Level3) to slowest (Disable) and using the FIRST one whose
-    /// output matches CPU (Cipher's self-test). Full optimization collapses this
-    /// encoder on DML, but a lower level is usually both correct AND much faster
-    /// than fully-disabled (fewer, fused kernels → real GPU utilization). Falls
-    /// back to CPU if no level matches.
+    /// Load the encoder. fp16 builds a CPU baseline and uses DirectML only when a
+    /// graph-opt level is both correct and measurably faster, falling back to
+    /// CPU. int8 prefers DirectML (its `ConvInteger` encoder hits a graph-opt
+    /// fusion bug at full optimization, so levels are probed high→low), but is no
+    /// longer assumed GPU-only: when DirectML is unavailable or every level
+    /// fails, it falls back to a CPU probe, reporting `CpuUnsupported` only when
+    /// neither path can run the encoder.
     fn load_encoder(dir: &Path, cpu_capable: bool) -> Result<Session, NemotronError> {
-        // Benchmark lever (fp16 only): NEMOTRON_FORCE_CPU=1 skips the DirectML
-        // probe so the same audio can be timed CPU-only vs GPU for an honest RTF
-        // comparison. int8's ConvInteger encoder has no CPU kernel, so the lever
-        // doesn't apply to it.
-        if cpu_capable
-            && std::env::var("NEMOTRON_FORCE_CPU").is_ok_and(|v| !v.is_empty() && v != "0")
-        {
+        let path = dir.join("encoder.onnx");
+
+        // Benchmark lever: NEMOTRON_FORCE_CPU=1 skips DirectML so the same audio
+        // can be timed CPU-only vs GPU for an honest RTF comparison. It now
+        // applies to int8 too (which has a CPU probe path); if int8 can't run on
+        // the CPU EP the load fails — the intended "is CPU viable?" signal here.
+        if std::env::var("NEMOTRON_FORCE_CPU").is_ok_and(|v| !v.is_empty() && v != "0") {
             log::info!("Nemotron encoder: NEMOTRON_FORCE_CPU set — forcing CPU execution");
-            return Self::init_session(dir, "encoder.onnx");
+            if cpu_capable {
+                return Self::init_session(dir, "encoder.onnx");
+            }
+            return Self::try_cpu_encoder(&path).ok_or(NemotronError::CpuUnsupported);
         }
+
         #[cfg(feature = "directml")]
         {
-            let path = dir.join("encoder.onnx");
             use GraphOptimizationLevel as G;
-            // int8: the ConvInteger encoder can't build on the CPU EP, so there's
-            // no CPU baseline to diff against and no CPU fallback. Probe DirectML
-            // graph-opt levels and accept the first whose ramp-probe output isn't
-            // collapsed — a correct encoder peaks ~8, the graph-opt fusion bug
-            // collapses it to ~0.3. GPU-only: error out if every level collapses.
+            // int8: prefer DirectML — its ConvInteger encoder hits a graph-opt
+            // fusion bug at full optimization, so probe levels high→low and accept
+            // the first whose ramp-probe output isn't collapsed (a correct encoder
+            // peaks ~8; the bug collapses it to ~0.3). No longer GPU-only: if every
+            // level fails, fall back to a CPU probe before giving up.
             if !cpu_capable {
                 for opt in [G::Level3, G::Level2, G::Level1, G::Disable] {
                     let lvl = format!("{opt:?}");
@@ -164,7 +212,7 @@ impl NemotronModel {
                                 let pmax = probe.iter().fold(0.0f32, |m, &v| m.max(v.abs()));
                                 if pmax > 2.0 {
                                     log::info!(
-                                        "Nemotron encoder: DirectML (GPU) @ graph_opt={lvl}, probe |max|={pmax:.3} (int8, GPU-only)"
+                                        "Nemotron encoder: DirectML (GPU) @ graph_opt={lvl}, probe |max|={pmax:.3} (int8)"
                                     );
                                     return Ok(session);
                                 }
@@ -181,7 +229,13 @@ impl NemotronModel {
                         ),
                     }
                 }
-                log::error!("Nemotron int8 encoder: no DirectML graph_opt level produced valid output (int8 is GPU-only, no CPU fallback)");
+                log::warn!("Nemotron int8 encoder: no DirectML graph_opt level produced valid output; trying CPU");
+                if let Some(session) = Self::try_cpu_encoder(&path) {
+                    return Ok(session);
+                }
+                log::error!(
+                    "Nemotron int8 encoder: neither DirectML nor the CPU EP could run this encoder"
+                );
                 return Err(NemotronError::CpuUnsupported);
             }
 
@@ -193,27 +247,53 @@ impl NemotronModel {
                 match Self::build_dml_session(&path, opt) {
                     Ok(mut session) => {
                         if Self::encoder_self_test(&mut session, &mut cpu_session) {
-                            log::info!(
-                                "Nemotron encoder: DirectML (GPU) @ graph_opt={lvl}, self-test passed"
+                            // The self-test only proves the DML output is correct,
+                            // not that the heavy work runs on the GPU: ORT silently
+                            // places unsupported nodes on the CPU EP, so a "passing"
+                            // DML session can still be mostly CPU. A correct session
+                            // is not enough — require a measured speedup over the CPU
+                            // baseline before trusting DirectML, otherwise the DML
+                            // session only adds overhead over the CPU one we already
+                            // have. Below threshold (or an inconclusive probe), keep
+                            // probing lower graph-opt levels and fall back to CPU.
+                            match Self::encoder_speed_ratio(&mut session, &mut cpu_session) {
+                                Some(ratio) if ratio >= 1.15 => {
+                                    log::info!(
+                                        "Nemotron encoder: DirectML GPU-accelerated @ graph_opt={lvl} (self-test passed, ~{ratio:.2}x CPU)"
+                                    );
+                                    return Ok(session);
+                                }
+                                Some(ratio) => log::warn!(
+                                    "Nemotron encoder: DirectML @ graph_opt={lvl} self-test passed but only ~{ratio:.2}x CPU — ORT likely placed the heavy ops on the CPU EP; not using DirectML at this level"
+                                ),
+                                None => log::warn!(
+                                    "Nemotron encoder: DirectML @ graph_opt={lvl} self-test passed but the speed probe was inconclusive; can't confirm GPU acceleration, not using DirectML at this level"
+                                ),
+                            }
+                        } else {
+                            log::warn!(
+                                "Nemotron encoder: DirectML @ graph_opt={lvl} mismatched CPU; trying a lower level"
                             );
-                            return Ok(session);
                         }
-                        log::warn!(
-                            "Nemotron encoder: DirectML @ graph_opt={lvl} mismatched CPU; trying a lower level"
-                        );
                     }
                     Err(e) => {
                         log::warn!("Nemotron encoder: DirectML init @ graph_opt={lvl} failed ({e})")
                     }
                 }
             }
-            log::warn!("Nemotron encoder: no DirectML graph_opt level matched CPU; using CPU");
+            log::warn!("Nemotron encoder: no DirectML graph_opt level was both correct and measurably GPU-accelerated; using CPU");
             return Ok(cpu_session);
         }
-        // Built without DirectML: fp16 runs on CPU; int8 cannot.
+        // Built without DirectML: fp16 runs on CPU; int8 falls back to a CPU probe
+        // (some ORT builds can run its ConvInteger encoder on the CPU EP).
         #[cfg(not(feature = "directml"))]
         {
             if !cpu_capable {
+                log::info!("Nemotron int8 encoder: DirectML not in this build — probing CPU");
+                if let Some(session) = Self::try_cpu_encoder(&path) {
+                    return Ok(session);
+                }
+                log::error!("Nemotron int8 encoder: CPU EP cannot run this encoder and DirectML isn't in this build");
                 return Err(NemotronError::CpuUnsupported);
             }
             let session = Self::init_session(dir, "encoder.onnx")?;
@@ -277,14 +357,46 @@ impl NemotronModel {
         max_abs_err <= 0.1 && cosine >= 0.995 && cand_max > 0.5
     }
 
+    /// Wall-time ratio cpu/dml of repeated encoder probe runs. >1 means the DML
+    /// session is genuinely faster than CPU (real GPU offload); ~1 (or <1) means
+    /// ORT placed most ops on the CPU EP and the "GPU" session isn't accelerating.
+    /// Returns None if either side errors. A few iterations is enough to clear
+    /// one-shot init noise without slowing model load meaningfully.
     #[cfg(feature = "directml")]
+    fn encoder_speed_ratio(dml: &mut Session, cpu: &mut Session) -> Option<f32> {
+        use std::time::Instant;
+        const ITERS: u32 = 3;
+        // One warm-up each so first-run graph/kernel init isn't timed.
+        Self::encoder_probe_output(dml).ok()?;
+        Self::encoder_probe_output(cpu).ok()?;
+
+        let cpu_start = Instant::now();
+        for _ in 0..ITERS {
+            Self::encoder_probe_output(cpu).ok()?;
+        }
+        let cpu_time = cpu_start.elapsed().as_secs_f32();
+
+        let dml_start = Instant::now();
+        for _ in 0..ITERS {
+            Self::encoder_probe_output(dml).ok()?;
+        }
+        let dml_time = dml_start.elapsed().as_secs_f32();
+
+        if dml_time > 0.0 {
+            Some(cpu_time / dml_time)
+        } else {
+            None
+        }
+    }
+
+    // Not DirectML-gated: also used by the CPU int8 encoder probe, which runs in
+    // both DirectML and CPU-only builds.
     fn encoder_probe_output(enc: &mut Session) -> Result<Vec<f32>, NemotronError> {
         let mut audio = Array::zeros((1, MEL_BINS, CHUNK_MEL_FRAMES));
         for b in 0..MEL_BINS {
             for t in 0..CHUNK_MEL_FRAMES {
-                audio[[0, b, t]] =
-                    (b as f32 / (MEL_BINS - 1) as f32) * -14.0
-                        + (t as f32 / (CHUNK_MEL_FRAMES - 1) as f32) * 2.0;
+                audio[[0, b, t]] = (b as f32 / (MEL_BINS - 1) as f32) * -14.0
+                    + (t as f32 / (CHUNK_MEL_FRAMES - 1) as f32) * 2.0;
             }
         }
         let audio = audio.into_dyn();
@@ -294,8 +406,12 @@ impl NemotronModel {
         mask[[0, 0]] = 1.0;
         let mask = mask.into_dyn();
         let pre = ArrayD::<f32>::zeros(IxDyn(&[1, MEL_BINS, PRE_CACHE_SIZE]));
-        let clc =
-            ArrayD::<f32>::zeros(IxDyn(&[ENCODER_LAYERS, 1, ATTN_LEFT_CONTEXT, ENCODER_HIDDEN]));
+        let clc = ArrayD::<f32>::zeros(IxDyn(&[
+            ENCODER_LAYERS,
+            1,
+            ATTN_LEFT_CONTEXT,
+            ENCODER_HIDDEN,
+        ]));
         let clt =
             ArrayD::<f32>::zeros(IxDyn(&[ENCODER_LAYERS, 1, ENCODER_HIDDEN, CONV_CACHE_SIZE]));
         let out = enc.run(inputs![
@@ -314,13 +430,303 @@ impl NemotronModel {
         Ok(e.iter().copied().collect())
     }
 
-    /// CPU session: full graph optimization + parallel execution.
+    /// CPU session: full graph optimization + parallel execution. Used for the
+    /// fp16 encoder, whose single per-window call is heavy enough to benefit.
     fn build_cpu_session(path: &Path) -> Result<Session, NemotronError> {
         let builder = Session::builder()?
             .with_optimization_level(GraphOptimizationLevel::Level3)?
             .with_execution_providers([CPUExecutionProvider::default().build()])?
             .with_parallel_execution(true)?;
         Ok(builder.commit_from_file(path)?)
+    }
+
+    /// CPU session for the decoder/joint graphs with a caller-chosen thread count.
+    /// `None` leaves ORT's defaults (auto ≈ cores), which the large fp16 joint
+    /// matmul needs (fp16 weights upconvert to fp32 on CPU, so a single thread
+    /// serializes it); `Some(n)` pins intra/inter threads (int8 uses 1 — its
+    /// weights run fast single-threaded via Zen VNNI/AVX). Sequential execution
+    /// either way — the graphs are linear, so inter-op parallelism only adds
+    /// overhead.
+    fn build_decode_session(path: &Path, threads: Option<usize>) -> Result<Session, NemotronError> {
+        let mut builder = Session::builder()?
+            .with_optimization_level(GraphOptimizationLevel::Level3)?
+            .with_execution_providers([CPUExecutionProvider::default().build()])?
+            .with_parallel_execution(false)?;
+        if let Some(t) = threads {
+            builder = builder.with_intra_threads(t)?.with_inter_threads(t)?;
+        }
+        Ok(builder.commit_from_file(path)?)
+    }
+
+    fn load_decode_sessions(
+        dir: &Path,
+        cpu_capable: bool,
+        threads: Option<usize>,
+        cpu_mode: &str,
+    ) -> Result<(Session, Session), NemotronError> {
+        let decoder_path = dir.join("decoder.onnx");
+        let joint_path = dir.join("joint.onnx");
+        let variant = if cpu_capable { "fp16" } else { "int8" };
+        let decode_ep = std::env::var("NEMOTRON_DECODE_EP")
+            .unwrap_or_else(|_| Self::default_decode_ep(cpu_capable))
+            .to_ascii_lowercase();
+
+        #[cfg(feature = "directml")]
+        {
+            let wants_dml = matches!(decode_ep.as_str(), "dml" | "directml" | "gpu");
+            if wants_dml && cpu_capable {
+                log::info!(
+                    "Nemotron decoder/joint: DirectML requested for fp16 (CPU fallback {cpu_mode})"
+                );
+                let mut cpu_decoder = Self::build_decode_session(&decoder_path, threads)?;
+                let mut cpu_joint = Self::build_decode_session(&joint_path, threads)?;
+                match (
+                    Self::build_dml_session(&decoder_path, GraphOptimizationLevel::Level3),
+                    Self::build_dml_session(&joint_path, GraphOptimizationLevel::Level3),
+                ) {
+                    (Ok(mut dml_decoder), Ok(mut dml_joint)) => {
+                        let decoder_ok =
+                            Self::decoder_self_test(&mut dml_decoder, &mut cpu_decoder);
+                        let joint_ok = Self::joint_self_test(&mut dml_joint, &mut cpu_joint);
+                        if decoder_ok && joint_ok {
+                            log::info!(
+                                "Nemotron decoder/joint: DirectML enabled for fp16 (self-test passed)"
+                            );
+                            return Ok((dml_decoder, dml_joint));
+                        }
+                        log::warn!(
+                            "Nemotron decoder/joint: DirectML self-test failed; using CPU {cpu_mode} (fp16)"
+                        );
+                        return Ok((cpu_decoder, cpu_joint));
+                    }
+                    (decoder_result, joint_result) => {
+                        if let Err(e) = decoder_result {
+                            log::warn!("Nemotron decoder: DirectML init failed: {e}");
+                        }
+                        if let Err(e) = joint_result {
+                            log::warn!("Nemotron joint: DirectML init failed: {e}");
+                        }
+                        log::warn!(
+                            "Nemotron decoder/joint: DirectML unavailable; using CPU {cpu_mode} ({variant})"
+                        );
+                        return Ok((cpu_decoder, cpu_joint));
+                    }
+                }
+            } else if wants_dml && !cpu_capable {
+                log::warn!(
+                    "Nemotron decoder/joint: NEMOTRON_DECODE_EP=dml ignored for int8; using CPU {cpu_mode}"
+                );
+            } else if !matches!(decode_ep.as_str(), "" | "cpu") {
+                log::warn!(
+                    "Nemotron decoder/joint: unknown NEMOTRON_DECODE_EP='{decode_ep}', using CPU {cpu_mode} ({variant})"
+                );
+            }
+        }
+
+        #[cfg(not(feature = "directml"))]
+        {
+            if matches!(decode_ep.as_str(), "dml" | "directml" | "gpu") {
+                log::warn!(
+                    "Nemotron decoder/joint: NEMOTRON_DECODE_EP=dml requested, but this build has no DirectML feature; using CPU {cpu_mode} ({variant})"
+                );
+            } else if !matches!(decode_ep.as_str(), "" | "cpu") {
+                log::warn!(
+                    "Nemotron decoder/joint: unknown NEMOTRON_DECODE_EP='{decode_ep}', using CPU {cpu_mode} ({variant})"
+                );
+            }
+        }
+
+        log::info!("Nemotron decoder/joint: CPU {cpu_mode} ({variant})");
+        let decoder = Self::build_decode_session(&decoder_path, threads)?;
+        let joint = Self::build_decode_session(&joint_path, threads)?;
+        Ok((decoder, joint))
+    }
+
+    fn default_decode_ep(cpu_capable: bool) -> String {
+        if std::env::var("NEMOTRON_FORCE_CPU").is_ok_and(|v| !v.is_empty() && v != "0") {
+            return "cpu".to_string();
+        }
+        #[cfg(feature = "directml")]
+        {
+            if cpu_capable {
+                return "dml".to_string();
+            }
+        }
+        "cpu".to_string()
+    }
+
+    #[cfg(feature = "directml")]
+    fn decoder_self_test(candidate: &mut Session, baseline: &mut Session) -> bool {
+        let base = match Self::decoder_probe_output(baseline) {
+            Ok(v) => v,
+            Err(e) => {
+                log::warn!("Nemotron decoder CPU self-test run failed: {e}");
+                return false;
+            }
+        };
+        let cand = match Self::decoder_probe_output(candidate) {
+            Ok(v) => v,
+            Err(e) => {
+                log::warn!("Nemotron decoder DirectML self-test run failed: {e}");
+                return false;
+            }
+        };
+        Self::compare_probe_outputs("decoder", &base, &cand, 0.05, 0.999)
+    }
+
+    #[cfg(feature = "directml")]
+    fn joint_self_test(candidate: &mut Session, baseline: &mut Session) -> bool {
+        let base = match Self::joint_probe_output(baseline) {
+            Ok(v) => v,
+            Err(e) => {
+                log::warn!("Nemotron joint CPU self-test run failed: {e}");
+                return false;
+            }
+        };
+        let cand = match Self::joint_probe_output(candidate) {
+            Ok(v) => v,
+            Err(e) => {
+                log::warn!("Nemotron joint DirectML self-test run failed: {e}");
+                return false;
+            }
+        };
+        Self::compare_probe_outputs("joint", &base, &cand, 0.5, 0.995)
+    }
+
+    #[cfg(feature = "directml")]
+    fn decoder_probe_output(decoder: &mut Session) -> Result<Vec<f32>, NemotronError> {
+        let tok = Array2::<i64>::from_shape_vec((1, 1), vec![BLANK_ID as i64])?.into_dyn();
+        let mut h = ArrayD::<f32>::zeros(IxDyn(&[DECODER_LAYERS, 1, DECODER_HIDDEN]));
+        let mut c = ArrayD::<f32>::zeros(IxDyn(&[DECODER_LAYERS, 1, DECODER_HIDDEN]));
+        for layer in 0..DECODER_LAYERS {
+            for k in 0..DECODER_HIDDEN {
+                h[[layer, 0, k]] = ((k % 31) as f32 - 15.0) * 0.001 + layer as f32 * 0.01;
+                c[[layer, 0, k]] = ((k % 17) as f32 - 8.0) * 0.001 - layer as f32 * 0.005;
+            }
+        }
+        let outputs = decoder.run(inputs![
+            "token" => TensorRef::from_array_view(tok.view())?,
+            "h" => TensorRef::from_array_view(h.view())?,
+            "c" => TensorRef::from_array_view(c.view())?,
+        ])?;
+
+        let mut values = Vec::with_capacity(DECODER_HIDDEN * 5);
+        for name in ["decoder_output", "h_out", "c_out"] {
+            let arr = outputs
+                .get(name)
+                .ok_or_else(|| NemotronError::OutputNotFound(name.into()))?
+                .try_extract_array::<f32>()?;
+            values.extend(arr.iter().copied());
+        }
+        Ok(values)
+    }
+
+    #[cfg(feature = "directml")]
+    fn joint_probe_output(joint: &mut Session) -> Result<Vec<f32>, NemotronError> {
+        let mut enc = Array::zeros((1, 1, ENCODER_HIDDEN)).into_dyn();
+        let mut dec = Array::zeros((1, 1, DECODER_HIDDEN)).into_dyn();
+        for k in 0..ENCODER_HIDDEN {
+            enc[[0, 0, k]] = ((k % 101) as f32 - 50.0) * 0.002;
+        }
+        for k in 0..DECODER_HIDDEN {
+            dec[[0, 0, k]] = ((k % 67) as f32 - 33.0) * 0.002;
+        }
+        let outputs = joint.run(inputs![
+            "encoder_output" => TensorRef::from_array_view(enc.view())?,
+            "decoder_output" => TensorRef::from_array_view(dec.view())?,
+        ])?;
+        let logits = outputs
+            .get("logits")
+            .ok_or_else(|| NemotronError::OutputNotFound("logits".into()))?
+            .try_extract_array::<f32>()?;
+        Ok(logits.iter().take(N_LOGITS).copied().collect())
+    }
+
+    #[cfg(feature = "directml")]
+    fn compare_probe_outputs(
+        label: &str,
+        base: &[f32],
+        cand: &[f32],
+        max_abs_limit: f32,
+        cosine_limit: f64,
+    ) -> bool {
+        if base.len() != cand.len() || base.is_empty() {
+            log::warn!(
+                "Nemotron {label} self-test shape mismatch: CPU={} DML={}",
+                base.len(),
+                cand.len()
+            );
+            return false;
+        }
+
+        let mut max_abs_err = 0.0f32;
+        let mut base_max = 0.0f32;
+        let mut cand_max = 0.0f32;
+        let mut dot = 0.0f64;
+        let mut base_norm = 0.0f64;
+        let mut cand_norm = 0.0f64;
+        for (&a, &b) in base.iter().zip(cand.iter()) {
+            max_abs_err = max_abs_err.max((a - b).abs());
+            base_max = base_max.max(a.abs());
+            cand_max = cand_max.max(b.abs());
+            let af = a as f64;
+            let bf = b as f64;
+            dot += af * bf;
+            base_norm += af * af;
+            cand_norm += bf * bf;
+        }
+        let cosine = if base_norm > 0.0 && cand_norm > 0.0 {
+            dot / (base_norm.sqrt() * cand_norm.sqrt())
+        } else {
+            0.0
+        };
+        log::info!(
+            "Nemotron {label} self-test: CPU|max|={base_max:.3} DML|max|={cand_max:.3} max_abs_err={max_abs_err:.4} cosine={cosine:.5}"
+        );
+        max_abs_err <= max_abs_limit && cosine >= cosine_limit && cand_max > 0.0
+    }
+
+    /// Try to run the int8 encoder on the CPU EP. The int8 export uses
+    /// `ConvInteger`, which historically had no CPU kernel in ORT — but that is a
+    /// property of the specific ORT build, not a law, so probe it rather than
+    /// assume. Builds a CPU session and runs the deterministic encoder probe;
+    /// accepts only if the output has a valid (non-empty) shape and a sane peak
+    /// activation (a correct encoder peaks well above 2.0; a collapsed/garbage
+    /// run does not). Returns the validated CPU session, or `None` if the CPU EP
+    /// can't build or run it — the raw ORT error (e.g. a `ConvInteger` "no
+    /// kernel" message) is logged so the failure is diagnosable.
+    fn try_cpu_encoder(path: &Path) -> Option<Session> {
+        let mut session = match Self::build_cpu_session(path) {
+            Ok(s) => s,
+            Err(e) => {
+                log::warn!(
+                    "Nemotron int8 encoder: CPU session build failed: {e} \
+                     (a ConvInteger 'no kernel' error here means this ORT build has no CPU int8 path)"
+                );
+                return None;
+            }
+        };
+        match Self::encoder_probe_output(&mut session) {
+            Ok(probe) => {
+                let pmax = probe.iter().fold(0.0f32, |m, &v| m.max(v.abs()));
+                if !probe.is_empty() && pmax > 2.0 {
+                    log::info!(
+                        "Nemotron int8 encoder: CPU self-test passed (probe |max|={pmax:.3})"
+                    );
+                    Some(session)
+                } else {
+                    log::warn!(
+                        "Nemotron int8 encoder: CPU probe output invalid (len={}, |max|={pmax:.3}); not using CPU",
+                        probe.len()
+                    );
+                    None
+                }
+            }
+            Err(e) => {
+                log::warn!("Nemotron int8 encoder: CPU probe run failed: {e}");
+                None
+            }
+        }
     }
 
     /// DirectML session at a given graph-optimization level. Full optimization
@@ -349,7 +755,11 @@ impl NemotronModel {
     fn load_vocab<P: AsRef<Path>>(dir: P) -> Result<Vec<String>, NemotronError> {
         let text = fs::read_to_string(dir.as_ref().join("vocab.json"))?;
         let map: HashMap<String, String> = serde_json::from_str(&text)?;
-        let max_id = map.keys().filter_map(|k| k.parse::<usize>().ok()).max().unwrap_or(0);
+        let max_id = map
+            .keys()
+            .filter_map(|k| k.parse::<usize>().ok())
+            .max()
+            .unwrap_or(0);
         let mut vocab = vec![String::new(); max_id + 1];
         for (k, v) in map {
             if let Ok(id) = k.parse::<usize>() {
@@ -412,8 +822,12 @@ impl NemotronModel {
 
         // Per-segment streaming state (zeroed; predictor primed with blank).
         let mut pre_cache = ArrayD::<f32>::zeros(IxDyn(&[1, MEL_BINS, PRE_CACHE_SIZE]));
-        let mut clc =
-            ArrayD::<f32>::zeros(IxDyn(&[ENCODER_LAYERS, 1, ATTN_LEFT_CONTEXT, ENCODER_HIDDEN]));
+        let mut clc = ArrayD::<f32>::zeros(IxDyn(&[
+            ENCODER_LAYERS,
+            1,
+            ATTN_LEFT_CONTEXT,
+            ENCODER_HIDDEN,
+        ]));
         let mut clt =
             ArrayD::<f32>::zeros(IxDyn(&[ENCODER_LAYERS, 1, ENCODER_HIDDEN, CONV_CACHE_SIZE]));
         let mut ch_len: i32 = 0;
@@ -430,8 +844,7 @@ impl NemotronModel {
         let lang_mask = mask.into_dyn();
 
         let t0 = std::time::Instant::now();
-        let mut enc_ms = 0.0f64;
-        let mut dec_ms = 0.0f64;
+        let mut stats = SegmentStats::default();
         let mut text = String::new();
         for k in 0..total_windows {
             text.push_str(&self.run_window(
@@ -446,16 +859,28 @@ impl NemotronModel {
                 &mut dec_h,
                 &mut dec_c,
                 &mut dec_hidden,
-                &mut enc_ms,
-                &mut dec_ms,
+                &mut stats,
             )?);
         }
         let secs = (padded.len() as f32 / 16_000.0).max(0.001);
         let ms = t0.elapsed().as_secs_f32() * 1000.0;
+        let avg_enc_ms = stats.enc_ms / (total_windows.max(1) as f64);
+        let avg_dec_ms_per_frame = stats.dec_ms / (stats.encoded_frames.max(1) as f64);
         log::info!(
-            "Nemotron segment: {secs:.1}s audio, {windows} windows, {ms:.0}ms compute (encoder {enc_ms:.0}ms, decode {dec_ms:.0}ms), RTF {:.2} (lower=faster)",
-            (ms / 1000.0) / secs,
-            windows = total_windows
+            "Nemotron segment: {secs:.1}s audio, {windows} windows, {frames} enc frames, \
+             {ms:.0}ms compute (encoder {enc:.0}ms, decode {dec:.0}ms), \
+             {jc} joint_calls, {dc} decoder_calls, {tok} tokens, \
+             avg enc {avg_enc:.1}ms/window, avg decode {avg_dec:.2}ms/frame, RTF {rtf:.2} (lower=faster)",
+            windows = total_windows,
+            frames = stats.encoded_frames,
+            enc = stats.enc_ms,
+            dec = stats.dec_ms,
+            jc = stats.joint_calls,
+            dc = stats.decoder_calls,
+            tok = stats.emitted_tokens,
+            avg_enc = avg_enc_ms,
+            avg_dec = avg_dec_ms_per_frame,
+            rtf = (ms / 1000.0) / secs,
         );
         Ok(text)
     }
@@ -474,8 +899,7 @@ impl NemotronModel {
         dec_h: &mut ArrayD<f32>,
         dec_c: &mut ArrayD<f32>,
         dec_hidden: &mut ArrayD<f32>,
-        enc_ms: &mut f64,
-        dec_ms: &mut f64,
+        stats: &mut SegmentStats,
     ) -> Result<String, NemotronError> {
         // Slice the contiguous 32-frame window [f0 .. f0+32] out of the
         // segment's continuous mel (zero-pad any frames past the end).
@@ -500,7 +924,7 @@ impl NemotronModel {
             "cache_last_time" => TensorRef::from_array_view(clt.view())?,
             "cache_last_channel_len" => TensorRef::from_array_view(chl.view())?,
         ])?;
-        *enc_ms += t_enc.elapsed().as_secs_f64() * 1000.0;
+        stats.enc_ms += t_enc.elapsed().as_secs_f64() * 1000.0;
 
         // Own the encoder output + roll caches, then drop `outputs` so the
         // borrow on `self.encoder` is released before the decode loop (which
@@ -538,26 +962,30 @@ impl NemotronModel {
         }
         drop(outputs);
 
-        // Greedy RNN-T over the committed encoder frames.
+        // Greedy RNN-T over the committed encoder frames. Reuse one [1,1,1024]
+        // scratch tensor for the per-frame encoder slice instead of allocating a
+        // fresh Vec+Array each frame, and argmax the joint logits in place.
+        stats.encoded_frames += t_out as u64;
         let t_dec = std::time::Instant::now();
         let mut emitted = String::new();
+        let mut enc_frame = Array::zeros((1, 1, ENCODER_HIDDEN)).into_dyn();
         for frame in 0..t_out {
-            let mut enc_vec = Vec::with_capacity(ENCODER_HIDDEN);
             for k in 0..ENCODER_HIDDEN {
-                enc_vec.push(enc[[0, frame, k]]);
+                enc_frame[[0, 0, k]] = enc[[0, frame, k]];
             }
-            let enc_frame = Array::from_shape_vec((1, 1, ENCODER_HIDDEN), enc_vec)?.into_dyn();
             for _ in 0..MAX_SYMBOLS {
-                let logits = self.joint_step(&enc_frame, dec_hidden)?;
-                let best = argmax(&logits);
+                stats.joint_calls += 1;
+                let best = self.joint_argmax(&enc_frame, dec_hidden)?;
                 if best == BLANK_ID {
                     break;
                 }
                 emitted.push_str(&self.token_to_text(best));
+                stats.emitted_tokens += 1;
+                stats.decoder_calls += 1;
                 self.decoder_step(best as i64, dec_h, dec_c, dec_hidden)?;
             }
         }
-        *dec_ms += t_dec.elapsed().as_secs_f64() * 1000.0;
+        stats.dec_ms += t_dec.elapsed().as_secs_f64() * 1000.0;
         Ok(emitted)
     }
 
@@ -592,11 +1020,14 @@ impl NemotronModel {
         Ok(())
     }
 
-    fn joint_step(
+    /// Run the joint network and return the argmax token id directly, without
+    /// copying all `N_LOGITS` (~13k) logits into a Vec first. Tie-breaking matches
+    /// the previous `argmax(&Vec)` (`max_by` keeps the last maximum).
+    fn joint_argmax(
         &mut self,
         enc_frame: &ArrayD<f32>,
         dec_hidden: &ArrayD<f32>,
-    ) -> Result<Vec<f32>, NemotronError> {
+    ) -> Result<i32, NemotronError> {
         let outputs = self.joint.run(inputs![
             "encoder_output" => TensorRef::from_array_view(enc_frame.view())?,
             "decoder_output" => TensorRef::from_array_view(dec_hidden.view())?,
@@ -605,7 +1036,14 @@ impl NemotronModel {
             .get("logits")
             .ok_or_else(|| NemotronError::OutputNotFound("logits".into()))?
             .try_extract_array::<f32>()?;
-        Ok(logits.iter().copied().collect())
+        let best = logits
+            .iter()
+            .take(N_LOGITS)
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(i, _)| i as i32)
+            .unwrap_or(BLANK_ID);
+        Ok(best)
     }
 
     fn token_to_text(&self, id: i32) -> String {
@@ -626,12 +1064,15 @@ impl NemotronModel {
     }
 }
 
-fn argmax(logits: &[f32]) -> i32 {
-    logits
-        .iter()
-        .take(N_LOGITS)
-        .enumerate()
-        .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-        .map(|(i, _)| i as i32)
-        .unwrap_or(BLANK_ID)
+/// Per-segment decode metrics, accumulated across windows for one summary log
+/// line so we can see whether encoder session time or the RNN-T decode/joint
+/// loop dominates.
+#[derive(Default)]
+struct SegmentStats {
+    enc_ms: f64,
+    dec_ms: f64,
+    encoded_frames: u64,
+    joint_calls: u64,
+    decoder_calls: u64,
+    emitted_tokens: u64,
 }

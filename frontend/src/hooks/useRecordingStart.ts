@@ -7,6 +7,7 @@ import { useRecordingState, RecordingStatus } from '@/contexts/RecordingStateCon
 import { recordingService } from '@/services/recordingService';
 import Analytics from '@/lib/analytics';
 import { showRecordingNotification } from '@/lib/recordingNotification';
+import { getPendingCalendar, beginRecordingCalendar } from '@/lib/meetingCalendar';
 import { toast } from 'sonner';
 
 interface UseRecordingStartReturn {
@@ -48,6 +49,18 @@ export function useRecordingStart(
     const seconds = String(now.getSeconds()).padStart(2, '0');
     return `Meeting ${day}_${month}_${year}_${hours}_${minutes}_${seconds}`;
   }, []);
+
+  // Title every recording (home button, sidebar auto/direct) from the calendar
+  // event chosen for the next recording, if any; else the generated title.
+  // Read the pending calendar selection ONCE before starting, and derive the
+  // title from that same object — so the title and the attendee binding can't
+  // diverge if "Use for next recording" changes during the async startup. The
+  // returned `calendar` is frozen via beginRecordingCalendar(calendar) on success.
+  const snapshotPendingForStart = useCallback(() => {
+    const calendar = getPendingCalendar();
+    const title = calendar?.subject?.trim() || generateMeetingTitle();
+    return { title, calendar };
+  }, [generateMeetingTitle]);
 
   // Check if Parakeet transcription model is ready
   const checkParakeetReady = useCallback(async (): Promise<boolean> => {
@@ -108,7 +121,7 @@ export function useRecordingStart(
 
       console.log('Parakeet ready - setting up meeting title and state');
 
-      const randomTitle = generateMeetingTitle();
+      const { title: randomTitle, calendar: pendingCal } = snapshotPendingForStart();
       setMeetingTitle(randomTitle);
 
       // Set STARTING status before initiating backend recording
@@ -122,6 +135,8 @@ export function useRecordingStart(
         randomTitle
       );
       console.log('Backend recording started successfully');
+      // Freeze the calendar selection for this recording (clears pending).
+      beginRecordingCalendar(pendingCal);
 
       // Update state after successful backend start
       // Note: RECORDING status will be set by RecordingStateContext event listener
@@ -141,7 +156,7 @@ export function useRecordingStart(
       // Re-throw so RecordingControls can handle device-specific errors
       throw error;
     }
-  }, [generateMeetingTitle, setMeetingTitle, setIsRecording, clearTranscripts, setIsMeetingActive, checkParakeetReady, checkIfModelDownloading, selectedDevices, showModal, setStatus]);
+  }, [snapshotPendingForStart, setMeetingTitle, setIsRecording, clearTranscripts, setIsMeetingActive, checkParakeetReady, checkIfModelDownloading, selectedDevices, showModal, setStatus]);
 
   // Check for autoStartRecording flag and start recording automatically
   useEffect(() => {
@@ -178,8 +193,8 @@ export function useRecordingStart(
 
           // Start the actual backend recording
           try {
-            // Generate meeting title
-            const generatedMeetingTitle = generateMeetingTitle();
+            // Generate meeting title (calendar event if one was chosen)
+            const { title: generatedMeetingTitle, calendar: pendingCal } = snapshotPendingForStart();
 
             // Set STARTING status before initiating backend recording
             setStatus(RecordingStatus.STARTING, 'Initializing recording...');
@@ -191,6 +206,8 @@ export function useRecordingStart(
               generatedMeetingTitle
             );
             console.log('Auto-start backend recording result:', result);
+            // Freeze the calendar selection for this recording (clears pending).
+            beginRecordingCalendar(pendingCal);
 
             // Update UI state after successful backend start
             // Note: RECORDING status will be set by RecordingStateContext event listener
@@ -219,7 +236,7 @@ export function useRecordingStart(
     isRecording,
     isAutoStarting,
     selectedDevices,
-    generateMeetingTitle,
+    snapshotPendingForStart,
     setMeetingTitle,
     setIsRecording,
     clearTranscripts,
@@ -265,8 +282,8 @@ export function useRecordingStart(
       }
 
       try {
-        // Generate meeting title
-        const generatedMeetingTitle = generateMeetingTitle();
+        // Generate meeting title (calendar event if one was chosen)
+        const { title: generatedMeetingTitle, calendar: pendingCal } = snapshotPendingForStart();
 
         // Set STARTING status before initiating backend recording
         setStatus(RecordingStatus.STARTING, 'Initializing recording...');
@@ -278,6 +295,8 @@ export function useRecordingStart(
           generatedMeetingTitle
         );
         console.log('Backend recording result:', result);
+        // Freeze the calendar selection for this recording (clears pending).
+        beginRecordingCalendar(pendingCal);
 
         // Update UI state after successful backend start
         // Note: RECORDING status will be set by RecordingStateContext event listener
@@ -308,7 +327,7 @@ export function useRecordingStart(
     isRecording,
     isAutoStarting,
     selectedDevices,
-    generateMeetingTitle,
+    snapshotPendingForStart,
     setMeetingTitle,
     setIsRecording,
     clearTranscripts,

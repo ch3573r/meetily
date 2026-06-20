@@ -9,15 +9,17 @@ import { toast } from 'sonner';
 
 
 export function About() {
-    const [currentVersion, setCurrentVersion] = useState<string>('0.5.0-alpha.2');
+    const displayVersion = process.env.NEXT_PUBLIC_APP_VERSION ?? '';
+    const [currentVersion, setCurrentVersion] = useState<string>(displayVersion);
     const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
     const [isChecking, setIsChecking] = useState(false);
     const [showUpdateDialog, setShowUpdateDialog] = useState(false);
 
     useEffect(() => {
-        // Get current version on mount
-        getVersion().then(setCurrentVersion).catch(console.error);
-    }, []);
+        if (!displayVersion) {
+            getVersion().then(setCurrentVersion).catch(console.error);
+        }
+    }, [displayVersion]);
 
     const handleCheckForUpdates = async () => {
         setIsChecking(true);

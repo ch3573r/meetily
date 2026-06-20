@@ -354,6 +354,9 @@ export function ParakeetModelManager({
   const otherModels = models.filter(m =>
     m.name !== 'parakeet-tdt-0.6b-v3-int8'
   );
+  const selectedModelSupported = selectedModel
+    ? models.some(m => m.name === selectedModel)
+    : false;
 
   return (
     <div className={`space-y-3 ${className}`}>
@@ -399,13 +402,22 @@ export function ParakeetModelManager({
       )}
 
       {/* Helper text */}
-      {selectedModel && (
+      {selectedModel && selectedModelSupported && (
         <motion.div
           initial={{ opacity: 0, y: -5 }}
           animate={{ opacity: 1, y: 0 }}
           className="text-xs text-gray-500 text-center pt-2"
         >
           Using {getModelDisplayName(selectedModel)} for transcription
+        </motion.div>
+      )}
+      {selectedModel && !selectedModelSupported && (
+        <motion.div
+          initial={{ opacity: 0, y: -5 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="text-xs text-amber-600 text-center pt-2"
+        >
+          Selected Parakeet model is no longer supported. Choose Lightning or SmoothQuant.
         </motion.div>
       )}
     </div>

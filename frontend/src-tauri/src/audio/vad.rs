@@ -13,6 +13,14 @@ const VAD_SAMPLE_RATE: u32 = 16000;
 /// up to this size, like the recording pipeline's resampler).
 const VAD_RESAMPLE_CHUNK: usize = 512;
 
+fn ms_to_samples(ms: usize) -> usize {
+    ms * VAD_SAMPLE_RATE as usize / 1000
+}
+
+fn samples_to_ms(samples: usize) -> f64 {
+    (samples as f64 / VAD_SAMPLE_RATE as f64) * 1000.0
+}
+
 /// Resamples streaming audio to 16 kHz for the VAD using a persistent rubato
 /// sinc resampler. A persistent resampler with input buffering is required:
 /// constructing a fresh resampler per chunk amplifies energy and mis-sizes the
@@ -155,12 +163,22 @@ pub struct ContinuousVadProcessor {
     in_speech: bool,
     processed_samples: usize,
     speech_start_sample: usize,
+    max_segment_samples: Option<usize>,
+    emitted_active_speech_samples: usize,
     // State tracking for smart logging
     last_logged_state: bool,
 }
 
 impl ContinuousVadProcessor {
     pub fn new(input_sample_rate: u32, redemption_time_ms: u32) -> Result<Self> {
+        Self::new_with_max_segment_duration(input_sample_rate, redemption_time_ms, None)
+    }
+
+    pub fn new_with_max_segment_duration(
+        input_sample_rate: u32,
+        redemption_time_ms: u32,
+        max_segment_duration_ms: Option<u32>,
+    ) -> Result<Self> {
         // Use STRICT settings to prevent silence from reaching Whisper
         let mut config = VadConfig::default();
         config.sample_rate = VAD_SAMPLE_RATE as usize;
@@ -171,9 +189,8 @@ impl ContinuousVadProcessor {
         config.positive_speech_threshold = 0.50; // Silero default - good for continuous speech
         config.negative_speech_threshold = 0.35; // Silero default - allows natural pauses
 
-        // CRITICAL FIX: Removed redemption_time capping to support long continuous speech
-        // Previous: capped at 400ms, causing VAD to fragment 5-second speech into 40ms segments
-        // New: Use full redemption_time from pipeline (2000ms) to bridge natural pauses
+        // Use the caller-provided pause bridge. Live recording keeps this short
+        // for responsiveness; batch import can pass a longer value.
         config.redemption_time = Duration::from_millis(redemption_time_ms as u64);
         config.pre_speech_pad = Duration::from_millis(300); // Pre-speech padding for context
         config.post_speech_pad = Duration::from_millis(400); // Increased: more context at end
@@ -191,10 +208,13 @@ impl ContinuousVadProcessor {
 
         // VAD uses 30ms chunks at 16kHz (480 samples)
         let vad_chunk_size = (VAD_SAMPLE_RATE as f32 * 0.03) as usize; // 480 samples
+        let max_segment_samples = max_segment_duration_ms.map(|ms| {
+            ((ms as usize * VAD_SAMPLE_RATE as usize) / 1000).max(vad_chunk_size)
+        });
 
         info!(
-            "VAD processor created: input={}Hz, vad={}Hz, chunk_size={} samples",
-            input_sample_rate, VAD_SAMPLE_RATE, vad_chunk_size
+            "VAD processor created: input={}Hz, vad={}Hz, chunk_size={} samples, max_segment_ms={:?}",
+            input_sample_rate, VAD_SAMPLE_RATE, vad_chunk_size, max_segment_duration_ms
         );
 
         Ok(Self {
@@ -208,6 +228,8 @@ impl ContinuousVadProcessor {
             in_speech: false,
             processed_samples: 0,
             speech_start_sample: 0,
+            max_segment_samples,
+            emitted_active_speech_samples: 0,
             // Initialize state tracking
             last_logged_state: false,
         })
@@ -259,28 +281,38 @@ impl ContinuousVadProcessor {
 
         // Force end any ongoing speech
         if self.in_speech && !self.current_speech.is_empty() {
-            // processed_samples and speech_start_sample always count 16kHz samples (post-resampling)
-            let start_ms = (self.speech_start_sample as f64 / 16000.0) * 1000.0;
-            let end_ms = (self.processed_samples as f64 / 16000.0) * 1000.0;
+            let active_speech = self.session.get_current_speech();
+            let speech_samples = if self.emitted_active_speech_samples < active_speech.len() {
+                active_speech[self.emitted_active_speech_samples..].to_vec()
+            } else if self.emitted_active_speech_samples == 0 {
+                self.current_speech.clone()
+            } else {
+                Vec::new()
+            };
+            let start_sample = self.speech_start_sample + self.emitted_active_speech_samples;
+            let end_sample = start_sample + speech_samples.len();
+            let start_ms = samples_to_ms(start_sample);
+            let end_ms = samples_to_ms(end_sample);
 
             debug!(
                 "VAD flush: Force-ending speech - start={}ms, end={}ms, duration={}ms, samples={}",
                 start_ms,
                 end_ms,
                 end_ms - start_ms,
-                self.current_speech.len()
+                speech_samples.len()
             );
 
-            let segment = SpeechSegment {
-                samples: self.current_speech.clone(),
-                start_timestamp_ms: start_ms,
-                end_timestamp_ms: end_ms,
-                confidence: 0.8, // Estimated confidence for forced end
-            };
-
-            self.speech_segments.push_back(segment);
+            if !speech_samples.is_empty() {
+                self.speech_segments.push_back(SpeechSegment {
+                    samples: speech_samples,
+                    start_timestamp_ms: start_ms,
+                    end_timestamp_ms: end_ms,
+                    confidence: 0.8,
+                });
+            }
             self.current_speech.clear();
             self.in_speech = false;
+            self.emitted_active_speech_samples = 0;
         }
 
         // Extract all remaining segments
@@ -297,7 +329,7 @@ impl ContinuousVadProcessor {
         if current_speech_size > 1_000_000 {
             // More than ~62 seconds of accumulated speech at 16kHz
             warn!("VAD: Accumulated speech buffer is large: {} samples ({:.1}s) - possible memory issue",
-                  current_speech_size, current_speech_size as f64 / 16000.0);
+                  current_speech_size, current_speech_size as f64 / VAD_SAMPLE_RATE as f64);
         }
 
         let transitions = self
@@ -324,10 +356,9 @@ impl ContinuousVadProcessor {
                         self.last_logged_state = true;
                     }
                     self.in_speech = true;
-                    // Use 16000 (VAD processing rate) since processed_samples counts 16kHz samples
-                    self.speech_start_sample =
-                        self.processed_samples + (timestamp_ms * 16000 / 1000);
+                    self.speech_start_sample = ms_to_samples(timestamp_ms);
                     self.current_speech.clear();
+                    self.emitted_active_speech_samples = 0;
                 }
                 VadTransition::SpeechEnd {
                     start_timestamp_ms,
@@ -345,24 +376,40 @@ impl ContinuousVadProcessor {
                     }
                     self.in_speech = false;
 
-                    // Use samples from VAD transition if available, otherwise use accumulated samples
-                    let speech_samples = if !samples.is_empty() {
+                    let speech_samples = if self.emitted_active_speech_samples > 0 {
+                        if self.emitted_active_speech_samples < samples.len() {
+                            samples[self.emitted_active_speech_samples..].to_vec()
+                        } else {
+                            Vec::new()
+                        }
+                    } else if !samples.is_empty() {
                         samples
                     } else {
                         self.current_speech.clone()
                     };
 
                     if !speech_samples.is_empty() {
+                        let start_sample = if self.emitted_active_speech_samples > 0 {
+                            self.speech_start_sample + self.emitted_active_speech_samples
+                        } else {
+                            ms_to_samples(start_timestamp_ms)
+                        };
+                        let segment_start_ms = samples_to_ms(start_sample);
+                        let segment_end_ms = if self.emitted_active_speech_samples > 0 {
+                            samples_to_ms(start_sample + speech_samples.len())
+                        } else {
+                            end_timestamp_ms as f64
+                        };
                         let segment = SpeechSegment {
                             samples: speech_samples,
-                            start_timestamp_ms: start_timestamp_ms as f64,
-                            end_timestamp_ms: end_timestamp_ms as f64,
+                            start_timestamp_ms: segment_start_ms,
+                            end_timestamp_ms: segment_end_ms,
                             confidence: 0.9, // VAD confidence
                         };
 
-                        info!(
+                        debug!(
                             "VAD: Completed speech segment: {:.1}ms duration, {} samples",
-                            end_timestamp_ms - start_timestamp_ms,
+                            segment.end_timestamp_ms - segment.start_timestamp_ms,
                             segment.samples.len()
                         );
 
@@ -370,6 +417,7 @@ impl ContinuousVadProcessor {
                     }
 
                     self.current_speech.clear();
+                    self.emitted_active_speech_samples = 0;
                 }
             }
         }
@@ -377,10 +425,57 @@ impl ContinuousVadProcessor {
         // Accumulate speech if we're currently in a speech state
         if self.in_speech {
             self.current_speech.extend_from_slice(chunk);
+            self.emit_forced_segments_if_needed();
         }
 
         self.processed_samples += chunk.len();
         Ok(())
+    }
+
+    fn emit_forced_segments_if_needed(&mut self) {
+        let Some(max_segment_samples) = self.max_segment_samples else {
+            return;
+        };
+
+        loop {
+            let active_speech = self.session.get_current_speech();
+            let available = active_speech
+                .len()
+                .saturating_sub(self.emitted_active_speech_samples);
+            if available < max_segment_samples {
+                return;
+            }
+
+            let start_offset = self.emitted_active_speech_samples;
+            let end_offset = start_offset + max_segment_samples;
+            let samples = active_speech[start_offset..end_offset].to_vec();
+            let segment = self.build_active_speech_segment(start_offset, samples, 0.85);
+
+            debug!(
+                "VAD: Forced live segment at max duration: {:.1}ms, {} samples",
+                segment.end_timestamp_ms - segment.start_timestamp_ms,
+                segment.samples.len()
+            );
+
+            self.emitted_active_speech_samples = end_offset;
+            self.speech_segments.push_back(segment);
+        }
+    }
+
+    fn build_active_speech_segment(
+        &self,
+        start_offset_samples: usize,
+        samples: Vec<f32>,
+        confidence: f32,
+    ) -> SpeechSegment {
+        let start_sample = self.speech_start_sample + start_offset_samples;
+        let end_sample = start_sample + samples.len();
+        SpeechSegment {
+            samples,
+            start_timestamp_ms: samples_to_ms(start_sample),
+            end_timestamp_ms: samples_to_ms(end_sample),
+            confidence,
+        }
     }
 }
 
@@ -635,6 +730,20 @@ mod tests {
             r_out < r_in * 0.25,
             "above-Nyquist tone not attenuated: in {r_in} out {r_out}"
         );
+    }
+
+    #[test]
+    fn active_speech_segment_timestamps_include_start_and_offset() {
+        let mut processor =
+            ContinuousVadProcessor::new(16000, 400).expect("Failed to create processor");
+
+        processor.speech_start_sample = 16_000;
+        let segment = processor.build_active_speech_segment(8_000, vec![0.1; 4_000], 0.85);
+
+        assert_eq!(segment.samples.len(), 4_000);
+        assert_eq!(segment.start_timestamp_ms, 1500.0);
+        assert_eq!(segment.end_timestamp_ms, 1750.0);
+        assert_eq!(segment.confidence, 0.85);
     }
 
     #[test]

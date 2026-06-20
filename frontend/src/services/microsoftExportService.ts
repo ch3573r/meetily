@@ -46,6 +46,21 @@ export interface BucketInfo {
   id: string;
   name: string;
 }
+export interface CalendarAttendee {
+  name: string | null;
+  email: string | null;
+}
+export interface CalendarEvent {
+  id: string;
+  subject: string | null;
+  /** ISO-8601 UTC, e.g. "2026-06-19T21:00:00Z". */
+  start: string | null;
+  end: string | null;
+  isOnlineMeeting: boolean;
+  joinUrl: string | null;
+  organizer: CalendarAttendee | null;
+  attendees: CalendarAttendee[];
+}
 
 export interface PlannerTaskPreview {
   localId: string;
@@ -56,6 +71,10 @@ export interface PlannerTaskPreview {
 }
 
 export interface PlannerTaskInput {
+  // Stable id from the preview (PlannerTaskPreview.localId). Sent back so the
+  // backend dedupe key survives reordering/deselection and re-exports don't
+  // create duplicate tasks.
+  localId: string;
   title: string;
   owner: string | null;
   dueDate: string | null;
@@ -181,6 +200,17 @@ export const microsoftExportService = {
 
   async createNotebook(displayName: string): Promise<NotebookInfo> {
     return invoke<NotebookInfo>("create_onenote_notebook", { displayName });
+  },
+
+  async listCalendarEvents(
+    startIso: string,
+    endIso: string,
+  ): Promise<CalendarEvent[]> {
+    return invoke<CalendarEvent[]>("list_calendar_events", { startIso, endIso });
+  },
+
+  async currentOrNextMeeting(): Promise<CalendarEvent | null> {
+    return invoke<CalendarEvent | null>("current_or_next_meeting");
   },
 
   async previewPlannerTasks(

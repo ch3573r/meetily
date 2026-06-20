@@ -6,9 +6,11 @@ import { invoke } from "@tauri-apps/api/core";
 import {
   Activity,
   AlertTriangle,
+  CalendarClock,
   CheckCircle2,
   Cloud,
   FileCheck2,
+  FileText,
   ListTodo,
   Loader2,
   LogIn,
@@ -25,10 +27,16 @@ import {
   TeamsDetectionStatus,
 } from "@/services/teamsDetectionService";
 import { useMicrosoftExport } from "@/hooks/useMicrosoftExport";
+import { setPendingCalendar } from "@/lib/meetingCalendar";
 import {
   getExportDestinations,
   setExportDestinations,
+  type ConfluenceExportMode,
 } from "@/lib/exportDestinations";
+import {
+  confluenceExportService,
+  type ConfluenceConnectionStatus,
+} from "@/services/confluenceExportService";
 import {
   getTeamsDetectionMode,
   setTeamsDetectionMode,
@@ -744,6 +752,386 @@ function PlannerPanel() {
   );
 }
 
+function ConfluencePanel() {
+  const saved = getExportDestinations();
+  const [mode, setMode] = useState<ConfluenceExportMode>(
+    saved.confluenceMode ?? "draft",
+  );
+  const [createUrl, setCreateUrl] = useState(saved.confluenceCreateUrl ?? "");
+  const [openAfterCopy, setOpenAfterCopy] = useState(
+    saved.confluenceOpenAfterCopy ?? true,
+  );
+  const [baseUrl, setBaseUrl] = useState(saved.confluenceBaseUrl ?? "");
+  const [spaceKey, setSpaceKey] = useState(saved.confluenceSpaceKey ?? "");
+  const [parentId, setParentId] = useState(saved.confluenceParentId ?? "");
+  const [patInput, setPatInput] = useState("");
+  const [status, setStatus] = useState<ConfluenceConnectionStatus | null>(null);
+  const [busy, setBusy] = useState<"save" | "clear" | "test" | null>(null);
+  const trimmedUrl = createUrl.trim();
+  const trimmedBaseUrl = baseUrl.trim();
+  const trimmedSpaceKey = spaceKey.trim();
+  const trimmedParentId = parentId.trim();
+
+  useEffect(() => {
+    setExportDestinations({
+      confluenceMode: mode,
+      confluenceCreateUrl: trimmedUrl || undefined,
+      confluenceOpenAfterCopy: openAfterCopy,
+      confluenceBaseUrl: trimmedBaseUrl || undefined,
+      confluenceSpaceKey: trimmedSpaceKey || undefined,
+      confluenceParentId: trimmedParentId || undefined,
+    });
+  }, [
+    mode,
+    openAfterCopy,
+    trimmedBaseUrl,
+    trimmedParentId,
+    trimmedSpaceKey,
+    trimmedUrl,
+  ]);
+
+  const testConnection = useCallback(async () => {
+    if (!trimmedBaseUrl) {
+      setStatus({
+        tokenConfigured: false,
+        reachable: false,
+        userDisplayName: null,
+        message: "Enter a Confluence base URL first.",
+      });
+      return;
+    }
+
+    setBusy("test");
+    try {
+      setStatus(await confluenceExportService.connectionStatus(trimmedBaseUrl));
+    } catch (e) {
+      setStatus({
+        tokenConfigured: true,
+        reachable: false,
+        userDisplayName: null,
+        message: e instanceof Error ? e.message : String(e),
+      });
+    } finally {
+      setBusy(null);
+    }
+  }, [trimmedBaseUrl]);
+
+  const savePat = useCallback(async () => {
+    const pat = patInput.trim();
+    if (!pat) {
+      setStatus({
+        tokenConfigured: false,
+        reachable: false,
+        userDisplayName: null,
+        message: "Paste a Confluence personal access token first.",
+      });
+      return;
+    }
+
+    setBusy("save");
+    try {
+      await confluenceExportService.savePat(pat);
+      setPatInput("");
+      if (trimmedBaseUrl) {
+        setStatus(await confluenceExportService.connectionStatus(trimmedBaseUrl));
+      } else {
+        setStatus({
+          tokenConfigured: true,
+          reachable: false,
+          userDisplayName: null,
+          message: "PAT saved. Add a base URL, then test the connection.",
+        });
+      }
+    } catch (e) {
+      setStatus({
+        tokenConfigured: false,
+        reachable: false,
+        userDisplayName: null,
+        message: e instanceof Error ? e.message : String(e),
+      });
+    } finally {
+      setBusy(null);
+    }
+  }, [patInput, trimmedBaseUrl]);
+
+  const clearPat = useCallback(async () => {
+    setBusy("clear");
+    try {
+      await confluenceExportService.clearPat();
+      setPatInput("");
+      setStatus({
+        tokenConfigured: false,
+        reachable: false,
+        userDisplayName: null,
+        message: "Saved Confluence PAT cleared.",
+      });
+    } catch (e) {
+      setStatus({
+        tokenConfigured: true,
+        reachable: false,
+        userDisplayName: null,
+        message: e instanceof Error ? e.message : String(e),
+      });
+    } finally {
+      setBusy(null);
+    }
+  }, []);
+
+  const restDestinationConfigured = !!trimmedBaseUrl && !!trimmedSpaceKey;
+  const restReady = restDestinationConfigured && !!status?.reachable;
+  const badgeLabel =
+    mode === "draft"
+      ? trimmedUrl
+        ? "Draft ready"
+        : "Copy only"
+      : restReady
+        ? "Ready"
+        : status?.tokenConfigured
+          ? "PAT saved"
+          : "Needs setup";
+  const badgeClasses =
+    mode === "draft"
+      ? trimmedUrl
+        ? "border-transparent bg-emerald-600 text-white"
+        : "border-border bg-muted text-foreground"
+      : restReady
+        ? "border-transparent bg-emerald-600 text-white"
+        : "border-transparent bg-amber-600 text-white";
+
+  return (
+    <AddonPanel
+      icon={FileText}
+      title="Confluence export"
+      state={mode === "draft" ? "prompt" : restReady ? "ready" : "advanced"}
+      badgeLabel={badgeLabel}
+      badgeClasses={badgeClasses}
+      detail="Export meeting summaries as a browser draft, or create pages directly on self-hosted Confluence with a PAT."
+    >
+      <div className="space-y-3">
+        <div className="grid gap-2 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => setMode("draft")}
+            className={`rounded-md border p-3 text-left transition-colors ${
+              mode === "draft"
+                ? "border-primary bg-primary/10"
+                : "border-border bg-muted hover:bg-muted/80"
+            }`}
+          >
+            <span className="block text-sm font-medium text-foreground">
+              Browser draft
+            </span>
+            <span className="mt-1 block text-xs text-muted-foreground">
+              Copy rich text and open Confluence in your existing browser
+              session. No API token is used.
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("rest")}
+            className={`rounded-md border p-3 text-left transition-colors ${
+              mode === "rest"
+                ? "border-primary bg-primary/10"
+                : "border-border bg-muted hover:bg-muted/80"
+            }`}
+          >
+            <span className="block text-sm font-medium text-foreground">
+              Direct REST
+            </span>
+            <span className="mt-1 block text-xs text-muted-foreground">
+              Create pages through a reachable self-hosted Confluence Server or
+              Data Center instance.
+            </span>
+          </button>
+        </div>
+
+        {mode === "draft" ? (
+          <>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                Create page URL
+              </label>
+              <input
+                type="url"
+                value={createUrl}
+                onChange={(e) => setCreateUrl(e.target.value)}
+                placeholder="https://confluence.example.com/confluence/pages/createpage.action?spaceKey=TEAM"
+                className="w-full rounded-md border border-border bg-muted px-3 py-2 text-sm text-foreground"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                For Jira/Confluence behind SSO or App Proxy, this opens in your
+                browser session. No API token or REST call is used.
+              </p>
+            </div>
+
+            <label className="flex cursor-pointer items-start justify-between gap-4 rounded-lg border border-border bg-muted p-3">
+              <span>
+                <span className="block text-sm font-medium text-foreground">
+                  Open Confluence after copying
+                </span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  The summary button copies rich text plus Markdown, then opens
+                  the configured create-page URL so you can paste manually.
+                </span>
+              </span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={openAfterCopy}
+                onClick={() => setOpenAfterCopy((v) => !v)}
+                className={`relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+                  openAfterCopy ? "bg-primary" : "bg-border"
+                }`}
+              >
+                <span
+                  className={`inline-block h-5 w-5 transform rounded-full bg-background shadow transition-transform ${
+                    openAfterCopy ? "translate-x-5" : "translate-x-0.5"
+                  }`}
+                />
+              </button>
+            </label>
+          </>
+        ) : (
+          <div className="space-y-3">
+            <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-muted-foreground">
+              <p className="font-medium text-foreground">
+                Direct REST requirements
+              </p>
+              <p className="mt-1">
+                Use this for self-hosted Confluence Server or Data Center when
+                the instance is reachable from this device, for example through
+                your corporate VPN. It requires a Confluence personal access
+                token with permission to create pages in the target space.
+              </p>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="sm:col-span-2">
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  Base URL
+                </label>
+                <input
+                  type="url"
+                  value={baseUrl}
+                  onChange={(e) => setBaseUrl(e.target.value)}
+                  placeholder="https://confluence.example.com/confluence"
+                  className="w-full rounded-md border border-border bg-muted px-3 py-2 text-sm text-foreground"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  Space key
+                </label>
+                <input
+                  value={spaceKey}
+                  onChange={(e) => setSpaceKey(e.target.value)}
+                  placeholder="TEAM"
+                  className="w-full rounded-md border border-border bg-muted px-3 py-2 text-sm text-foreground"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  Parent page ID optional
+                </label>
+                <input
+                  value={parentId}
+                  onChange={(e) => setParentId(e.target.value)}
+                  placeholder="123456789"
+                  className="w-full rounded-md border border-border bg-muted px-3 py-2 text-sm text-foreground"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                Personal access token
+              </label>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <input
+                  type="password"
+                  value={patInput}
+                  onChange={(e) => setPatInput(e.target.value)}
+                  placeholder="Paste PAT to save in OS credentials"
+                  className="min-w-0 flex-1 rounded-md border border-border bg-muted px-3 py-2 text-sm text-foreground"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={savePat}
+                  disabled={busy !== null || !patInput.trim()}
+                >
+                  {busy === "save" && (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  )}
+                  Save PAT
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={clearPat}
+                  disabled={busy !== null}
+                >
+                  {busy === "clear" && (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  )}
+                  Clear
+                </Button>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                The token is stored in the OS credential store. It is not saved
+                in localStorage or written into exported meeting content.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={testConnection}
+                disabled={busy !== null || !trimmedBaseUrl}
+              >
+                {busy === "test" && (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                )}
+                Test connection
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                Direct export also needs the base URL and space key above.
+              </p>
+            </div>
+
+            {status && (
+              <div
+                className={`flex items-start gap-2 rounded-md border p-3 text-sm ${
+                  status.reachable
+                    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                    : "border-border bg-muted text-muted-foreground"
+                }`}
+              >
+                {status.reachable ? (
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                ) : (
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                )}
+                <span>{status.message}</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="rounded-lg border border-border bg-muted/50 p-3 text-xs text-muted-foreground">
+          <p className="font-medium text-foreground">Export flow</p>
+          <p className="mt-1">
+            {mode === "draft"
+              ? "Meeting summary -> Confluence button -> clipboard -> browser create page. Paste into the editor and save under the space/page you want."
+              : "Meeting summary -> Confluence button -> REST API page create. If the API call fails, ClawScribe copies the browser draft instead."}
+          </p>
+        </div>
+      </div>
+    </AddonPanel>
+  );
+}
+
 type OpenClawSubmissionStatus = {
   state: string;
   updated_at: string;
@@ -1135,6 +1523,158 @@ function CodexPanel() {
   );
 }
 
+function formatEventTime(start: string | null, end: string | null): string {
+  if (!start) return "Time unknown";
+  const s = new Date(start);
+  const sStr = s.toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  if (!end) return sStr;
+  const eStr = new Date(end).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return `${sStr} – ${eStr}`;
+}
+
+function attendeeLabel(a: { name: string | null; email: string | null }): string {
+  return a.name?.trim() || a.email?.trim() || "Unknown";
+}
+
+// Read-only calendar view: current/next meeting and the next 24h, with the
+// invited attendees ("attendance"). Sign-in-gated; reloads on auth changes.
+function CalendarPanel() {
+  const ms = useMicrosoftExport();
+  const isConnected = ms.connection.state === "connected";
+  const [usedForNext, setUsedForNext] = useState(false);
+
+  useEffect(() => {
+    if (
+      isConnected &&
+      ms.calendarEvents.length === 0 &&
+      !ms.currentMeeting &&
+      !ms.loadingCalendar
+    ) {
+      void ms.loadCalendar();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isConnected]);
+
+  const panelState: AddonState = isConnected ? "connected" : "signin";
+  const detail = isConnected
+    ? "Your current/next meeting and upcoming events, with invited attendees."
+    : "Sign in with Microsoft above to see your calendar.";
+  const current = ms.currentMeeting;
+
+  // The "Set for your next recording" confirmation belongs to the event shown;
+  // reset it whenever the current/next meeting changes (reload or rollover) so
+  // it can't claim a different visible event was selected.
+  useEffect(() => {
+    setUsedForNext(false);
+  }, [current?.id]);
+
+  return (
+    <AddonPanel icon={CalendarClock} title="Calendar" state={panelState} detail={detail}>
+      {isConnected && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-muted-foreground">
+              Current / next meeting
+            </span>
+            <button
+              type="button"
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
+              onClick={() => void ms.loadCalendar()}
+              disabled={ms.loadingCalendar}
+            >
+              <RefreshCw className={`h-3 w-3 ${ms.loadingCalendar ? "animate-spin" : ""}`} />
+              Reload
+            </button>
+          </div>
+
+          {current ? (
+            <div className="rounded-lg border border-border bg-muted/50 p-3">
+              <div className="flex items-center gap-2">
+                <span className="truncate text-sm font-medium text-foreground">
+                  {current.subject || "(no title)"}
+                </span>
+                {current.isOnlineMeeting && (
+                  <span className="shrink-0 rounded-full border border-transparent bg-blue-600 px-2 py-0.5 text-[10px] font-medium text-white">
+                    Online
+                  </span>
+                )}
+              </div>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {formatEventTime(current.start, current.end)}
+              </p>
+              {current.attendees.length > 0 && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  <span className="font-medium">Attendees:</span>{" "}
+                  {current.attendees.slice(0, 8).map(attendeeLabel).join(", ")}
+                  {current.attendees.length > 8
+                    ? ` +${current.attendees.length - 8} more`
+                    : ""}
+                </p>
+              )}
+              <button
+                type="button"
+                className="mt-2 rounded-md border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20"
+                onClick={() => {
+                  setPendingCalendar({
+                    eventId: current.id,
+                    subject: current.subject,
+                    attendees: current.attendees,
+                  });
+                  setUsedForNext(true);
+                }}
+                title="Title your next recording from this event and add its attendees to the summary"
+              >
+                {usedForNext
+                  ? "✓ Set for your next recording"
+                  : "Use for next recording"}
+              </button>
+            </div>
+          ) : (
+            <p className="rounded-lg border border-border bg-muted/50 p-3 text-xs text-muted-foreground">
+              {ms.loadingCalendar
+                ? "Loading…"
+                : "No meetings scheduled in the next 12 hours."}
+            </p>
+          )}
+
+          {ms.calendarEvents.length > 0 && (
+            <div>
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">
+                Upcoming (next 24h)
+              </span>
+              <ul className="space-y-1">
+                {ms.calendarEvents.slice(0, 8).map((ev) => (
+                  <li
+                    key={ev.id}
+                    className="flex items-baseline justify-between gap-2 text-xs"
+                  >
+                    <span className="truncate text-foreground">
+                      {ev.subject || "(no title)"}
+                    </span>
+                    <span className="shrink-0 text-muted-foreground">
+                      {formatEventTime(ev.start, ev.end)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {ms.error && <p className="text-xs text-destructive">{ms.error}</p>}
+        </div>
+      )}
+    </AddonPanel>
+  );
+}
+
 export function IntegrationsSettings() {
   return (
     <div className="space-y-5">
@@ -1157,6 +1697,8 @@ export function IntegrationsSettings() {
       <MicrosoftSignInPanel />
       <OneNotePanel />
       <PlannerPanel />
+      <ConfluencePanel />
+      <CalendarPanel />
     </div>
   );
 }

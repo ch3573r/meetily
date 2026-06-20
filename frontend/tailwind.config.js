@@ -46,6 +46,14 @@ module.exports = {
           DEFAULT: hsl('--accent'),
           foreground: hsl('--accent-foreground')
         },
+        sidebar: {
+          DEFAULT: hsl('--sidebar'),
+          foreground: hsl('--sidebar-foreground'),
+          border: hsl('--sidebar-border'),
+          hover: hsl('--sidebar-hover'),
+          active: hsl('--sidebar-active'),
+          'active-foreground': hsl('--sidebar-active-foreground')
+        },
         destructive: {
           DEFAULT: hsl('--destructive'),
           foreground: hsl('--destructive-foreground')

@@ -8,6 +8,7 @@ import { useRecordingState, RecordingStatus } from '@/contexts/RecordingStateCon
 import { storageService } from '@/services/storageService';
 import { transcriptService } from '@/services/transcriptService';
 import Analytics from '@/lib/analytics';
+import { takeActiveRecordingCalendar, setMeetingCalendar } from '@/lib/meetingCalendar';
 import {
   applyPinnedSummaryLanguageToMeeting,
   detectAndCacheSummaryLanguage,
@@ -263,6 +264,19 @@ export function useRecordingStop(
           if (!meetingId) {
             console.error('No meeting_id in response:', responseData);
             throw new Error('No meeting ID received from save operation');
+          }
+
+          // Bind the calendar event that was frozen at THIS recording's start
+          // (consumed here) to the saved meeting id. Using the active snapshot —
+          // not the live pending value — means a "Use for next recording" change
+          // made mid-recording can't rebind this meeting.
+          try {
+            const activeCal = takeActiveRecordingCalendar();
+            if (activeCal) {
+              setMeetingCalendar(meetingId, activeCal);
+            }
+          } catch (error) {
+            console.warn('Failed to bind calendar selection to meeting:', error);
           }
 
           let shouldDetectSummaryLanguage = false;

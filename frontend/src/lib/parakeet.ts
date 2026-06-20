@@ -10,7 +10,7 @@ export interface ParakeetModelInfo {
   quantization: QuantizationType;
 }
 
-export type QuantizationType = 'FP32' | 'Int8';
+export type QuantizationType = 'FP32' | 'FP16' | 'Int8';
 export type ModelAccuracy = 'High' | 'Good' | 'Decent';
 export type ProcessingSpeed = 'Slow' | 'Medium' | 'Fast' | 'Very Fast' | 'Ultra Fast';
 
@@ -41,33 +41,40 @@ export const MODEL_DISPLAY_CONFIG: Record<string, ModelDisplayInfo> = {
   'parakeet-tdt-0.6b-v3-int8': {
     friendlyName: 'Lightning',
     icon: '⚡',
-    tagline: 'Real time • Best for speed, great accuracy',
+    tagline: 'Fastest • Recommended default',
     recommended: true,
     tier: 'fastest'
+  },
+  'parakeet-tdt-0.6b-v3-smoothquant-int8': {
+    friendlyName: 'SmoothQuant',
+    icon: '🔬',
+    tagline: 'Experimental • Long-audio int8 quality',
+    tier: 'balanced'
   },
   'parakeet-tdt-0.6b-v2-int8': {
     friendlyName: 'Compact',
     icon: '📦',
     tagline: 'Real time • Smaller size',
     tier: 'balanced'
-  },
-  'parakeet-tdt-0.6b-v3-fp32': {
-    friendlyName: 'Precise',
-    icon: '🎯',
-    tagline: '20x real-time • Higher accuracy',
-    tier: 'precise'
   }
 };
 
 // Model configuration for Parakeet models (matching Rust implementation)
 // Supported models: parakeet-tdt-0.6b in v2 and v3 variants
-// Source: https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx
+// Sources: istupakov v2/v3 ONNX and Olicorne SmoothQuant variants.
 export const PARAKEET_MODEL_CONFIGS: Record<string, Partial<ParakeetModelInfo>> = {
   'parakeet-tdt-0.6b-v3-int8': {
-    description: 'Real time on M4 Max, optimized for speed',
+    description: 'Fastest default. Stock v3 int8; measured around 22x realtime on the 9070 XT.',
     size_mb: 670, // Actual download: 652MB encoder + 18.2MB decoder + 0.2MB extras
     accuracy: 'High',
     speed: 'Ultra Fast',
+    quantization: 'Int8'
+  },
+  'parakeet-tdt-0.6b-v3-smoothquant-int8': {
+    description: 'Experimental SmoothQuant int8 export aimed at better long-audio accuracy than stock int8.',
+    size_mb: 813,
+    accuracy: 'High',
+    speed: 'Very Fast',
     quantization: 'Int8'
   },
   'parakeet-tdt-0.6b-v2-int8': {
@@ -76,13 +83,6 @@ export const PARAKEET_MODEL_CONFIGS: Record<string, Partial<ParakeetModelInfo>> 
     accuracy: 'High',
     speed: 'Very Fast',
     quantization: 'Int8'
-  },
-  'parakeet-tdt-0.6b-v3-fp32': {
-    description: '20x real-time on M4 Max, higher precision',
-    size_mb: 2554, // Actual download: 2.44GB + 41.8MB encoder + 72.5MB decoder + 0.2MB extras
-    accuracy: 'High',
-    speed: 'Fast',
-    quantization: 'FP32'
   }
 };
 
@@ -132,6 +132,8 @@ export function getModelPerformanceBadge(quantization: QuantizationType): { labe
   switch (quantization) {
     case 'FP32':
       return { label: 'Full Precision', color: 'blue' };
+    case 'FP16':
+      return { label: 'FP16', color: 'blue' };
     case 'Int8':
       return { label: 'Int8 Quantized', color: 'green' };
     default:
