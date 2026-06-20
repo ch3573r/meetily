@@ -66,15 +66,25 @@ impl Drop for ParakeetModel {
 impl ParakeetModel {
     pub fn new<P: AsRef<Path>>(
         model_dir: P,
-        quantized: bool,
+        precision_suffix: Option<&str>,
         use_directml: bool,
     ) -> Result<Self, ParakeetError> {
-        let encoder =
-            Self::init_session(&model_dir, "encoder-model", None, quantized, use_directml)?;
-        let decoder_joint =
-            Self::init_session(&model_dir, "decoder_joint-model", None, quantized, use_directml)?;
+        let encoder = Self::init_session(
+            &model_dir,
+            "encoder-model",
+            None,
+            precision_suffix,
+            use_directml,
+        )?;
+        let decoder_joint = Self::init_session(
+            &model_dir,
+            "decoder_joint-model",
+            None,
+            precision_suffix,
+            use_directml,
+        )?;
         // Preprocessor is tiny — keep it on CPU to avoid DirectML transfer overhead.
-        let preprocessor = Self::init_session(&model_dir, "nemo128", None, false, false)?;
+        let preprocessor = Self::init_session(&model_dir, "nemo128", None, None, false)?;
 
         let (vocab, blank_idx) = Self::load_vocab(&model_dir)?;
         let vocab_size = vocab.len();
@@ -99,7 +109,7 @@ impl ParakeetModel {
         model_dir: P,
         model_name: &str,
         intra_threads: Option<usize>,
-        try_quantized: bool,
+        precision_suffix: Option<&str>,
         use_directml: bool,
     ) -> Result<Session, ParakeetError> {
         // DirectML (Windows GPU) when compiled in and enabled; CPU is always the
@@ -115,23 +125,17 @@ impl ParakeetModel {
         let _ = use_directml;
         providers.push(CPUExecutionProvider::default().build());
 
-        // Try quantized version first if requested, fallback to regular version
-        let model_filename = if try_quantized {
-            let quantized_name = format!("{}.int8.onnx", model_name);
-            let quantized_path = model_dir.as_ref().join(&quantized_name);
-            if quantized_path.exists() {
-                log::info!(
-                    "Loading quantized Parakeet model from {}...",
-                    quantized_name
-                );
-                quantized_name
+        let model_filename = if let Some(suffix) = precision_suffix {
+            let precision_name = format!("{model_name}.{suffix}.onnx");
+            let precision_path = model_dir.as_ref().join(&precision_name);
+            if precision_path.exists() {
+                log::info!("Loading {suffix} Parakeet model from {}...", precision_name);
+                precision_name
             } else {
-                let regular_name = format!("{}.onnx", model_name);
-                log::info!(
-                    "Quantized model not found, loading regular Parakeet model from {}...",
-                    regular_name
-                );
-                regular_name
+                return Err(ParakeetError::Io(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("{} not found", precision_name),
+                )));
             }
         } else {
             let regular_name = format!("{}.onnx", model_name);

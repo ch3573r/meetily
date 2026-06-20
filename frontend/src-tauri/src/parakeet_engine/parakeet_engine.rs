@@ -20,12 +20,31 @@ pub static USE_PARAKEET_DIRECTML: std::sync::atomic::AtomicBool =
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum QuantizationType {
     FP32, // Full precision
+    FP16, // Half precision for GPU-oriented ONNX exports
     Int8, // 8-bit integer quantization (faster)
 }
 
 impl Default for QuantizationType {
     fn default() -> Self {
         QuantizationType::Int8 // Default to int8 for best performance
+    }
+}
+
+impl QuantizationType {
+    fn model_suffix(&self) -> Option<&'static str> {
+        match self {
+            QuantizationType::FP32 => None,
+            QuantizationType::FP16 => Some("fp16"),
+            QuantizationType::Int8 => Some("int8"),
+        }
+    }
+
+    fn label(&self) -> &'static str {
+        match self {
+            QuantizationType::FP32 => "FP32",
+            QuantizationType::FP16 => "FP16",
+            QuantizationType::Int8 => "Int8 quantized",
+        }
     }
 }
 
@@ -193,7 +212,21 @@ impl ParakeetEngine {
                 670,
                 QuantizationType::Int8,
                 "Ultra Fast (v3)",
-                "Real time on M4 Max, latest version with int8 quantization",
+                "Fastest default. Stock v3 int8; measured ~22x realtime on the 9070 XT.",
+            ),
+            (
+                "parakeet-tdt-0.6b-v3-fp16",
+                1276,
+                QuantizationType::FP16,
+                "Experimental (fp16)",
+                "GPU-oriented fp16 export. Larger than int8; useful as an accuracy/robustness candidate.",
+            ),
+            (
+                "parakeet-tdt-0.6b-v3-smoothquant-int8",
+                813,
+                QuantizationType::Int8,
+                "Experimental (SmoothQuant)",
+                "Larger SmoothQuant int8 export intended to improve long-audio accuracy versus stock int8.",
             ),
             (
                 "parakeet-tdt-0.6b-v2-int8",
@@ -222,6 +255,12 @@ impl ParakeetEngine {
                     QuantizationType::Int8 => vec![
                         "encoder-model.int8.onnx",
                         "decoder_joint-model.int8.onnx",
+                        "nemo128.onnx",
+                        "vocab.txt",
+                    ],
+                    QuantizationType::FP16 => vec![
+                        "encoder-model.fp16.onnx",
+                        "decoder_joint-model.fp16.onnx",
                         "nemo128.onnx",
                         "vocab.txt",
                     ],
@@ -296,9 +335,14 @@ impl ParakeetEngine {
 
         // Determine which files to check based on what exists
         let is_int8 = model_dir.join("encoder-model.int8.onnx").exists();
+        let is_fp16 = model_dir.join("encoder-model.fp16.onnx").exists();
         let is_fp32 = model_dir.join("encoder-model.onnx").exists();
+        let is_smoothquant = model_dir
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.contains("smoothquant"));
 
-        if !is_int8 && !is_fp32 {
+        if !is_int8 && !is_fp16 && !is_fp32 {
             return Err(anyhow!("No ONNX model files found"));
         }
 
@@ -309,12 +353,26 @@ impl ParakeetEngine {
 
         // Define minimum file sizes (90% of expected to allow some variance)
         // These are critical to catch partial downloads that would crash on load
-        let expected_sizes: Vec<(&str, u64)> = if is_int8 {
+        let expected_sizes: Vec<(&str, u64)> = if is_int8 && is_smoothquant {
+            vec![
+                ("encoder-model.int8.onnx", 720_000_000), // ~794 MB, min 720 MB
+                ("decoder_joint-model.int8.onnx", 16_000_000), // ~18 MB, min 16 MB
+                ("nemo128.onnx", 100_000),                // ~140 KB, min 100 KB
+                ("vocab.txt", 5_000),                     // ~94 KB, min 5 KB
+            ]
+        } else if is_int8 {
             vec![
                 ("encoder-model.int8.onnx", 580_000_000), // ~652 MB, min 580 MB (89%)
                 ("decoder_joint-model.int8.onnx", 8_000_000), // ~18 MB, min 8 MB
                 ("nemo128.onnx", 100_000),                // ~140 KB, min 100 KB
                 ("vocab.txt", 5_000),                     // ~94 KB, min 5 KB
+            ]
+        } else if is_fp16 {
+            vec![
+                ("encoder-model.fp16.onnx", 1_100_000_000), // ~1.24 GB, min 1.1 GB
+                ("decoder_joint-model.fp16.onnx", 30_000_000), // ~36 MB, min 30 MB
+                ("nemo128.onnx", 100_000),                  // ~140 KB, min 100 KB
+                ("vocab.txt", 5_000),                       // ~94 KB, min 5 KB
             ]
         } else {
             vec![
@@ -436,12 +494,11 @@ impl ParakeetEngine {
 
                 log::info!("Loading Parakeet model: {}", model_name);
 
-                // Load model based on quantization type
-                let quantized = model_info.quantization == QuantizationType::Int8;
+                // Load model based on precision/quantization type.
+                let precision_suffix = model_info.quantization.model_suffix();
                 // Beta opt-in: route inference through DirectML (Windows GPU) when enabled.
-                let use_directml =
-                    USE_PARAKEET_DIRECTML.load(std::sync::atomic::Ordering::Relaxed);
-                let model = ParakeetModel::new(&model_info.path, quantized, use_directml)
+                let use_directml = USE_PARAKEET_DIRECTML.load(std::sync::atomic::Ordering::Relaxed);
+                let model = ParakeetModel::new(&model_info.path, precision_suffix, use_directml)
                     .map_err(|e| anyhow!("Failed to load Parakeet model {}: {}", model_name, e))?;
 
                 // Update current model and model name
@@ -451,7 +508,7 @@ impl ParakeetEngine {
                 log::info!(
                     "Successfully loaded Parakeet model: {} ({})",
                     model_name,
-                    if quantized { "Int8 quantized" } else { "FP32" }
+                    model_info.quantization.label()
                 );
                 Ok(())
             }
@@ -647,8 +704,12 @@ impl ParakeetEngine {
             }
         }
 
-        // HuggingFace base URL for Parakeet models (version-specific)
-        let base_url = if model_name.contains("-v2-") {
+        // Source URL for Parakeet models (variant-specific).
+        let base_url = if model_name.contains("smoothquant") {
+            "https://huggingface.co/Olicorne/parakeet-tdt-0.6b-v3-smoothquant-onnx/resolve/main"
+        } else if model_name.contains("-fp16") {
+            "https://huggingface.co/grikdotnet/parakeet-tdt-0.6b-fp16/resolve/main"
+        } else if model_name.contains("-v2-") {
             "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v2-onnx/resolve/main"
         } else {
             // Default to v3 for v3 models
@@ -660,6 +721,12 @@ impl ParakeetEngine {
             QuantizationType::Int8 => vec![
                 "encoder-model.int8.onnx",
                 "decoder_joint-model.int8.onnx",
+                "nemo128.onnx",
+                "vocab.txt",
+            ],
+            QuantizationType::FP16 => vec![
+                "encoder-model.fp16.onnx",
+                "decoder_joint-model.fp16.onnx",
                 "nemo128.onnx",
                 "vocab.txt",
             ],
@@ -704,7 +771,17 @@ impl ParakeetEngine {
         // Note: These are approximate sizes based on HuggingFace repo inspection
         let file_sizes: std::collections::HashMap<&str, u64> = match model_info.quantization {
             QuantizationType::Int8 => {
-                if model_name.contains("-v2-") {
+                if model_name.contains("smoothquant") {
+                    [
+                        ("encoder-model.int8.onnx", 793_844_268u64),
+                        ("decoder_joint-model.int8.onnx", 18_202_004u64),
+                        ("nemo128.onnx", 139_764u64),
+                        ("vocab.txt", 93_939u64),
+                    ]
+                    .iter()
+                    .cloned()
+                    .collect()
+                } else if model_name.contains("-v2-") {
                     // V2 model sizes
                     [
                         ("encoder-model.int8.onnx", 652_000_000u64),     // 652 MB
@@ -728,6 +805,15 @@ impl ParakeetEngine {
                     .collect()
                 }
             }
+            QuantizationType::FP16 => [
+                ("encoder-model.fp16.onnx", 1_238_960_452u64),
+                ("decoder_joint-model.fp16.onnx", 36_266_140u64),
+                ("nemo128.onnx", 139_764u64),
+                ("vocab.txt", 93_939u64),
+            ]
+            .iter()
+            .cloned()
+            .collect(),
             QuantizationType::FP32 => {
                 // FP32 model sizes (encoder has .onnx + .onnx.data)
                 [
