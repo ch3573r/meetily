@@ -193,9 +193,23 @@ impl NemotronModel {
                 match Self::build_dml_session(&path, opt) {
                     Ok(mut session) => {
                         if Self::encoder_self_test(&mut session, &mut cpu_session) {
-                            log::info!(
-                                "Nemotron encoder: DirectML (GPU) @ graph_opt={lvl}, self-test passed"
-                            );
+                            // The self-test only proves the DML output is correct,
+                            // not that the heavy work runs on the GPU: ORT silently
+                            // places unsupported nodes on the CPU EP, so a "passing"
+                            // DML session can still be mostly CPU. Time it against
+                            // the CPU baseline so the log reflects real acceleration
+                            // rather than just provider registration.
+                            match Self::encoder_speed_ratio(&mut session, &mut cpu_session) {
+                                Some(ratio) if ratio >= 1.15 => log::info!(
+                                    "Nemotron encoder: DirectML GPU-accelerated @ graph_opt={lvl} (self-test passed, ~{ratio:.2}x CPU)"
+                                ),
+                                Some(ratio) => log::warn!(
+                                    "Nemotron encoder: DirectML @ graph_opt={lvl} self-test passed but only ~{ratio:.2}x CPU — likely running mostly on CPU (ORT fell unsupported ops back to the CPU EP); using it anyway"
+                                ),
+                                None => log::info!(
+                                    "Nemotron encoder: DirectML @ graph_opt={lvl}, self-test passed (speed probe unavailable)"
+                                ),
+                            }
                             return Ok(session);
                         }
                         log::warn!(
@@ -275,6 +289,38 @@ impl NemotronModel {
             "Nemotron encoder self-test: CPU|max|={base_max:.3} DML|max|={cand_max:.3} max_abs_err={max_abs_err:.4} cosine={cosine:.5}"
         );
         max_abs_err <= 0.1 && cosine >= 0.995 && cand_max > 0.5
+    }
+
+    /// Wall-time ratio cpu/dml of repeated encoder probe runs. >1 means the DML
+    /// session is genuinely faster than CPU (real GPU offload); ~1 (or <1) means
+    /// ORT placed most ops on the CPU EP and the "GPU" session isn't accelerating.
+    /// Returns None if either side errors. A few iterations is enough to clear
+    /// one-shot init noise without slowing model load meaningfully.
+    #[cfg(feature = "directml")]
+    fn encoder_speed_ratio(dml: &mut Session, cpu: &mut Session) -> Option<f32> {
+        use std::time::Instant;
+        const ITERS: u32 = 3;
+        // One warm-up each so first-run graph/kernel init isn't timed.
+        Self::encoder_probe_output(dml).ok()?;
+        Self::encoder_probe_output(cpu).ok()?;
+
+        let cpu_start = Instant::now();
+        for _ in 0..ITERS {
+            Self::encoder_probe_output(cpu).ok()?;
+        }
+        let cpu_time = cpu_start.elapsed().as_secs_f32();
+
+        let dml_start = Instant::now();
+        for _ in 0..ITERS {
+            Self::encoder_probe_output(dml).ok()?;
+        }
+        let dml_time = dml_start.elapsed().as_secs_f32();
+
+        if dml_time > 0.0 {
+            Some(cpu_time / dml_time)
+        } else {
+            None
+        }
     }
 
     #[cfg(feature = "directml")]
