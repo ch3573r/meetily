@@ -103,8 +103,9 @@ impl ParakeetModel {
         use_directml: bool,
     ) -> Result<Session, ParakeetError> {
         // DirectML (Windows GPU) when compiled in and enabled; CPU is always the
-        // fallback so unsupported ops — and non-directml builds — still run.
+        // fallback so unsupported ops and non-directml builds still run.
         let mut providers = Vec::new();
+        let using_directml = cfg!(feature = "directml") && use_directml;
         #[cfg(feature = "directml")]
         if use_directml {
             log::info!("Parakeet: registering DirectML execution provider for {model_name}");
@@ -140,8 +141,17 @@ impl ParakeetModel {
 
         let mut builder = Session::builder()?
             .with_optimization_level(GraphOptimizationLevel::Level3)?
-            .with_execution_providers(providers)?
-            .with_parallel_execution(true)?;
+            .with_execution_providers(providers)?;
+
+        if using_directml {
+            // DirectML requires sequential execution and disabled memory pattern
+            // optimization. Keep CPU sessions parallel for throughput.
+            builder = builder
+                .with_parallel_execution(false)?
+                .with_memory_pattern(false)?;
+        } else {
+            builder = builder.with_parallel_execution(true)?;
+        }
 
         if let Some(threads) = intra_threads {
             builder = builder
