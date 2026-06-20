@@ -132,8 +132,8 @@ export function SummaryModelSettings({ refetchTrigger }: SummaryModelSettingsPro
       <div className="bg-card rounded-lg border border-border p-6 shadow-sm">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-lg font-semibold text-foreground mb-2">Auto Summary</h3>
-            <p className="text-sm text-muted-foreground">Auto Generating summary after meeting completion(Stopping)</p>
+            <h3 className="text-lg font-semibold text-foreground mb-2">Automatic summaries</h3>
+            <p className="text-sm text-muted-foreground">Generate a summary automatically when a meeting ends.</p>
           </div>
           <Switch checked={isAutoSummary} onCheckedChange={toggleIsAutoSummary} />
         </div>
@@ -142,9 +142,10 @@ export function SummaryModelSettings({ refetchTrigger }: SummaryModelSettingsPro
       <SummaryLanguageSettings />
 
       <div className="bg-card rounded-lg border border-border p-6 shadow-sm">
-        <h3 className="text-lg font-semibold mb-4">Summary Model Configuration</h3>
+        <h3 className="text-lg font-semibold mb-4">Summary model</h3>
         <p className="text-sm text-muted-foreground mb-6">
-          Configure the AI model used for generating meeting summaries.
+          Choose the AI provider and model used to summarize your meetings. Pick a
+          Built-in or Ollama option to keep everything on your machine.
         </p>
 
         <ModelSettingsModal

@@ -10,7 +10,9 @@ import { useConfig } from '@/contexts/ConfigContext';
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
@@ -1289,15 +1291,24 @@ export function ModelSettingsModal({
               <SelectTrigger>
                 <SelectValue placeholder="Select provider" />
               </SelectTrigger>
-              <SelectContent className="max-h-64 overflow-y-auto">
-                <SelectItem value="custom-openai">OpenAI / OpenAI-compatible API</SelectItem>
-                <SelectItem value="openclaw">OpenClaw</SelectItem>
-                <SelectItem value="codex">Advanced: Codex app-server</SelectItem>
-                <SelectItem value="builtin-ai">Built-in AI (Offline, No API needed)</SelectItem>
-                <SelectItem value="ollama">Ollama</SelectItem>
-                <SelectItem value="openrouter">OpenRouter</SelectItem>
-                <SelectItem value="claude">Claude</SelectItem>
-                <SelectItem value="groq">Groq</SelectItem>
+              <SelectContent className="max-h-72 overflow-y-auto">
+                <SelectGroup>
+                  <SelectLabel>On your device</SelectLabel>
+                  <SelectItem value="builtin-ai">Built-in &middot; offline, no key</SelectItem>
+                  <SelectItem value="ollama">Ollama &middot; local server</SelectItem>
+                </SelectGroup>
+                <SelectGroup>
+                  <SelectLabel>Cloud APIs</SelectLabel>
+                  <SelectItem value="custom-openai">OpenAI or compatible</SelectItem>
+                  <SelectItem value="claude">Claude</SelectItem>
+                  <SelectItem value="groq">Groq</SelectItem>
+                  <SelectItem value="openrouter">OpenRouter</SelectItem>
+                  <SelectItem value="openclaw">OpenClaw</SelectItem>
+                </SelectGroup>
+                <SelectGroup>
+                  <SelectLabel>Advanced</SelectLabel>
+                  <SelectItem value="codex">Codex app-server</SelectItem>
+                </SelectGroup>
               </SelectContent>
             </Select>
 
