@@ -10,7 +10,9 @@ import { useConfig } from '@/contexts/ConfigContext';
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
@@ -1289,15 +1291,24 @@ export function ModelSettingsModal({
               <SelectTrigger>
                 <SelectValue placeholder="Select provider" />
               </SelectTrigger>
-              <SelectContent className="max-h-64 overflow-y-auto">
-                <SelectItem value="custom-openai">OpenAI / OpenAI-compatible API</SelectItem>
-                <SelectItem value="openclaw">OpenClaw</SelectItem>
-                <SelectItem value="codex">Advanced: Codex app-server</SelectItem>
-                <SelectItem value="builtin-ai">Built-in AI (Offline, No API needed)</SelectItem>
-                <SelectItem value="ollama">Ollama</SelectItem>
-                <SelectItem value="openrouter">OpenRouter</SelectItem>
-                <SelectItem value="claude">Claude</SelectItem>
-                <SelectItem value="groq">Groq</SelectItem>
+              <SelectContent className="max-h-72 overflow-y-auto">
+                <SelectGroup>
+                  <SelectLabel>On your device</SelectLabel>
+                  <SelectItem value="builtin-ai">Built-in &middot; offline, no key</SelectItem>
+                  <SelectItem value="ollama">Ollama &middot; local server</SelectItem>
+                </SelectGroup>
+                <SelectGroup>
+                  <SelectLabel>Cloud APIs</SelectLabel>
+                  <SelectItem value="custom-openai">OpenAI or compatible</SelectItem>
+                  <SelectItem value="claude">Claude</SelectItem>
+                  <SelectItem value="groq">Groq</SelectItem>
+                  <SelectItem value="openrouter">OpenRouter</SelectItem>
+                  <SelectItem value="openclaw">OpenClaw</SelectItem>
+                </SelectGroup>
+                <SelectGroup>
+                  <SelectLabel>Advanced</SelectLabel>
+                  <SelectItem value="codex">Codex app-server</SelectItem>
+                </SelectGroup>
               </SelectContent>
             </Select>
 
@@ -1860,8 +1871,8 @@ export function ModelSettingsModal({
         )}
 
         {modelConfig.provider === 'openai' && (
-          <Alert className="border-blue-200 bg-blue-50">
-            <AlertDescription className="text-blue-900">
+          <Alert className="border-primary bg-primary/10">
+            <AlertDescription className="text-primary">
               <div className="space-y-2">
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -2024,7 +2035,7 @@ export function ModelSettingsModal({
                       variant="default"
                       size="sm"
                       onClick={() => invoke('open_external_url', { url: 'https://ollama.com/download' })}
-                      className="w-full bg-blue-600 hover:bg-blue-700"
+                      className="w-full bg-primary hover:bg-primary"
                     >
                       <ExternalLink className="mr-2 h-4 w-4" />
                       Download Ollama
@@ -2067,14 +2078,14 @@ export function ModelSettingsModal({
 
                         {/* Show progress for gemma3:1b download */}
                         {isDownloading('gemma3:1b') && getProgress('gemma3:1b') !== undefined && (
-                          <div className="bg-white rounded-md border p-3">
+                          <div className="bg-card rounded-md border p-3">
                             <div className="flex items-center justify-between mb-2">
-                              <span className="text-sm font-medium text-blue-600">Downloading gemma3:1b</span>
-                              <span className="text-sm font-semibold text-blue-600">
+                              <span className="text-sm font-medium text-primary">Downloading gemma3:1b</span>
+                              <span className="text-sm font-semibold text-primary">
                                 {Math.round(getProgress('gemma3:1b')!)}%
                               </span>
                             </div>
-                            <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                            <div className="w-full h-2 bg-secondary rounded-full overflow-hidden">
                               <div
                                 className="h-full bg-primary rounded-full transition-all duration-300"
                                 style={{ width: `${getProgress('gemma3:1b')}%` }}
@@ -2107,7 +2118,7 @@ export function ModelSettingsModal({
                           className={cn(
                             'bg-card p-2 m-0 rounded-md border transition-colors',
                             modelConfig.model === model.name
-                              ? 'ring-1 ring-blue-500 border-blue-500 background-blue-100'
+                              ? 'ring-1 ring-ring border-primary background-blue-100'
                               : 'hover:bg-muted/50',
                             !modelIsDownloading && 'cursor-pointer'
                           )}
@@ -2125,12 +2136,12 @@ export function ModelSettingsModal({
 
                           {/* Progress bar for downloading models */}
                           {modelIsDownloading && progress !== undefined && (
-                            <div className="mt-3 pt-3 border-t border-gray-200">
+                            <div className="mt-3 pt-3 border-t border-border">
                               <div className="flex items-center justify-between mb-2">
-                                <span className="text-sm font-medium text-blue-600">Downloading...</span>
-                                <span className="text-sm font-semibold text-blue-600">{Math.round(progress)}%</span>
+                                <span className="text-sm font-medium text-primary">Downloading...</span>
+                                <span className="text-sm font-semibold text-primary">{Math.round(progress)}%</span>
                               </div>
-                              <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                              <div className="w-full h-2 bg-secondary rounded-full overflow-hidden">
                                 <div
                                   className="h-full bg-primary rounded-full transition-all duration-300"
                                   style={{ width: `${progress}%` }}
@@ -2163,7 +2174,7 @@ export function ModelSettingsModal({
       </div>
 
       {/* Auto-generate summaries toggle */}
-      {/* <div className="mt-6 pt-6 border-t border-gray-200">
+      {/* <div className="mt-6 pt-6 border-t border-border">
         <div className="flex items-center justify-between">
           <div className="flex-1">
             <Label htmlFor="auto-generate" className="text-base font-medium">
@@ -2184,8 +2195,8 @@ export function ModelSettingsModal({
       <div className="mt-6 flex justify-end">
         <Button
           className={cn(
-            'px-4 text-sm font-medium text-white rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500',
-            isDoneDisabled ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
+            'px-4 text-sm font-medium text-white rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-ring',
+            isDoneDisabled ? 'bg-muted cursor-not-allowed' : 'bg-primary hover:bg-primary'
           )}
           onClick={handleSave}
           disabled={isDoneDisabled}

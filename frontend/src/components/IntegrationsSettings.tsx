@@ -17,7 +17,6 @@ import {
   LogOut,
   NotebookTabs,
   RefreshCw,
-  ShieldCheck,
   User,
   Video,
 } from "lucide-react";
@@ -84,9 +83,9 @@ function stateClasses(state: AddonState) {
       return "border-transparent bg-emerald-600 text-white";
     case "connecting":
     case "signin":
-      return "border-transparent bg-blue-600 text-white";
+      return "border-transparent bg-primary text-white";
     case "prompt":
-      return "border-transparent bg-blue-600 text-white";
+      return "border-transparent bg-primary text-white";
     case "provider":
       return "border-primary/30 bg-primary/15 text-primary";
     case "advanced":
@@ -292,8 +291,8 @@ function MicrosoftSignInPanel() {
         )}
 
         {(ms.connection.state === "connecting" || ms.signingIn) && (
-          <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950/40">
-            <div className="flex items-center gap-2 text-sm text-blue-800 dark:text-blue-200">
+          <div className="rounded-lg border border-primary bg-primary/10 p-4 dark:border-blue-900 dark:bg-primary/40">
+            <div className="flex items-center gap-2 text-sm text-primary dark:text-primary">
               <Loader2 className="h-4 w-4 animate-spin" />
               <span>
                 Complete sign-in in your browser, then return to ClawScribe.
@@ -1305,8 +1304,8 @@ function TeamsAutoStartPanel() {
         ? {
             label: "Prompt",
             // Solid pill + white text: readable in both modes and immune to the
-            // globals.css `.dark .bg-blue-100` override.
-            classes: "border-transparent bg-blue-600 text-white",
+            // globals.css `.dark .bg-primary/15` override.
+            classes: "border-transparent bg-primary text-white",
           }
         : {
             label: "Auto-record",
@@ -1602,7 +1601,7 @@ function CalendarPanel() {
                   {current.subject || "(no title)"}
                 </span>
                 {current.isOnlineMeeting && (
-                  <span className="shrink-0 rounded-full border border-transparent bg-blue-600 px-2 py-0.5 text-[10px] font-medium text-white">
+                  <span className="shrink-0 rounded-full border border-transparent bg-primary px-2 py-0.5 text-[10px] font-medium text-white">
                     Online
                   </span>
                 )}
@@ -1675,30 +1674,68 @@ function CalendarPanel() {
   );
 }
 
+// The Microsoft four-square mark — instantly reads as "your work account".
+function MicrosoftLogo({ className = "h-5 w-5" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+      <rect x="1" y="1" width="10" height="10" fill="#F25022" />
+      <rect x="13" y="1" width="10" height="10" fill="#7FBA00" />
+      <rect x="1" y="13" width="10" height="10" fill="#00A4EF" />
+      <rect x="13" y="13" width="10" height="10" fill="#FFB900" />
+    </svg>
+  );
+}
+
+function GroupHeader({ icon, title, desc }: { icon: ReactNode; title: string; desc: string }) {
+  return (
+    <div className="flex items-start gap-3 border-b border-border pb-3">
+      <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-muted">
+        {icon}
+      </span>
+      <div>
+        <h2 className="text-base font-semibold tracking-tight text-foreground">{title}</h2>
+        <p className="mt-0.5 text-sm text-muted-foreground">{desc}</p>
+      </div>
+    </div>
+  );
+}
+
 export function IntegrationsSettings() {
   return (
-    <div className="space-y-5">
-      <div className="rounded-lg border border-border bg-card p-5 shadow-sm">
-        <div className="flex items-start gap-3">
-          <ShieldCheck className="mt-0.5 h-5 w-5 text-primary" />
-          <div>
-            <h2 className="text-lg font-semibold text-foreground">
-              Add-ons and integrations
-            </h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Meeting auto-start and export destinations. Live status and handoff
-              health are under Diagnostics.
-            </p>
-          </div>
+    <div className="space-y-8">
+      {/* Microsoft 365 — sign-in is the gateway, exports depend on it. */}
+      <section className="space-y-4">
+        <GroupHeader
+          icon={<MicrosoftLogo />}
+          title="Microsoft 365"
+          desc="Sign in with your work account to export meetings to OneNote and Planner, and pull in calendar events."
+        />
+        <div className="space-y-4">
+          <MicrosoftSignInPanel />
+          <OneNotePanel />
+          <PlannerPanel />
+          <CalendarPanel />
         </div>
-      </div>
+      </section>
 
-      <TeamsAutoStartPanel />
-      <MicrosoftSignInPanel />
-      <OneNotePanel />
-      <PlannerPanel />
-      <ConfluencePanel />
-      <CalendarPanel />
+      <section className="space-y-4">
+        <GroupHeader
+          icon={<FileText className="h-5 w-5 text-primary" />}
+          title="Confluence"
+          desc="Copy a Confluence-ready draft or publish directly with your configured REST endpoint."
+        />
+        <ConfluencePanel />
+      </section>
+
+      {/* Meeting detection — a recording trigger, not an export destination. */}
+      <section className="space-y-4">
+        <GroupHeader
+          icon={<Video className="h-5 w-5 text-primary" />}
+          title="Meeting detection"
+          desc="Auto-start recording when a Teams meeting is detected. Live status is under Diagnostics."
+        />
+        <TeamsAutoStartPanel />
+      </section>
     </div>
   );
 }

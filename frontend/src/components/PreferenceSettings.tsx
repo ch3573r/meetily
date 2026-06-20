@@ -6,8 +6,6 @@ import { FolderOpen, RefreshCw } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import Analytics from "@/lib/analytics";
 import { useConfig, NotificationSettings } from "@/contexts/ConfigContext";
-import { ThemeSettings } from "./ThemeSettings";
-import { KeyboardShortcutsSettings } from "./KeyboardShortcutsSettings";
 import {
   getAutoUpdateCheckEnabled,
   setAutoUpdateCheckEnabled,
@@ -189,11 +187,9 @@ export function PreferenceSettings() {
   const notificationsEnabledValue = notificationsEnabled ?? false;
 
   return (
-    // Ordered most-used first (appearance, notifications), then shortcuts, with
-    // data/advanced (storage) last.
+    // General workspace prefs. Appearance and Shortcuts are their own Settings
+    // sections now, so they aren't duplicated here.
     <div className="space-y-5">
-      <ThemeSettings />
-
       <div className="rounded-md border border-border bg-card p-6 shadow-sm">
         <div className="flex items-center justify-between gap-6">
           <div className="flex min-w-0 items-start gap-3">
@@ -225,7 +221,7 @@ export function PreferenceSettings() {
               Notifications
             </h3>
             <p className="text-sm text-muted-foreground">
-              Enable or disable notifications of start and end of meeting
+              Notify me when a meeting starts and ends.
             </p>
           </div>
           <Switch
@@ -234,8 +230,6 @@ export function PreferenceSettings() {
           />
         </div>
       </div>
-
-      <KeyboardShortcutsSettings />
 
       {/* Data Storage Locations Section */}
       <div className="rounded-md border border-border bg-card p-6 shadow-sm">
@@ -248,14 +242,14 @@ export function PreferenceSettings() {
 
         <div className="space-y-4">
           {/* Database Location */}
-          {/* <div className="p-4 border rounded-lg bg-gray-50">
+          {/* <div className="p-4 border rounded-lg bg-muted">
             <div className="font-medium mb-2">Database</div>
-            <div className="text-sm text-gray-600 mb-3 break-all font-mono text-xs">
+            <div className="text-sm text-muted-foreground mb-3 break-all font-mono text-xs">
               {storageLocations?.database || 'Loading...'}
             </div>
             <button
               onClick={() => handleOpenFolder('database')}
-              className="flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors"
+              className="flex items-center gap-2 px-3 py-2 text-sm border border-border rounded-lg hover:bg-muted transition-colors"
             >
               <FolderOpen className="w-4 h-4" />
               Open Folder
@@ -263,14 +257,14 @@ export function PreferenceSettings() {
           </div> */}
 
           {/* Models Location */}
-          {/* <div className="p-4 border rounded-lg bg-gray-50">
+          {/* <div className="p-4 border rounded-lg bg-muted">
             <div className="font-medium mb-2">Whisper Models</div>
-            <div className="text-sm text-gray-600 mb-3 break-all font-mono text-xs">
+            <div className="text-sm text-muted-foreground mb-3 break-all font-mono text-xs">
               {storageLocations?.models || 'Loading...'}
             </div>
             <button
               onClick={() => handleOpenFolder('models')}
-              className="flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors"
+              className="flex items-center gap-2 px-3 py-2 text-sm border border-border rounded-lg hover:bg-muted transition-colors"
             >
               <FolderOpen className="w-4 h-4" />
               Open Folder

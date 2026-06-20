@@ -104,9 +104,9 @@ export function ThemeSettings() {
   return (
     <div className="rounded-md border border-border bg-card p-6 shadow-sm">
       <div className="mb-4">
-        <h3 className="text-lg font-semibold text-foreground">Appearance</h3>
+        <h3 className="text-lg font-semibold text-foreground">Theme</h3>
         <p className="mt-2 text-sm text-muted-foreground">
-          Choose how ClawScribe follows light and dark mode.
+          Follow light, dark, or your system setting.
         </p>
       </div>
 

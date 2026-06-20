@@ -69,15 +69,33 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
     message: string;
   } | null>(null);
 
+  // Playback scrubber values (unused until in-app playback exists).
   const currentTime = 0;
   const duration = 0;
   const isPlaying = false;
   const progress = 0;
 
+  // Live elapsed clock: ticks every second while recording and not paused,
+  // resets on stop. Display-only — the saved meeting's real duration comes from
+  // the backend.
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (!isRecording) {
+      setElapsed(0);
+      return;
+    }
+    if (isPaused) return;
+    const id = setInterval(() => setElapsed((e) => e + 1), 1000);
+    return () => clearInterval(id);
+  }, [isRecording, isPaused]);
+
   const formatTime = (time: number) => {
-    const minutes = Math.floor(time / 60);
-    const seconds = Math.floor(time % 60);
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    const h = Math.floor(time / 3600);
+    const m = Math.floor((time % 3600) / 60);
+    const s = Math.floor(time % 60);
+    const mm = m.toString().padStart(2, '0');
+    const ss = s.toString().padStart(2, '0');
+    return h > 0 ? `${h}:${mm}:${ss}` : `${m}:${ss}`;
   };
 
   useEffect(() => {
@@ -399,13 +417,13 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
     : 'flex items-center space-x-2 bg-card rounded-full shadow-sm px-4 py-2';
   const startButtonClassName = isDashboard
     ? `h-16 w-16 flex items-center justify-center rounded-full text-primary-foreground shadow-[0_0_34px_hsl(var(--primary)/0.42)] transition-all relative ${isStarting || isProcessing || isRecordingDisabled || isValidatingModel ? 'bg-muted cursor-not-allowed' : 'bg-gradient-to-br from-primary to-primary/70 hover:scale-105 hover:shadow-[0_0_44px_hsl(var(--primary)/0.6)]'}`
-    : `w-12 h-12 flex items-center justify-center ${isStarting || isProcessing || isValidatingModel ? 'bg-gray-400' : 'bg-red-500 hover:bg-red-600'} rounded-full text-foreground transition-colors relative`;
+    : `w-12 h-12 flex items-center justify-center ${isStarting || isProcessing || isValidatingModel ? 'bg-muted' : 'bg-red-500 hover:bg-red-600'} rounded-full text-foreground transition-colors relative`;
   const secondaryButtonClassName = isDashboard
     ? `h-12 w-12 flex items-center justify-center rounded-full border border-border text-foreground transition-colors relative ${isPausing || isResuming || isStopping ? 'bg-muted text-muted-foreground' : 'bg-muted hover:bg-accent'}`
     : `w-10 h-10 flex items-center justify-center ${isPausing || isResuming || isStopping ? 'bg-muted border-2 border-border text-muted-foreground' : 'bg-card border-2 border-border text-muted-foreground hover:border-ring hover:bg-muted'} rounded-full transition-colors relative`;
   const stopButtonClassName = isDashboard
     ? `h-12 w-12 flex items-center justify-center rounded-full text-foreground transition-colors relative ${isStopping || isPausing || isResuming ? 'bg-muted cursor-not-allowed' : 'bg-red-500 hover:bg-red-400'}`
-    : `w-10 h-10 flex items-center justify-center ${isStopping || isPausing || isResuming ? 'bg-gray-400' : 'bg-red-500 hover:bg-red-600'} rounded-full text-foreground transition-colors relative`;
+    : `w-10 h-10 flex items-center justify-center ${isStopping || isPausing || isResuming ? 'bg-muted' : 'bg-red-500 hover:bg-red-600'} rounded-full text-foreground transition-colors relative`;
   const waveformClassName = isDashboard
     ? 'flex items-center justify-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-4 py-3'
     : 'flex items-center space-x-1 mx-4';
@@ -468,7 +486,7 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
                   </div>
 
                   <button
-                    className="w-10 h-10 flex items-center justify-center bg-gray-300 rounded-full text-foreground cursor-not-allowed"
+                    className="w-10 h-10 flex items-center justify-center bg-secondary rounded-full text-foreground cursor-not-allowed"
                     disabled
                   >
                     <Play size={16} />
@@ -578,16 +596,18 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
                     </>
                   )}
 
+                  {isRecording && (
+                    <span className="font-mono text-sm tabular-nums text-foreground min-w-[3.25rem] text-center">
+                      {formatTime(elapsed)}
+                    </span>
+                  )}
+
                   <div className={waveformClassName}>
                     {barHeights.map((height, index) => (
                       <div
                         key={index}
                         className={`${isDashboard ? 'w-1.5' : 'w-1'} rounded-full transition-all duration-200 ${
-                          isPaused
-                            ? 'bg-orange-400'
-                            : isDashboard
-                              ? 'bg-primary'
-                              : 'bg-red-500'
+                          isPaused ? 'bg-orange-400' : 'bg-brand-gradient-v'
                         }`}
                         style={{
                           height:
@@ -648,7 +668,7 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
         )}
 
         {/* {showPlayback && recordingPath && (
-        <div className="text-sm text-gray-600 px-4">
+        <div className="text-sm text-muted-foreground px-4">
           Recording saved to: {recordingPath}
         </div>
       )} */}
