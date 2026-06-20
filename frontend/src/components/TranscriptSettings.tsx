@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from './ui/select';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
 import { Label } from './ui/label';
@@ -118,7 +118,7 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
                 <div className="space-y-4 pb-6">
                     <div>
                         <Label className="block text-sm font-medium text-foreground mb-1">
-                            Transcript Model
+                            Engine
                         </Label>
                         <div className="flex space-x-2 mx-1">
                             <Select
@@ -135,13 +135,14 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
                                     <SelectValue placeholder="Select provider" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="parakeet">⚡ Parakeet (Recommended - Real-time / Accurate)</SelectItem>
-                                    <SelectItem value="localWhisper">🏠 Local Whisper (High Accuracy)</SelectItem>
-                                    <SelectItem value="nemotron">🌊 Nemotron (Beta - Streaming / Multilingual)</SelectItem>
-                                    {/* <SelectItem value="deepgram">☁️ Deepgram (Backup)</SelectItem>
-                                    <SelectItem value="elevenLabs">☁️ ElevenLabs</SelectItem>
-                                    <SelectItem value="groq">☁️ Groq</SelectItem>
-                                    <SelectItem value="openai">☁️ OpenAI</SelectItem> */}
+                                    <SelectGroup>
+                                        <SelectLabel>On your device</SelectLabel>
+                                        <SelectItem value="parakeet">Parakeet &middot; real-time, recommended</SelectItem>
+                                        <SelectItem value="localWhisper">Whisper &middot; highest accuracy</SelectItem>
+                                        <SelectItem value="nemotron">Nemotron &middot; streaming, multilingual (beta)</SelectItem>
+                                    </SelectGroup>
+                                    {/* Cloud STT (Deepgram/ElevenLabs/Groq/OpenAI) is wired but disabled
+                                        for now — it would go in a "Cloud APIs" group here. */}
                                 </SelectContent>
                             </Select>
 

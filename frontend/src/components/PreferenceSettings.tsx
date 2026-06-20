@@ -221,7 +221,7 @@ export function PreferenceSettings() {
               Notifications
             </h3>
             <p className="text-sm text-muted-foreground">
-              Enable or disable notifications of start and end of meeting
+              Notify me when a meeting starts and ends.
             </p>
           </div>
           <Switch

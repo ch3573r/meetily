@@ -16,7 +16,6 @@ import {
   LogOut,
   NotebookTabs,
   RefreshCw,
-  ShieldCheck,
   User,
   Video,
 } from "lucide-react";
@@ -1289,29 +1288,59 @@ function CalendarPanel() {
   );
 }
 
+// The Microsoft four-square mark — instantly reads as "your work account".
+function MicrosoftLogo({ className = "h-5 w-5" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+      <rect x="1" y="1" width="10" height="10" fill="#F25022" />
+      <rect x="13" y="1" width="10" height="10" fill="#7FBA00" />
+      <rect x="1" y="13" width="10" height="10" fill="#00A4EF" />
+      <rect x="13" y="13" width="10" height="10" fill="#FFB900" />
+    </svg>
+  );
+}
+
+function GroupHeader({ icon, title, desc }: { icon: ReactNode; title: string; desc: string }) {
+  return (
+    <div className="flex items-start gap-3 border-b border-border pb-3">
+      <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-muted">
+        {icon}
+      </span>
+      <div>
+        <h2 className="text-base font-semibold tracking-tight text-foreground">{title}</h2>
+        <p className="mt-0.5 text-sm text-muted-foreground">{desc}</p>
+      </div>
+    </div>
+  );
+}
+
 export function IntegrationsSettings() {
   return (
-    <div className="space-y-5">
-      <div className="rounded-lg border border-border bg-card p-5 shadow-sm">
-        <div className="flex items-start gap-3">
-          <ShieldCheck className="mt-0.5 h-5 w-5 text-primary" />
-          <div>
-            <h2 className="text-lg font-semibold text-foreground">
-              Add-ons and integrations
-            </h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Meeting auto-start and export destinations. Live status and handoff
-              health are under Diagnostics.
-            </p>
-          </div>
+    <div className="space-y-8">
+      {/* Microsoft 365 — sign-in is the gateway, exports depend on it. */}
+      <section className="space-y-4">
+        <GroupHeader
+          icon={<MicrosoftLogo />}
+          title="Microsoft 365"
+          desc="Sign in with your work account to export meetings to OneNote and Planner, and pull in calendar events."
+        />
+        <div className="space-y-4">
+          <MicrosoftSignInPanel />
+          <OneNotePanel />
+          <PlannerPanel />
+          <CalendarPanel />
         </div>
-      </div>
+      </section>
 
-      <TeamsAutoStartPanel />
-      <MicrosoftSignInPanel />
-      <OneNotePanel />
-      <PlannerPanel />
-      <CalendarPanel />
+      {/* Meeting detection — a recording trigger, not an export destination. */}
+      <section className="space-y-4">
+        <GroupHeader
+          icon={<Video className="h-5 w-5 text-primary" />}
+          title="Meeting detection"
+          desc="Auto-start recording when a Teams meeting is detected. Live status is under Diagnostics."
+        />
+        <TeamsAutoStartPanel />
+      </section>
     </div>
   );
 }

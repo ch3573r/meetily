@@ -57,7 +57,7 @@ const GROUPS: { label: string; items: SectionItem[] }[] = [
   {
     label: "Connections",
     items: [
-      { value: "integrations", label: "Add-ons", icon: Plug, desc: "Microsoft 365 and OpenClaw integrations." },
+      { value: "integrations", label: "Add-ons", icon: Plug, desc: "Export to Microsoft 365 and auto-detect Teams meetings." },
     ],
   },
   {
