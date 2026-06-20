@@ -69,15 +69,33 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
     message: string;
   } | null>(null);
 
+  // Playback scrubber values (unused until in-app playback exists).
   const currentTime = 0;
   const duration = 0;
   const isPlaying = false;
   const progress = 0;
 
+  // Live elapsed clock: ticks every second while recording and not paused,
+  // resets on stop. Display-only — the saved meeting's real duration comes from
+  // the backend.
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (!isRecording) {
+      setElapsed(0);
+      return;
+    }
+    if (isPaused) return;
+    const id = setInterval(() => setElapsed((e) => e + 1), 1000);
+    return () => clearInterval(id);
+  }, [isRecording, isPaused]);
+
   const formatTime = (time: number) => {
-    const minutes = Math.floor(time / 60);
-    const seconds = Math.floor(time % 60);
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    const h = Math.floor(time / 3600);
+    const m = Math.floor((time % 3600) / 60);
+    const s = Math.floor(time % 60);
+    const mm = m.toString().padStart(2, '0');
+    const ss = s.toString().padStart(2, '0');
+    return h > 0 ? `${h}:${mm}:${ss}` : `${m}:${ss}`;
   };
 
   useEffect(() => {
@@ -578,16 +596,18 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
                     </>
                   )}
 
+                  {isRecording && (
+                    <span className="font-mono text-sm tabular-nums text-foreground min-w-[3.25rem] text-center">
+                      {formatTime(elapsed)}
+                    </span>
+                  )}
+
                   <div className={waveformClassName}>
                     {barHeights.map((height, index) => (
                       <div
                         key={index}
                         className={`${isDashboard ? 'w-1.5' : 'w-1'} rounded-full transition-all duration-200 ${
-                          isPaused
-                            ? 'bg-orange-400'
-                            : isDashboard
-                              ? 'bg-primary'
-                              : 'bg-red-500'
+                          isPaused ? 'bg-orange-400' : 'bg-brand-gradient-v'
                         }`}
                         style={{
                           height:
