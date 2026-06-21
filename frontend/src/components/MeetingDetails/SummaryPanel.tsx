@@ -1,7 +1,6 @@
 "use client";
 
 import { Summary, SummaryResponse, Transcript } from '@/types';
-import { EditableTitle } from '@/components/EditableTitle';
 import { BlockNoteSummaryView, BlockNoteSummaryViewRef } from '@/components/AISummary/BlockNoteSummaryView';
 import { EmptyStateSummary } from '@/components/EmptyStateSummary';
 import { ModelConfig } from '@/components/ModelSettingsModal';
@@ -224,6 +223,17 @@ export function SummaryPanel({
   };
 
   const isSummaryLoading = summaryStatus === 'processing' || summaryStatus === 'summarizing' || summaryStatus === 'regenerating';
+  const meetingDateLabel = (() => {
+    const created = new Date(meeting.created_at);
+    return Number.isNaN(created.getTime())
+      ? 'Meeting notes'
+      : created.toLocaleString([], {
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+  })();
 
   const languageSlot = (
     <Popover open={langPickerOpen} onOpenChange={setLangPickerOpen}>
@@ -256,20 +266,39 @@ export function SummaryPanel({
   return (
     <div className="flex-1 min-w-0 flex flex-col bg-card overflow-hidden">
       {/* Title area */}
-      <div className="p-4 border-b border-border">
-        {/* <EditableTitle
-          title={meetingTitle}
-          isEditing={isEditingTitle}
-          onStartEditing={onStartEditTitle}
-          onFinishEditing={onFinishEditTitle}
-          onChange={onTitleChange}
-        /> */}
+      <div className="border-b border-border p-3">
+        <div className="flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            {isEditingTitle ? (
+              <input
+                value={meetingTitle}
+                onChange={(e) => onTitleChange(e.target.value)}
+                onBlur={onFinishEditTitle}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') onFinishEditTitle();
+                  if (e.key === 'Escape') onFinishEditTitle();
+                }}
+                className="w-full min-w-[16rem] rounded-md border border-input bg-background px-2 py-1 text-sm font-semibold text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
+                autoFocus
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={onStartEditTitle}
+                className="block max-w-full truncate rounded px-1 text-left text-sm font-semibold text-foreground hover:bg-muted"
+                title="Edit meeting title"
+              >
+                {meetingTitle}
+              </button>
+            )}
+            <p className="mt-0.5 truncate px-1 text-xs text-muted-foreground">
+              Summary document · {meetingDateLabel}
+            </p>
+          </div>
 
-        {/* Button groups - only show when summary exists */}
-        {aiSummary && !isSummaryLoading && (
-          <div className="flex items-center justify-center w-full pt-0 gap-2">
-            {/* Left-aligned: Summary Generator Button Group */}
-            <div className="flex-shrink-0">
+          {/* Button groups - only show when summary exists */}
+          {aiSummary && !isSummaryLoading && (
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
               <SummaryGeneratorButtonGroup
                 modelConfig={modelConfig}
                 setModelConfig={setModelConfig}
@@ -287,10 +316,7 @@ export function SummaryPanel({
                 onOpenModelSettings={onOpenModelSettings}
                 languageSlot={languageSlot}
               />
-            </div>
 
-            {/* Right-aligned: Summary Updater Button Group */}
-            <div className="flex-shrink-0">
               <SummaryUpdaterButtonGroup
                 isSaving={isSaving}
                 isDirty={isTitleDirty || (summaryRef.current?.isDirty || false)}
@@ -303,10 +329,7 @@ export function SummaryPanel({
                 onOpenFolder={onOpenFolder}
                 hasSummary={!!aiSummary}
               />
-            </div>
 
-            {/* Microsoft export (OneNote always; Planner when tasks exist) */}
-            <div className="flex-shrink-0">
               <MeetingExportButtons
                 meetingId={meeting.id}
                 meetingTitle={meetingTitle}
@@ -316,8 +339,8 @@ export function SummaryPanel({
                 }
               />
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {isSummaryLoading ? (
@@ -424,25 +447,27 @@ export function SummaryPanel({
               ) : null}
             </div>
           )}
-          <div className="p-6 w-full">
-            <BlockNoteSummaryView
-              ref={summaryRef}
-              summaryData={aiSummary}
-              onSave={onSaveSummary}
-              onSummaryChange={onSummaryChange}
-              onDirtyChange={onDirtyChange}
-              status={summaryStatus}
-              error={summaryError}
-              onRegenerateSummary={() => {
-                Analytics.trackButtonClick('regenerate_summary', 'meeting_details');
-                onRegenerateSummary(customPrompt);
-              }}
-              meeting={{
-                id: meeting.id,
-                title: meetingTitle,
-                created_at: meeting.created_at
-              }}
-            />
+          <div className="w-full bg-background/60 p-5">
+            <div className="mx-auto max-w-[72rem] rounded-xl bg-[#fbfbf8] p-8 text-slate-950 shadow-sm ring-1 ring-black/10 dark:ring-white/10">
+              <BlockNoteSummaryView
+                ref={summaryRef}
+                summaryData={aiSummary}
+                onSave={onSaveSummary}
+                onSummaryChange={onSummaryChange}
+                onDirtyChange={onDirtyChange}
+                status={summaryStatus}
+                error={summaryError}
+                onRegenerateSummary={() => {
+                  Analytics.trackButtonClick('regenerate_summary', 'meeting_details');
+                  onRegenerateSummary(customPrompt);
+                }}
+                meeting={{
+                  id: meeting.id,
+                  title: meetingTitle,
+                  created_at: meeting.created_at
+                }}
+              />
+            </div>
           </div>
           {summaryStatus !== 'idle' && (
             <div className={`mt-4 p-4 rounded-lg ${summaryStatus === 'error' ? 'bg-red-100 text-red-700' :

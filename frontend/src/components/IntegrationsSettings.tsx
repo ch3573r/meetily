@@ -107,6 +107,7 @@ interface AddonPanelProps {
    *  state's color classes unless `badgeClasses` is also given). */
   badgeLabel?: string;
   badgeClasses?: string;
+  showBadge?: boolean;
 }
 
 function AddonPanel({
@@ -117,6 +118,7 @@ function AddonPanel({
   children,
   badgeLabel,
   badgeClasses,
+  showBadge = true,
 }: AddonPanelProps) {
   return (
     <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
@@ -130,11 +132,13 @@ function AddonPanel({
             <p className="mt-1 text-sm text-muted-foreground">{detail}</p>
           </div>
         </div>
-        <span
-          className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium ${badgeClasses ?? stateClasses(state)}`}
-        >
-          {badgeLabel ?? stateBadge(state)}
-        </span>
+        {showBadge && (
+          <span
+            className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium ${badgeClasses ?? stateClasses(state)}`}
+          >
+            {badgeLabel ?? stateBadge(state)}
+          </span>
+        )}
       </div>
       {children && <div className="mt-4">{children}</div>}
     </section>
@@ -389,6 +393,7 @@ function OneNotePanel() {
       title="OneNote export"
       state={panelState}
       detail={detail}
+      showBadge={!isConnected}
     >
       {isConnected && (
         <div className="space-y-3">
@@ -589,6 +594,7 @@ function PlannerPanel() {
       title="Planner task export"
       state={panelState}
       detail={detail}
+      showBadge={!isConnected}
     >
       {isConnected && (
         <div className="space-y-3">
@@ -1614,7 +1620,13 @@ function CalendarPanel() {
   }, [current?.id, current?.attendees]);
 
   return (
-    <AddonPanel icon={CalendarClock} title="Calendar" state={panelState} detail={detail}>
+    <AddonPanel
+      icon={CalendarClock}
+      title="Calendar"
+      state={panelState}
+      detail={detail}
+      showBadge={!isConnected}
+    >
       {isConnected && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">

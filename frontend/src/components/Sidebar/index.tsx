@@ -308,7 +308,7 @@ const Sidebar: React.FC = () => {
   }, [router]);
 
   const renderCollapsedIcons = () => {
-    if (!isCollapsed) return null;
+    if (!isEffectivelyCollapsed) return null;
 
     const isHomePage = pathname === "/";
     const isMeetingPage = pathname?.includes("/meeting-details");
@@ -498,6 +498,7 @@ const Sidebar: React.FC = () => {
 
   const onSettings = pathname === "/settings";
   const onAddons = onSettings && settingsTab === "integrations";
+  const isEffectivelyCollapsed = isCollapsed || onSettings;
 
   const goToMeetingNotes = () => {
     // Only open a real, loadable meeting; otherwise go home (the meetings list),
@@ -543,24 +544,26 @@ const Sidebar: React.FC = () => {
 
   return (
     <div className="fixed left-0 top-[var(--titlebar-height)] z-40 h-[calc(100vh-var(--titlebar-height))]">
-      <button
-        onClick={toggleCollapse}
-        className="absolute -right-3 top-24 z-50 flex h-7 w-7 items-center justify-center rounded-full border border-sidebar-border bg-sidebar text-muted-foreground shadow-sm transition hover:bg-sidebar-hover hover:text-sidebar-foreground"
-        aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-      >
-        {isCollapsed ? (
-          <ChevronRightCircle className="h-5 w-5" />
-        ) : (
-          <ChevronLeftCircle className="h-5 w-5" />
-        )}
-      </button>
+      {!onSettings && (
+        <button
+          onClick={toggleCollapse}
+          className="absolute -right-3 top-24 z-50 flex h-7 w-7 items-center justify-center rounded-full border border-sidebar-border bg-sidebar text-muted-foreground shadow-sm transition hover:bg-sidebar-hover hover:text-sidebar-foreground"
+          aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          {isCollapsed ? (
+            <ChevronRightCircle className="h-5 w-5" />
+          ) : (
+            <ChevronLeftCircle className="h-5 w-5" />
+          )}
+        </button>
+      )}
 
       <aside
         className={`flex h-full flex-col border-r border-sidebar-border bg-sidebar text-muted-foreground shadow-sm transition-all duration-300 ${
-          isCollapsed ? "w-16" : "w-[17.5rem]"
+          isEffectivelyCollapsed ? "w-16" : "w-[17.5rem]"
         }`}
       >
-        {isCollapsed ? (
+        {isEffectivelyCollapsed ? (
           renderCollapsedIcons()
         ) : (
           <>
@@ -650,11 +653,11 @@ const Sidebar: React.FC = () => {
               )}
             </div>
 
-            <div className="flex-shrink-0 space-y-2 border-t border-sidebar-border bg-sidebar p-3">
+            <div className="flex-shrink-0 space-y-2.5 border-t border-sidebar-border bg-sidebar p-3">
               <button
                 onClick={handleRecordingToggle}
                 title={isRecording ? "Click to stop recording" : undefined}
-                className={`flex w-full items-center justify-center gap-2 rounded-md px-3 py-3 text-sm font-semibold shadow-sm transition ${
+                className={`flex w-full items-center justify-center gap-2 rounded-lg px-3 py-3 text-sm font-semibold shadow-sm transition ${
                   isRecording
                     ? "bg-red-500 text-white hover:bg-red-600"
                     : "bg-primary text-primary-foreground shadow-primary/20 hover:bg-primary/90"
@@ -682,7 +685,7 @@ const Sidebar: React.FC = () => {
                 {betaFeatures.importAndRetranscribe && (
                   <button
                     onClick={() => openImportDialog()}
-                    className="flex min-w-0 items-center justify-center gap-2 rounded-md border border-sidebar-border bg-background/60 px-2.5 py-2.5 text-sm font-medium text-sidebar-foreground transition hover:bg-sidebar-hover"
+                    className="flex min-w-0 items-center justify-center gap-2 rounded-lg border border-sidebar-border bg-transparent px-2.5 py-2.5 text-sm font-medium text-sidebar-foreground transition hover:bg-sidebar-hover"
                   >
                     <Upload className="h-4 w-4 shrink-0" />
                     <span className="truncate">Import</span>
@@ -691,7 +694,7 @@ const Sidebar: React.FC = () => {
 
                 <button
                   onClick={() => router.push("/settings")}
-                  className="flex min-w-0 items-center justify-center gap-2 rounded-md border border-sidebar-border bg-background/60 px-2.5 py-2.5 text-sm font-medium text-sidebar-foreground transition hover:bg-sidebar-hover"
+                  className="flex min-w-0 items-center justify-center gap-2 rounded-lg border border-sidebar-border bg-transparent px-2.5 py-2.5 text-sm font-medium text-sidebar-foreground transition hover:bg-sidebar-hover"
                 >
                   <Settings className="h-4 w-4 shrink-0" />
                   <span className="truncate">Settings</span>
@@ -700,18 +703,18 @@ const Sidebar: React.FC = () => {
 
               {isRecording ? (
                 isPaused ? (
-                  <div className="flex items-center gap-2 rounded-md border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+                  <div className="flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
                     <span className="h-2 w-2 rounded-full bg-amber-500" />
                     Paused
                   </div>
                 ) : (
-                  <div className="flex items-center gap-2 rounded-md border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-700 dark:text-red-300">
+                  <div className="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-700 dark:text-red-300">
                     <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />
                     Recording
                   </div>
                 )
               ) : (
-                <div className="flex items-center gap-2 rounded-md border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300">
+                <div className="flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300">
                   <span className="h-2 w-2 rounded-full bg-emerald-500" />
                   Ready for recording
                 </div>

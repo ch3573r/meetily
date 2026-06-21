@@ -87,11 +87,11 @@ const TranscriptSegment = memo(function TranscriptSegment({
     const isMe = speaker === "Me";
 
     return (
-        <div id={`segment-${id}`} className="mb-3">
-            <div className="flex items-start gap-2">
+        <div id={`segment-${id}`} className="mb-4">
+            <div className="flex items-start gap-3">
                 <Tooltip>
                     <TooltipTrigger>
-                        <span className="text-xs text-muted-foreground mt-1 flex-shrink-0 min-w-[50px]">
+                        <span className="mt-1 flex min-w-[3.25rem] flex-shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">
                             {formatRecordingTime(timestamp)}
                         </span>
                     </TooltipTrigger>
@@ -101,7 +101,7 @@ const TranscriptSegment = memo(function TranscriptSegment({
                         )}
                     </TooltipContent>
                 </Tooltip>
-                <div className="flex-1">
+                <div className="min-w-0 flex-1">
                     {speaker && (
                         <span
                             className={`mb-0.5 inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
@@ -115,10 +115,10 @@ const TranscriptSegment = memo(function TranscriptSegment({
                     )}
                     {isStreaming ? (
                         <div className="bg-muted border border-border rounded-lg px-3 py-2">
-                            <p className="text-base text-foreground leading-relaxed">{displayText}</p>
+                            <p className="text-[15px] leading-7 text-foreground/90">{displayText}</p>
                         </div>
                     ) : (
-                        <p className="text-base text-foreground leading-relaxed">{displayText}</p>
+                        <p className="text-[15px] leading-7 text-foreground/90">{displayText}</p>
                     )}
                 </div>
             </div>

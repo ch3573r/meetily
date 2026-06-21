@@ -94,22 +94,48 @@ export function HomeDashboard({
             <div className="absolute right-[-120px] top-[-120px] h-72 w-72 rounded-full bg-primary/5 blur-3xl" />
             <div className="absolute bottom-[-160px] left-[20%] h-72 w-72 rounded-full bg-primary/5 blur-3xl" />
 
-            <div className="relative z-10 flex h-full min-h-[265px] flex-col justify-between gap-8">
-              <div>
-                <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
-                  <Sparkles className="h-3.5 w-3.5" />
-                  Live capture
+            <div className="relative z-10 grid min-h-[240px] gap-7 lg:grid-cols-[1fr_20rem] lg:items-end">
+              <div className="flex h-full flex-col justify-between gap-8">
+                <div>
+                  <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+                    <Sparkles className="h-3.5 w-3.5" />
+                    Live capture
+                  </div>
+                  <h2 className="mt-5 text-3xl font-semibold text-foreground">
+                    Start a Recording
+                  </h2>
+                  <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
+                    Capture microphone and system audio, stream the transcript,
+                    and save the finished meeting for summary and review.
+                  </p>
                 </div>
-                <h2 className="mt-5 text-3xl font-semibold text-foreground">
-                  Start a Recording
-                </h2>
-                <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-                  Capture microphone and system audio, stream the transcript,
-                  and save the finished meeting for summary and review.
-                </p>
+
+                <div className="grid gap-2 text-sm text-muted-foreground">
+                  <div className="font-medium text-foreground">
+                    {isRecording
+                      ? recordingState.isPaused
+                        ? "Paused"
+                        : "Recording in progress"
+                      : canRecord
+                        ? "Ready to start"
+                        : "Microphone access required"}
+                  </div>
+                  <div>
+                    {canRecord
+                      ? "Use the recording controls to pause or stop."
+                      : "Grant microphone access before starting a capture."}
+                  </div>
+                </div>
               </div>
 
-              <div className="flex flex-col items-start gap-5 sm:flex-row sm:items-center sm:justify-between">
+              <div className="rounded-xl border border-border bg-background/70 p-4 shadow-sm">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                    Capture Console
+                  </div>
+                  <span className={`flex h-2.5 w-2.5 rounded-full ${appStatus.dot} ${appStatus.glow}`} />
+                </div>
+
                 {canRecord ? (
                   <RecordingControls
                     variant="dashboard"
@@ -126,20 +152,24 @@ export function HomeDashboard({
                     meetingName={meetingName}
                   />
                 ) : (
-                  <div className="rounded-md border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm text-amber-100">
+                  <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-100">
                     Microphone access is required before recording.
                   </div>
                 )}
 
-                <div className="grid gap-2 text-sm text-muted-foreground sm:text-right">
-                  <div className="font-medium text-foreground">
-                    {isRecording
-                      ? recordingState.isPaused
-                        ? "Paused"
-                        : "Recording in progress"
-                      : "Ready to start"}
+                <div className="mt-5 grid gap-2 border-t border-border pt-4 text-xs text-muted-foreground">
+                  <div className="flex items-center justify-between gap-3">
+                    <span>Microphone</span>
+                    <span className="max-w-[12rem] truncate font-medium text-foreground">
+                      {selectedDevices.micDevice ?? "Default input"}
+                    </span>
                   </div>
-                  <div>Use the recording controls to pause or stop.</div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span>System audio</span>
+                    <span className="max-w-[12rem] truncate font-medium text-foreground">
+                      {selectedDevices.systemDevice ?? "Default output"}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>

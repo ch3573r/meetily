@@ -38,7 +38,7 @@ export function TranscriptButtonGroup({
   }, [onRefetchTranscripts]);
 
   return (
-    <div className="flex items-center justify-center w-full gap-2">
+    <div className="flex shrink-0 items-center justify-end gap-2">
       <ButtonGroup>
         <Button
           variant="outline"

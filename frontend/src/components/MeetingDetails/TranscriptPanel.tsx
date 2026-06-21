@@ -66,17 +66,25 @@ export function TranscriptPanel({
   }, [transcripts, usePagination, segments]);
 
   return (
-    <div className="hidden md:flex md:w-1/4 lg:w-1/3 min-w-0 border-r border-border bg-card flex-col relative shrink-0">
+    <div className="hidden min-w-0 shrink-0 flex-col border-r border-border bg-card md:flex md:w-[32%] xl:w-[30rem] 2xl:w-[32rem]">
       {/* Title area */}
-      <div className="p-4 border-b border-border">
-        <TranscriptButtonGroup
-          transcriptCount={usePagination ? (totalCount ?? convertedSegments.length) : (transcripts?.length || 0)}
-          onCopyTranscript={onCopyTranscript}
-          onOpenMeetingFolder={onOpenMeetingFolder}
-          meetingId={meetingId}
-          meetingFolderPath={meetingFolderPath}
-          onRefetchTranscripts={onRefetchTranscripts}
-        />
+      <div className="border-b border-border p-3">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold text-foreground">Transcript</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {usePagination ? (totalCount ?? convertedSegments.length) : (transcripts?.length || 0)} segments
+            </p>
+          </div>
+          <TranscriptButtonGroup
+            transcriptCount={usePagination ? (totalCount ?? convertedSegments.length) : (transcripts?.length || 0)}
+            onCopyTranscript={onCopyTranscript}
+            onOpenMeetingFolder={onOpenMeetingFolder}
+            meetingId={meetingId}
+            meetingFolderPath={meetingFolderPath}
+            onRefetchTranscripts={onRefetchTranscripts}
+          />
+        </div>
       </div>
 
       {/* Transcript content - use virtualized view for better performance */}
@@ -100,10 +108,10 @@ export function TranscriptPanel({
 
       {/* Custom prompt input at bottom of transcript section */}
       {!isRecording && convertedSegments.length > 0 && (
-        <div className="p-1 border-t border-border">
+        <div className="border-t border-border p-2">
           <textarea
             placeholder="Add context for AI summary. For example people involved, meeting overview, objective etc..."
-            className="w-full px-3 py-2 border border-input rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-ring focus:border-ring bg-background shadow-sm min-h-[80px] resize-y"
+            className="min-h-[80px] w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
             value={customPrompt}
             onChange={(e) => onPromptChange(e.target.value)}
           />
