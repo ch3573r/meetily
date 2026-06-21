@@ -88,7 +88,7 @@ export interface PolishedPlannerTask {
 }
 
 export const ONENOTE_LARGE_LIBRARY_MESSAGE =
-  "OneNote cannot list notebooks or sections because this OneDrive library has more than 5,000 OneNote items. Create a new notebook/section or use a saved destination; export can still write to a known section.";
+  "Microsoft Graph cannot list OneNote notebooks or sections because the backing OneDrive/SharePoint document library has too many OneNote items. The selected notebook may still be small. Use a saved destination or create a new notebook/section; export can still write to a known section.";
 
 export function isOneNoteLargeLibraryError(error: unknown): boolean {
   const message = (error instanceof Error ? error.message : String(error)).toLowerCase();

@@ -670,9 +670,11 @@ export function MeetingExportButtons({
 
             {oneNoteSectionListingLimited && oneNoteNotebookId && (
               <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-200">
-                OneNote cannot list sections for this notebook because of the
-                5,000-item Graph limit. Create a new section here, or export to
-                the saved section if one is already selected.
+                Microsoft Graph is blocking section listing because the backing
+                OneDrive/SharePoint document library hit the 5,000 OneNote-item
+                limit. This notebook may still only have a few sections. Create
+                a new section here, or export to the saved section if one is
+                already selected.
               </p>
             )}
 
