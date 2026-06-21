@@ -14,7 +14,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import Analytics from '@/lib/analytics';
-import { useRecordingState } from '@/contexts/RecordingStateContext';
+import { RecordingStatus, useRecordingState } from '@/contexts/RecordingStateContext';
 
 interface RecordingControlsProps {
   isRecording: boolean;
@@ -68,6 +68,10 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
     title: string;
     message: string;
   } | null>(null);
+  const isStartPending =
+    isStarting ||
+    isValidatingModel ||
+    recordingState.status === RecordingStatus.STARTING;
 
   // Playback scrubber values (unused until in-app playback exists).
   const currentTime = 0;
@@ -112,7 +116,7 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
   }, []);
 
   const handleStartRecording = useCallback(async () => {
-    if (isStarting || isValidatingModel) return;
+    if (isStartPending) return;
     console.log('Starting recording...');
     console.log('Selected devices:', selectedDevices);
     console.log('Meeting name:', meetingName);
@@ -121,6 +125,7 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
     setShowPlayback(false);
     setTranscript(''); // Clear any previous transcript
     setSpeechDetected(false); // Reset speech detection on new recording
+    setIsStarting(true);
 
     try {
       // Start through the shared lifecycle hook. The backend validates the
@@ -172,11 +177,12 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
             'Unable to start recording. Please check your audio device settings and try again.'
         });
       }
+    } finally {
+      setIsStarting(false);
     }
   }, [
     onRecordingStart,
-    isStarting,
-    isValidatingModel,
+    isStartPending,
     selectedDevices,
     meetingName,
     isRecording,
@@ -414,8 +420,8 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
     ? 'flex items-center gap-3 bg-transparent p-0 shadow-none'
     : 'flex items-center space-x-2 bg-card rounded-full shadow-sm px-4 py-2';
   const startButtonClassName = isDashboard
-    ? `h-16 w-16 flex items-center justify-center rounded-full text-primary-foreground shadow-[0_0_34px_hsl(var(--primary)/0.42)] transition-all relative ${isStarting || isProcessing || isRecordingDisabled || isValidatingModel ? 'bg-muted cursor-not-allowed' : 'bg-gradient-to-br from-primary to-primary/70 hover:scale-105 hover:shadow-[0_0_44px_hsl(var(--primary)/0.6)]'}`
-    : `w-12 h-12 flex items-center justify-center ${isStarting || isProcessing || isValidatingModel ? 'bg-muted' : 'bg-red-500 hover:bg-red-600'} rounded-full text-foreground transition-colors relative`;
+    ? `h-16 w-16 flex items-center justify-center rounded-full text-primary-foreground shadow-[0_0_34px_hsl(var(--primary)/0.42)] transition-all relative ${isStartPending || isProcessing || isRecordingDisabled ? 'bg-muted cursor-not-allowed' : 'bg-gradient-to-br from-primary to-primary/70 hover:scale-105 hover:shadow-[0_0_44px_hsl(var(--primary)/0.6)]'}`
+    : `w-12 h-12 flex items-center justify-center ${isStartPending || isProcessing ? 'bg-muted' : 'bg-red-500 hover:bg-red-600'} rounded-full text-foreground transition-colors relative`;
   const secondaryButtonClassName = isDashboard
     ? `h-12 w-12 flex items-center justify-center rounded-full border border-border text-foreground transition-colors relative ${isPausing || isResuming || isStopping ? 'bg-muted text-muted-foreground' : 'bg-muted hover:bg-accent'}`
     : `w-10 h-10 flex items-center justify-center ${isPausing || isResuming || isStopping ? 'bg-muted border-2 border-border text-muted-foreground' : 'bg-card border-2 border-border text-muted-foreground hover:border-ring hover:bg-muted'} rounded-full transition-colors relative`;
@@ -508,11 +514,11 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
                             isStarting ||
                             isProcessing ||
                             isRecordingDisabled ||
-                            isValidatingModel
+                            isStartPending
                           }
                           className={startButtonClassName}
                         >
-                          {isValidatingModel ? (
+                          {isStartPending ? (
                             <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
                           ) : (
                             <Mic size={isDashboard ? 26 : 20} />
@@ -520,7 +526,7 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
                         </button>
                       </TooltipTrigger>
                       <TooltipContent>
-                        <p>Start recording</p>
+                        <p>{isStartPending ? 'Starting recording...' : 'Start recording'}</p>
                       </TooltipContent>
                     </Tooltip>
                   ) : (
@@ -625,8 +631,9 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
           )}
         </div>
 
-        {/* Show validation status only */}
-        {isValidatingModel && (
+        {/* Show startup status. The backend may still be loading the speech model
+            or opening audio devices, so keep the click visibly acknowledged. */}
+        {isStartPending && (
           <div
             className={
               isDashboard
@@ -634,7 +641,7 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
                 : 'text-xs text-muted-foreground text-center mt-2'
             }
           >
-            Validating speech recognition...
+            Starting recording...
           </div>
         )}
 

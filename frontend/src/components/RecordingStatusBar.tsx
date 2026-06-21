@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { useRecordingState } from '@/contexts/RecordingStateContext';
+import { RecordingStatus, useRecordingState } from '@/contexts/RecordingStateContext';
 import { useEffect, useState } from 'react';
 
 interface RecordingStatusBarProps {
@@ -11,7 +11,8 @@ interface RecordingStatusBarProps {
 export const RecordingStatusBar: React.FC<RecordingStatusBarProps> = ({ isPaused = false }) => {
   // Get recording duration from backend-synced context (in seconds)
   // Backend polls every 500ms, providing smooth updates
-  const { activeDuration, isRecording } = useRecordingState();
+  const { activeDuration, status } = useRecordingState();
+  const isStarting = status === RecordingStatus.STARTING;
 
   // Display state synced from backend
   const [displaySeconds, setDisplaySeconds] = useState(0);
@@ -38,9 +39,10 @@ export const RecordingStatusBar: React.FC<RecordingStatusBarProps> = ({ isPaused
       transition={{ duration: 0.2 }}
       className="flex items-center gap-2 px-3 py-2 bg-muted rounded-lg mb-2"
     >
-      <div className={`w-2 h-2 rounded-full ${isPaused ? 'bg-orange-500' : 'bg-red-500 animate-pulse'}`} />
+      <div className={`w-2 h-2 rounded-full ${isPaused ? 'bg-orange-500' : isStarting ? 'bg-primary animate-pulse' : 'bg-red-500 animate-pulse'}`} />
       <span className={`text-sm ${isPaused ? 'text-orange-700' : 'text-foreground'}`}>
-        {isPaused ? 'Paused' : 'Recording'} • {formatDuration(displaySeconds)}
+        {isPaused ? 'Paused' : isStarting ? 'Starting recording...' : 'Recording'}
+        {!isStarting && ` • ${formatDuration(displaySeconds)}`}
       </span>
     </motion.div>
   );

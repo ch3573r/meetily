@@ -10,6 +10,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex,
 };
+use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 use tokio::task::JoinHandle;
 
@@ -72,6 +73,7 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
     app: AppHandle<R>,
     meeting_name: Option<String>,
 ) -> Result<(), String> {
+    let start_timer = Instant::now();
     info!(
         "Starting recording with default devices, meeting: {:?}",
         meeting_name
@@ -88,6 +90,7 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
 
     // Validate that transcription models are available before starting recording
     info!("🔍 Validating transcription model availability before starting recording...");
+    let validation_timer = Instant::now();
     if let Err(validation_error) = transcription::validate_transcription_model_ready(&app).await {
         error!("Model validation failed: {}", validation_error);
 
@@ -101,7 +104,10 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
 
         return Err(validation_error);
     }
-    info!("✅ Transcription model validation passed");
+    info!(
+        "✅ Transcription model validation passed in {:?}",
+        validation_timer.elapsed()
+    );
 
     // Async-first approach - no more blocking operations!
     info!("🚀 Starting async recording initialization");
@@ -258,10 +264,15 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
     });
 
     // Start recording with resolved devices (replaces start_recording_with_defaults_and_auto_save call)
+    let manager_timer = Instant::now();
     let transcription_receiver = manager
         .start_recording(microphone_device, system_device, auto_save)
         .await
         .map_err(|e| format!("Failed to start recording: {}", e))?;
+    info!(
+        "✅ Recording manager opened streams in {:?}",
+        manager_timer.elapsed()
+    );
 
     // Store the manager globally to keep it alive
     {
@@ -337,7 +348,10 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
     // Update tray menu to reflect recording state
     crate::tray::update_tray_menu(&app);
 
-    info!("✅ Recording started successfully with async-first approach");
+    info!(
+        "✅ Recording started successfully with async-first approach in {:?}",
+        start_timer.elapsed()
+    );
 
     Ok(())
 }
@@ -358,6 +372,7 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
     system_device_name: Option<String>,
     meeting_name: Option<String>,
 ) -> Result<(), String> {
+    let start_timer = Instant::now();
     info!(
         "Starting recording with specific devices: mic={:?}, system={:?}, meeting={:?}",
         mic_device_name, system_device_name, meeting_name
@@ -374,6 +389,7 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
 
     // Validate that transcription models are available before starting recording
     info!("🔍 Validating transcription model availability before starting recording...");
+    let validation_timer = Instant::now();
     if let Err(validation_error) = transcription::validate_transcription_model_ready(&app).await {
         error!("Model validation failed: {}", validation_error);
 
@@ -387,7 +403,10 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
 
         return Err(validation_error);
     }
-    info!("✅ Transcription model validation passed");
+    info!(
+        "✅ Transcription model validation passed in {:?}",
+        validation_timer.elapsed()
+    );
 
     // Parse devices
     let mic_device = if let Some(ref name) = mic_device_name {
@@ -457,10 +476,15 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
     });
 
     // Start recording with specified devices and auto_save setting
+    let manager_timer = Instant::now();
     let transcription_receiver = manager
         .start_recording(mic_device, system_device, auto_save)
         .await
         .map_err(|e| format!("Failed to start recording: {}", e))?;
+    info!(
+        "✅ Recording manager opened streams in {:?}",
+        manager_timer.elapsed()
+    );
 
     // Store the manager globally to keep it alive
     {
@@ -539,7 +563,10 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
     // Update tray menu to reflect recording state
     crate::tray::update_tray_menu(&app);
 
-    info!("✅ Recording started with custom devices using async-first approach");
+    info!(
+        "✅ Recording started with custom devices using async-first approach in {:?}",
+        start_timer.elapsed()
+    );
 
     Ok(())
 }

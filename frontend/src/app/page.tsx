@@ -38,7 +38,7 @@ export default function Home() {
   const recordingState = useRecordingState();
 
   // Extract status from global state
-  const { status, isStopping, isProcessing, isSaving } = recordingState;
+  const { status, isStarting, isStopping, isProcessing, isSaving } = recordingState;
 
   // Hooks
   const { hasMicrophone } = usePermissionCheck();
@@ -78,6 +78,7 @@ export default function Home() {
         // Skip recovery check if currently recording or processing stop
         // This prevents the recovery dialog from showing when:
         if (recordingState.isRecording ||
+          status === RecordingStatus.STARTING ||
           status === RecordingStatus.STOPPING ||
           status === RecordingStatus.PROCESSING_TRANSCRIPTS ||
           status === RecordingStatus.SAVING) {
@@ -214,6 +215,7 @@ export default function Home() {
 
   // Computed values using global status
   const isProcessingStop = status === RecordingStatus.PROCESSING_TRANSCRIPTS || isProcessing;
+  const isRecordingOrStarting = recordingState.isRecording || isStarting;
 
   return (
     <motion.div
@@ -239,7 +241,7 @@ export default function Home() {
         onLoadPreview={loadMeetingTranscripts}
       />
       <div className="flex flex-1 overflow-hidden">
-        {recordingState.isRecording || transcripts.length > 0 || isProcessingStop || isStopping ? (
+        {isRecordingOrStarting || transcripts.length > 0 || isProcessingStop || isStopping ? (
           <>
             <TranscriptPanel
               isProcessingStop={isProcessingStop}
