@@ -123,11 +123,9 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
     setSpeechDetected(false); // Reset speech detection on new recording
 
     try {
-      // Call the validation callback which will:
-      // 1. Check if model is ready
-      // 2. Show appropriate toast/modal
-      // 3. Call backend if valid
-      // 4. Update UI state
+      // Start through the shared lifecycle hook. The backend validates the
+      // selected transcription engine before opening devices and emits any
+      // model/download errors as structured events.
       await onRecordingStart();
     } catch (error) {
       console.error('Failed to start recording:', error);

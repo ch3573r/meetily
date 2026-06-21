@@ -119,20 +119,24 @@ async fn start_recording<R: Runtime>(
 
             log_info!("Recording started successfully");
 
-            // Show recording started notification through NotificationManager
-            // This respects user's notification preferences
-            let notification_manager_state = app.state::<NotificationManagerState<R>>();
-            if let Err(e) = notifications::commands::show_recording_started_notification(
-                &app,
-                &notification_manager_state,
-                meeting_name.clone(),
-            )
-            .await
-            {
-                log_error!("Failed to show recording started notification: {}", e);
-            } else {
-                log_info!("Successfully showed recording started notification");
-            }
+            // Notification work must not hold up the command response; capture
+            // is already running at this point.
+            let app_for_notification = app.clone();
+            tauri::async_runtime::spawn(async move {
+                let notification_manager_state =
+                    app_for_notification.state::<NotificationManagerState<R>>();
+                if let Err(e) = notifications::commands::show_recording_started_notification(
+                    &app_for_notification,
+                    &notification_manager_state,
+                    meeting_name.clone(),
+                )
+                .await
+                {
+                    log_error!("Failed to show recording started notification: {}", e);
+                } else {
+                    log_info!("Successfully showed recording started notification");
+                }
+            });
 
             Ok(())
         }
@@ -346,18 +350,22 @@ async fn start_recording_with_devices_and_meeting<R: Runtime>(
         Ok(_) => {
             log_info!("Recording started successfully via tauri command");
 
-            // Show recording started notification through NotificationManager
-            // This respects user's notification preferences
-            let notification_manager_state = app.state::<NotificationManagerState<R>>();
-            if let Err(e) = notifications::commands::show_recording_started_notification(
-                &app,
-                &notification_manager_state,
-                meeting_name_for_notification.clone(),
-            )
-            .await
-            {
-                log_error!("Failed to show recording started notification: {}", e);
-            }
+            // Notification work must not hold up the command response; capture
+            // is already running at this point.
+            let app_for_notification = app.clone();
+            tauri::async_runtime::spawn(async move {
+                let notification_manager_state =
+                    app_for_notification.state::<NotificationManagerState<R>>();
+                if let Err(e) = notifications::commands::show_recording_started_notification(
+                    &app_for_notification,
+                    &notification_manager_state,
+                    meeting_name_for_notification.clone(),
+                )
+                .await
+                {
+                    log_error!("Failed to show recording started notification: {}", e);
+                }
+            });
 
             Ok(())
         }
@@ -869,6 +877,7 @@ pub fn run() {
             exports::commands::list_planner_plans,
             exports::commands::list_planner_buckets,
             exports::commands::create_onenote_notebook,
+            exports::commands::create_onenote_section,
             exports::commands::create_planner_bucket,
             exports::commands::list_calendar_events,
             exports::commands::current_or_next_meeting,

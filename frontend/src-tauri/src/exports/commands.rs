@@ -813,6 +813,21 @@ pub async fn create_onenote_notebook(
     discovery::create_notebook(&client, &token, &name).await
 }
 
+/// Create a new section inside a OneNote notebook and return it, so Settings
+/// and per-export dialogs can offer an explicit "New section" action.
+#[tauri::command]
+pub async fn create_onenote_section(
+    state: tauri::State<'_, MicrosoftAuthState>,
+    notebook_id: String,
+    display_name: String,
+) -> Result<discovery::SectionInfo, String> {
+    let (token, _, _) = get_token_and_context(&state).await?;
+    let name = sanitize_onenote_section_name(&display_name);
+    let transport = ReqwestGraphTransport::new();
+    let client = GraphClient::new(transport, TokioSleeper, RetryPolicy::default());
+    discovery::create_section(&client, &token, &notebook_id, &name).await
+}
+
 /// Create a new bucket within a plan and return it.
 #[tauri::command]
 pub async fn create_planner_bucket(

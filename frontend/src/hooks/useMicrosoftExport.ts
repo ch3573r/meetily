@@ -204,6 +204,26 @@ export function useMicrosoftExport() {
     [],
   );
 
+  const createSection = useCallback(
+    async (notebookId: string, displayName: string): Promise<SectionInfo | null> => {
+      setError(null);
+      try {
+        const section = await microsoftExportService.createSection(
+          notebookId,
+          displayName,
+        );
+        setSections((prev) =>
+          prev.some((s) => s.id === section.id) ? prev : [...prev, section],
+        );
+        return section;
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+        return null;
+      }
+    },
+    [],
+  );
+
   const createBucket = useCallback(
     async (planId: string, name: string): Promise<BucketInfo | null> => {
       setError(null);
@@ -240,6 +260,7 @@ export function useMicrosoftExport() {
     loadPlans,
     loadBuckets,
     createNotebook,
+    createSection,
     createBucket,
     refreshStatus,
     calendarEvents,

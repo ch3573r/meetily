@@ -328,6 +328,11 @@ function sanitizeNotebookName(raw: string): string {
   return raw.replace(NOTEBOOK_FORBIDDEN, " ").replace(/\s+/g, " ").trimStart().slice(0, 128);
 }
 
+const SECTION_FORBIDDEN = /[?*\\/:<>|&#'%~"]/g;
+function sanitizeSectionName(raw: string): string {
+  return raw.replace(SECTION_FORBIDDEN, " ").replace(/\s+/g, " ").trimStart().slice(0, 49);
+}
+
 const NEW_OPTION = "__new__";
 
 function OneNotePanel() {
@@ -336,9 +341,15 @@ function OneNotePanel() {
   const [selectedNotebook, setSelectedNotebook] = useState<string>(
     saved.notebookId ?? "",
   );
+  const [selectedSection, setSelectedSection] = useState<string>(
+    saved.sectionId ?? "",
+  );
   const [creatingNotebook, setCreatingNotebook] = useState(false);
+  const [creatingSection, setCreatingSection] = useState(false);
   const [newNotebookName, setNewNotebookName] = useState("");
+  const [newSectionName, setNewSectionName] = useState("");
   const [savingNotebook, setSavingNotebook] = useState(false);
+  const [savingSection, setSavingSection] = useState(false);
 
   const submitNewNotebook = async () => {
     const name = sanitizeNotebookName(newNotebookName).trim();
@@ -348,8 +359,23 @@ function OneNotePanel() {
     setSavingNotebook(false);
     if (nb) {
       setSelectedNotebook(nb.id);
+      setSelectedSection("");
       setCreatingNotebook(false);
       setNewNotebookName("");
+      void ms.loadSections(nb.id);
+    }
+  };
+
+  const submitNewSection = async () => {
+    const name = sanitizeSectionName(newSectionName).trim();
+    if (!name || !selectedNotebook) return;
+    setSavingSection(true);
+    const section = await ms.createSection(selectedNotebook, name);
+    setSavingSection(false);
+    if (section) {
+      setSelectedSection(section.id);
+      setCreatingSection(false);
+      setNewSectionName("");
     }
   };
 
@@ -361,23 +387,32 @@ function OneNotePanel() {
     }
   }, [isConnected]);
 
-  // Persist the chosen notebook. The section is created per-export (a dated
-  // section), so there is no section picker — this also sidesteps the OneNote
-  // 5,000-items-per-library enumeration limit, which only affects listing.
+  useEffect(() => {
+    if (isConnected && selectedNotebook) {
+      void ms.loadSections(selectedNotebook);
+    }
+  }, [isConnected, selectedNotebook]);
+
+  // Persist the explicit destination. Notebook-only is allowed as a partial
+  // setup state, but exporting requires a selected section.
   useEffect(() => {
     if (!selectedNotebook) return;
+    const notebookName = ms.notebooks.find((n) => n.id === selectedNotebook)
+      ?.displayName;
+    const sectionName = selectedSection
+      ? ms.sections.find((s) => s.id === selectedSection)?.displayName
+      : undefined;
     setExportDestinations({
       notebookId: selectedNotebook,
-      notebookName: ms.notebooks.find((n) => n.id === selectedNotebook)
-        ?.displayName,
-      sectionId: undefined,
-      sectionName: undefined,
+      notebookName,
+      sectionId: selectedSection || undefined,
+      sectionName,
     });
-  }, [selectedNotebook, ms.notebooks]);
+  }, [selectedNotebook, selectedSection, ms.notebooks, ms.sections]);
 
   const panelState: AddonState = isConnected ? "connected" : "signin";
   const detail = isConnected
-    ? "Pick a notebook. Each export creates a new dated section in it."
+    ? "Pick the notebook and section where meeting pages should be created."
     : "Sign in with Microsoft above to enable OneNote export.";
 
   return (
@@ -415,6 +450,8 @@ function OneNotePanel() {
                 } else {
                   setCreatingNotebook(false);
                   setSelectedNotebook(e.target.value);
+                  setSelectedSection("");
+                  setCreatingSection(false);
                 }
               }}
               disabled={ms.loadingNotebooks}
@@ -480,6 +517,103 @@ function OneNotePanel() {
               </p>
             </div>
           )}
+
+          <div>
+            <div className="mb-1 flex items-center justify-between">
+              <label className="block text-xs font-medium text-muted-foreground">
+                Section
+              </label>
+              <button
+                type="button"
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
+                onClick={() => selectedNotebook && void ms.loadSections(selectedNotebook)}
+                disabled={!selectedNotebook || ms.loadingSections}
+              >
+                <RefreshCw
+                  className={`h-3 w-3 ${ms.loadingSections ? "animate-spin" : ""}`}
+                />
+                Reload
+              </button>
+            </div>
+            <select
+              className="w-full rounded-lg border border-border bg-muted px-3 py-2 text-sm"
+              value={creatingSection ? NEW_OPTION : selectedSection}
+              onChange={(e) => {
+                if (e.target.value === NEW_OPTION) {
+                  setCreatingSection(true);
+                } else {
+                  setCreatingSection(false);
+                  setSelectedSection(e.target.value);
+                }
+              }}
+              disabled={!selectedNotebook || ms.loadingSections}
+            >
+              <option value="">
+                {!selectedNotebook
+                  ? "Select a notebook first"
+                  : ms.loadingSections
+                    ? "Loading…"
+                    : "Select a section"}
+              </option>
+              {ms.sections.map((section) => (
+                <option key={section.id} value={section.id}>
+                  {section.displayName}
+                </option>
+              ))}
+              {selectedNotebook && <option value={NEW_OPTION}>+ New section…</option>}
+            </select>
+          </div>
+
+          {creatingSection && (
+            <div className="space-y-2 rounded-lg border border-border bg-muted p-3">
+              <label className="block text-xs font-medium text-muted-foreground">
+                New section name
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  autoFocus
+                  value={newSectionName}
+                  onChange={(e) =>
+                    setNewSectionName(sanitizeSectionName(e.target.value))
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void submitNewSection();
+                    if (e.key === "Escape") setCreatingSection(false);
+                  }}
+                  placeholder="e.g. Meeting notes"
+                  maxLength={49}
+                  className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => void submitNewSection()}
+                  disabled={savingSection || !newSectionName.trim()}
+                >
+                  {savingSection ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    "Create"
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setCreatingSection(false)}
+                  disabled={savingSection}
+                >
+                  Cancel
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Can&apos;t contain {"? * \\ / : < > | & # ' % ~ \""} — those
+                are removed automatically. Max 49 characters.
+              </p>
+            </div>
+          )}
+
           {ms.error && (
             <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -494,7 +628,13 @@ function OneNotePanel() {
               Reload.
             </p>
           )}
-          {selectedNotebook && (
+          {selectedNotebook && !selectedSection && (
+            <p className="rounded-lg border border-border bg-muted p-3 text-sm text-muted-foreground">
+              Choose an existing section or create one before exporting to
+              OneNote.
+            </p>
+          )}
+          {selectedNotebook && selectedSection && (
             <div className="flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-300">
               <CheckCircle2 className="h-4 w-4" />
               <span>

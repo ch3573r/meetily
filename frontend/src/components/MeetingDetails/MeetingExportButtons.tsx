@@ -24,6 +24,8 @@ import {
 import {
   microsoftExportService,
   type MicrosoftConnectionInfo,
+  type NotebookInfo,
+  type SectionInfo,
 } from "@/services/microsoftExportService";
 import {
   buildConfluenceDraftMarkdown,
@@ -32,8 +34,8 @@ import {
 } from "@/lib/confluenceDraft";
 import {
   getExportDestinations,
-  hasOneNoteDestination,
   hasPlannerDestination,
+  setExportDestinations,
 } from "@/lib/exportDestinations";
 import { confluenceExportService } from "@/services/confluenceExportService";
 import { PlannerExportPreview } from "./PlannerExportPreview";
@@ -47,6 +49,16 @@ interface MeetingExportButtonsProps {
 }
 
 type Busy = "onenote" | "planner" | "confluence" | null;
+
+const ONENOTE_NOTEBOOK_MAX = 128;
+function sanitizeNotebookName(raw: string): string {
+  return raw
+    .replace(/[?*\\/:<>|'#]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, ONENOTE_NOTEBOOK_MAX)
+    .trim();
+}
 
 // OneNote section names reject ? * \ / : < > | & # ' % ~ " and must be < 50
 // chars (Graph 20153 / 20155). The backend sanitizes too, but we keep the
@@ -62,14 +74,7 @@ function sanitizeSectionName(raw: string): string {
     .trim();
 }
 
-/** Default section name: `YYYY-MM-DD <meeting title>` (sanitized, truncated). */
-function defaultSectionName(title: string): string {
-  const date = new Date().toISOString().slice(0, 10);
-  const clean = (title || "Untitled meeting").trim();
-  return sanitizeSectionName(`${date} ${clean}`);
-}
-
-function defaultConfluencePageTitle(title: string, createdAt?: string): string {
+function defaultDatedTitle(title: string, createdAt?: string): string {
   const date = createdAt ? new Date(createdAt) : new Date();
   const stamp = Number.isNaN(date.getTime())
     ? new Date().toISOString().slice(0, 10)
@@ -78,16 +83,19 @@ function defaultConfluencePageTitle(title: string, createdAt?: string): string {
   return `${stamp} ${clean}`.slice(0, 240).trim();
 }
 
+function defaultConfluencePageTitle(title: string, createdAt?: string): string {
+  return defaultDatedTitle(title, createdAt);
+}
+
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
 /**
  * Per-meeting export actions shown in the summary view. OneNote is always
- * available once Microsoft is connected and a notebook is chosen; exporting
- * opens a dialog to name the section that will be created (a dated section per
- * export — this avoids the OneNote 5,000-item enumeration limit). Planner
- * appears only when the summary has action items.
+ * available once Microsoft is connected; exporting opens a dialog to choose the
+ * notebook and section where a new page will be created. Planner appears only
+ * when the summary has action items.
  */
 export function MeetingExportButtons({
   meetingId,
@@ -101,7 +109,50 @@ export function MeetingExportButtons({
 
   const [oneNoteOpen, setOneNoteOpen] = useState(false);
   const [plannerOpen, setPlannerOpen] = useState(false);
-  const [sectionName, setSectionName] = useState("");
+  const [oneNoteNotebooks, setOneNoteNotebooks] = useState<NotebookInfo[]>([]);
+  const [oneNoteSections, setOneNoteSections] = useState<SectionInfo[]>([]);
+  const [oneNoteNotebookId, setOneNoteNotebookId] = useState("");
+  const [oneNoteSectionId, setOneNoteSectionId] = useState("");
+  const [oneNotePageTitle, setOneNotePageTitle] = useState("");
+  const [loadingOneNoteNotebooks, setLoadingOneNoteNotebooks] = useState(false);
+  const [loadingOneNoteSections, setLoadingOneNoteSections] = useState(false);
+  const [creatingNotebook, setCreatingNotebook] = useState(false);
+  const [creatingSection, setCreatingSection] = useState(false);
+  const [newNotebookName, setNewNotebookName] = useState("");
+  const [newSectionName, setNewSectionName] = useState("");
+  const [savingNotebook, setSavingNotebook] = useState(false);
+  const [savingSection, setSavingSection] = useState(false);
+
+  const loadOneNoteNotebooks = useCallback(async () => {
+    setLoadingOneNoteNotebooks(true);
+    try {
+      setOneNoteNotebooks(await microsoftExportService.listNotebooks());
+    } catch (e) {
+      toast.error("Could not load OneNote notebooks", {
+        description: errorText(e),
+      });
+    } finally {
+      setLoadingOneNoteNotebooks(false);
+    }
+  }, []);
+
+  const loadOneNoteSections = useCallback(async (notebookId: string) => {
+    if (!notebookId) {
+      setOneNoteSections([]);
+      return;
+    }
+    setLoadingOneNoteSections(true);
+    try {
+      setOneNoteSections(await microsoftExportService.listSections(notebookId));
+    } catch (e) {
+      setOneNoteSections([]);
+      toast.error("Could not load OneNote sections", {
+        description: errorText(e),
+      });
+    } finally {
+      setLoadingOneNoteSections(false);
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -157,25 +208,87 @@ export function MeetingExportButtons({
     [],
   );
 
-  // Opening the OneNote dialog: require a notebook, then prefill the section name.
-  const openOneNote = useCallback(() => {
-    if (!hasOneNoteDestination(getExportDestinations())) {
-      toast.info("Pick a OneNote notebook first", {
-        description: "Settings → Add-ons → OneNote export.",
+  useEffect(() => {
+    if (!oneNoteOpen || !connected) return;
+    void loadOneNoteNotebooks();
+  }, [connected, loadOneNoteNotebooks, oneNoteOpen]);
+
+  useEffect(() => {
+    if (!oneNoteOpen || !oneNoteNotebookId) return;
+    void loadOneNoteSections(oneNoteNotebookId);
+  }, [loadOneNoteSections, oneNoteNotebookId, oneNoteOpen]);
+
+  const submitNewNotebook = useCallback(async () => {
+    const name = sanitizeNotebookName(newNotebookName).trim();
+    if (!name) return;
+    setSavingNotebook(true);
+    try {
+      const notebook = await microsoftExportService.createNotebook(name);
+      setOneNoteNotebooks((prev) =>
+        prev.some((n) => n.id === notebook.id) ? prev : [...prev, notebook],
+      );
+      setOneNoteNotebookId(notebook.id);
+      setOneNoteSectionId("");
+      setCreatingNotebook(false);
+      setNewNotebookName("");
+      setOneNoteSections([]);
+    } catch (e) {
+      toast.error("Could not create OneNote notebook", {
+        description: errorText(e),
       });
-      return;
+    } finally {
+      setSavingNotebook(false);
     }
-    setSectionName(defaultSectionName(meetingTitle));
+  }, [newNotebookName]);
+
+  const submitNewSection = useCallback(async () => {
+    const name = sanitizeSectionName(newSectionName).trim();
+    if (!name || !oneNoteNotebookId) return;
+    setSavingSection(true);
+    try {
+      const section = await microsoftExportService.createSection(
+        oneNoteNotebookId,
+        name,
+      );
+      setOneNoteSections((prev) =>
+        prev.some((s) => s.id === section.id) ? prev : [...prev, section],
+      );
+      setOneNoteSectionId(section.id);
+      setCreatingSection(false);
+      setNewSectionName("");
+    } catch (e) {
+      toast.error("Could not create OneNote section", {
+        description: errorText(e),
+      });
+    } finally {
+      setSavingSection(false);
+    }
+  }, [newSectionName, oneNoteNotebookId]);
+
+  // Opening the OneNote dialog: load the saved destination if present, then let
+  // the user override it or create a notebook/section inline.
+  const openOneNote = useCallback(() => {
+    const saved = getExportDestinations();
+    setOneNoteNotebookId(saved.notebookId ?? "");
+    setOneNoteSectionId(saved.sectionId ?? "");
+    setOneNotePageTitle(defaultDatedTitle(meetingTitle, meetingCreatedAt));
+    setCreatingNotebook(false);
+    setCreatingSection(false);
+    setNewNotebookName("");
+    setNewSectionName("");
     setOneNoteOpen(true);
-  }, [meetingTitle]);
+  }, [meetingCreatedAt, meetingTitle]);
 
   const confirmOneNote = useCallback(async () => {
-    const name = sanitizeSectionName(sectionName);
-    if (!name) {
-      toast.info("Enter a section name.");
+    const pageTitle = oneNotePageTitle.trim() || defaultDatedTitle(meetingTitle, meetingCreatedAt);
+    if (!oneNoteNotebookId) {
+      toast.info("Choose a OneNote notebook.");
       return;
     }
-    const { notebookId } = getExportDestinations();
+    if (!oneNoteSectionId) {
+      toast.info("Choose or create a OneNote section.");
+      return;
+    }
     setBusy("onenote");
     try {
       const md = await getMarkdown();
@@ -183,12 +296,21 @@ export function MeetingExportButtons({
         toast.info("Nothing to export yet — generate a summary first.");
         return;
       }
-      const report = await microsoftExportService.exportMeetingToOneNoteSection(
+      const notebookName = oneNoteNotebooks.find((n) => n.id === oneNoteNotebookId)
+        ?.displayName;
+      const sectionName = oneNoteSections.find((s) => s.id === oneNoteSectionId)
+        ?.displayName;
+      setExportDestinations({
+        notebookId: oneNoteNotebookId,
+        notebookName,
+        sectionId: oneNoteSectionId,
+        sectionName,
+      });
+      const report = await microsoftExportService.exportMeetingMarkdownToOneNote(
         meetingId,
-        meetingTitle,
+        pageTitle,
         md,
-        notebookId!,
-        name,
+        oneNoteSectionId,
       );
       reportToast("OneNote", report);
       setOneNoteOpen(false);
@@ -199,7 +321,18 @@ export function MeetingExportButtons({
     } finally {
       setBusy(null);
     }
-  }, [sectionName, getMarkdown, meetingId, meetingTitle, reportToast]);
+  }, [
+    getMarkdown,
+    meetingCreatedAt,
+    meetingId,
+    meetingTitle,
+    oneNoteNotebookId,
+    oneNoteNotebooks,
+    oneNotePageTitle,
+    oneNoteSectionId,
+    oneNoteSections,
+    reportToast,
+  ]);
 
   // Planner export opens a review dialog (pick/edit/route action items) rather
   // than creating tasks immediately.
@@ -336,31 +469,165 @@ export function MeetingExportButtons({
       </DropdownMenu>
 
       <Dialog open={oneNoteOpen} onOpenChange={(o) => !busy && setOneNoteOpen(o)}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Export to OneNote</DialogTitle>
             <DialogDescription>
-              A new section with this name will be created in your selected
-              notebook ({getExportDestinations().notebookName ?? "notebook"}).
+              Create a new page in an existing section, or create a notebook or
+              section before exporting.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="onenote-section-name">Section name</Label>
-            <Input
-              id="onenote-section-name"
-              value={sectionName}
-              onChange={(e) => setSectionName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void confirmOneNote();
-              }}
-              autoFocus
-            />
-            <p className="text-xs text-muted-foreground">
-              Created as: <span className="font-medium">{sanitizeSectionName(sectionName) || "—"}</span>
-              {" · "}
-              {sanitizeSectionName(sectionName).length}/{ONENOTE_SECTION_MAX}.
-              OneNote disallows {"? * \\ / : < > | & # ' % ~"} and names ≥ 50 chars.
-            </p>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="onenote-notebook">Notebook</Label>
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
+                  onClick={() => void loadOneNoteNotebooks()}
+                  disabled={loadingOneNoteNotebooks || busy === "onenote"}
+                >
+                  {loadingOneNoteNotebooks ? "Loading..." : "Reload"}
+                </button>
+              </div>
+              <select
+                id="onenote-notebook"
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                value={creatingNotebook ? "__new__" : oneNoteNotebookId}
+                onChange={(e) => {
+                  if (e.target.value === "__new__") {
+                    setCreatingNotebook(true);
+                    return;
+                  }
+                  setCreatingNotebook(false);
+                  setOneNoteNotebookId(e.target.value);
+                  setOneNoteSectionId("");
+                  setCreatingSection(false);
+                }}
+                disabled={loadingOneNoteNotebooks || busy === "onenote"}
+              >
+                <option value="">
+                  {loadingOneNoteNotebooks ? "Loading..." : "Select a notebook"}
+                </option>
+                {oneNoteNotebooks.map((notebook) => (
+                  <option key={notebook.id} value={notebook.id}>
+                    {notebook.displayName}
+                  </option>
+                ))}
+                <option value="__new__">+ New notebook...</option>
+              </select>
+            </div>
+
+            {creatingNotebook && (
+              <div className="space-y-2 rounded-lg border border-border bg-muted p-3">
+                <Label htmlFor="onenote-new-notebook">New notebook name</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="onenote-new-notebook"
+                    value={newNotebookName}
+                    onChange={(e) => setNewNotebookName(sanitizeNotebookName(e.target.value))}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void submitNewNotebook();
+                      if (e.key === "Escape") setCreatingNotebook(false);
+                    }}
+                    maxLength={ONENOTE_NOTEBOOK_MAX}
+                    autoFocus
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => void submitNewNotebook()}
+                    disabled={savingNotebook || !newNotebookName.trim()}
+                  >
+                    {savingNotebook ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create"}
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="onenote-section">Section</Label>
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
+                  onClick={() => oneNoteNotebookId && void loadOneNoteSections(oneNoteNotebookId)}
+                  disabled={!oneNoteNotebookId || loadingOneNoteSections || busy === "onenote"}
+                >
+                  {loadingOneNoteSections ? "Loading..." : "Reload"}
+                </button>
+              </div>
+              <select
+                id="onenote-section"
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                value={creatingSection ? "__new__" : oneNoteSectionId}
+                onChange={(e) => {
+                  if (e.target.value === "__new__") {
+                    setCreatingSection(true);
+                    return;
+                  }
+                  setCreatingSection(false);
+                  setOneNoteSectionId(e.target.value);
+                }}
+                disabled={!oneNoteNotebookId || loadingOneNoteSections || busy === "onenote"}
+              >
+                <option value="">
+                  {!oneNoteNotebookId
+                    ? "Select a notebook first"
+                    : loadingOneNoteSections
+                      ? "Loading..."
+                      : "Select a section"}
+                </option>
+                {oneNoteSections.map((section) => (
+                  <option key={section.id} value={section.id}>
+                    {section.displayName}
+                  </option>
+                ))}
+                {oneNoteNotebookId && <option value="__new__">+ New section...</option>}
+              </select>
+            </div>
+
+            {creatingSection && (
+              <div className="space-y-2 rounded-lg border border-border bg-muted p-3">
+                <Label htmlFor="onenote-new-section">New section name</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="onenote-new-section"
+                    value={newSectionName}
+                    onChange={(e) => setNewSectionName(sanitizeSectionName(e.target.value))}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void submitNewSection();
+                      if (e.key === "Escape") setCreatingSection(false);
+                    }}
+                    maxLength={ONENOTE_SECTION_MAX}
+                    autoFocus
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => void submitNewSection()}
+                    disabled={savingSection || !newSectionName.trim()}
+                  >
+                    {savingSection ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create"}
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="onenote-page-title">Page title</Label>
+              <Input
+                id="onenote-page-title"
+                value={oneNotePageTitle}
+                onChange={(e) => setOneNotePageTitle(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && oneNoteNotebookId && oneNoteSectionId) {
+                    void confirmOneNote();
+                  }
+                }}
+                disabled={busy === "onenote"}
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button
@@ -373,7 +640,7 @@ export function MeetingExportButtons({
             </Button>
             <Button type="button" onClick={confirmOneNote} disabled={busy === "onenote"}>
               {busy === "onenote" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Create section &amp; export
+              Export page
             </Button>
           </DialogFooter>
         </DialogContent>

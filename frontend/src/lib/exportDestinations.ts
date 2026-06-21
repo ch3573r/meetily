@@ -56,9 +56,7 @@ export function setExportDestinations(patch: Partial<ExportDestinations>): Expor
 }
 
 export function hasOneNoteDestination(d: ExportDestinations = getExportDestinations()): boolean {
-  // A notebook is enough: the section is created per-export (a dated section),
-  // so we never need a pre-selected section id.
-  return !!d.notebookId;
+  return !!d.notebookId && !!d.sectionId;
 }
 
 export function hasPlannerDestination(d: ExportDestinations = getExportDestinations()): boolean {

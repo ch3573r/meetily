@@ -202,6 +202,16 @@ export const microsoftExportService = {
     return invoke<NotebookInfo>("create_onenote_notebook", { displayName });
   },
 
+  async createSection(
+    notebookId: string,
+    displayName: string,
+  ): Promise<SectionInfo> {
+    return invoke<SectionInfo>("create_onenote_section", {
+      notebookId,
+      displayName,
+    });
+  },
+
   async listCalendarEvents(
     startIso: string,
     endIso: string,
