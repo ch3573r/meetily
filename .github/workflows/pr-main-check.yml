@@ -59,6 +59,20 @@ jobs:
             echo "On feature branch: $CURRENT_BRANCH"
           fi
 
+      - name: Guard removed legacy backend
+        run: |
+          if [[ -e backend ]]; then
+            echo "::error::The legacy backend/ directory was removed and must not be reintroduced."
+            exit 1
+          fi
+
+          forbidden="$(git grep -n -E 'backend/|whisper-server-package|jfk\.(wav|mp3)' -- ':!backend/**' ':!.github/workflows/pr-main-check.yml' || true)"
+          if [[ -n "$forbidden" ]]; then
+            echo "::error::Removed backend references were found."
+            echo "$forbidden"
+            exit 1
+          fi
+
       - name: Validate version format
         run: |
           VERSION="${{ steps.get-version.outputs.version }}"
@@ -88,6 +102,7 @@ jobs:
           echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Checks" >> $GITHUB_STEP_SUMMARY
+          echo "- Removed legacy backend guard completed" >> $GITHUB_STEP_SUMMARY
           echo "- Frontend typecheck completed" >> $GITHUB_STEP_SUMMARY
           echo "- Frontend helper tests completed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY

@@ -165,12 +165,12 @@ pub fn submit_completed_recording<R: Runtime>(
     };
 
     let Some(folder_path) = folder_path else {
-        warn!("OpenClaw handoff skipped: Meetily did not provide a recording folder path");
+        warn!("OpenClaw handoff skipped: ClawScribe did not provide a recording folder path");
         let status = submission_status(
             "skipped",
             None,
             None,
-            "Meetily did not provide a recording folder path".to_string(),
+            "ClawScribe did not provide a recording folder path".to_string(),
             None,
             None,
             None,
@@ -573,7 +573,7 @@ fn build_payload(
         folder
             .file_name()
             .map(|name| name.to_string_lossy().to_string())
-            .unwrap_or_else(|| "Meetily recording".to_string())
+            .unwrap_or_else(|| "ClawScribe recording".to_string())
     });
 
     let audio_path = if config.include_audio_path {
@@ -665,7 +665,7 @@ fn build_meeting_id(folder: &Path, title: &str) -> String {
 fn build_idempotency_key(folder: &Path) -> String {
     format!(
         "{}-transcripts-v1",
-        build_meeting_id(folder, "Meetily recording")
+        build_meeting_id(folder, "ClawScribe recording")
     )
 }
 

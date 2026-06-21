@@ -155,7 +155,7 @@ pub struct SpeechSegment {
 pub struct ContinuousVadProcessor {
     session: VadSession,
     chunk_size: usize,
-    sample_rate: u32,
+    _sample_rate: u32,
     resampler: VadResampler,
     buffer: Vec<f32>,
     speech_segments: VecDeque<SpeechSegment>,
@@ -220,7 +220,7 @@ impl ContinuousVadProcessor {
         Ok(Self {
             session,
             chunk_size: vad_chunk_size,
-            sample_rate: input_sample_rate,
+            _sample_rate: input_sample_rate,
             resampler: VadResampler::new(input_sample_rate),
             buffer: Vec::with_capacity(vad_chunk_size * 2),
             speech_segments: VecDeque::new(),

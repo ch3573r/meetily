@@ -542,13 +542,13 @@ impl NemotronModel {
         Ok((decoder, joint))
     }
 
-    fn default_decode_ep(cpu_capable: bool) -> String {
+    fn default_decode_ep(_cpu_capable: bool) -> String {
         if std::env::var("NEMOTRON_FORCE_CPU").is_ok_and(|v| !v.is_empty() && v != "0") {
             return "cpu".to_string();
         }
         #[cfg(feature = "directml")]
         {
-            if cpu_capable {
+            if _cpu_capable {
                 return "dml".to_string();
             }
         }

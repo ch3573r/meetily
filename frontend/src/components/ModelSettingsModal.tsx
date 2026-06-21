@@ -1682,7 +1682,7 @@ export function ModelSettingsModal({
               type="button"
               variant="ghost"
               size="sm"
-              onClick={() => invoke('open_external_url', { url: 'https://github.com/Zackriya-Solutions/meetily/blob/main/docs/auth/codex-auth.md' })}
+              onClick={() => invoke('open_external_url', { url: 'https://github.com/ch3573r/ClawScribe/blob/main/docs/auth/codex-auth.md' })}
             >
               <ExternalLink className="mr-2 h-4 w-4" />
               Open Codex auth docs

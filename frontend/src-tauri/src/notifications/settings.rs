@@ -112,15 +112,19 @@ impl<R: Runtime> ConsentManager<R> {
 
     /// Get the path where notification settings are stored
     fn get_settings_path() -> Result<PathBuf> {
-        let mut path =
+        let config_dir =
             dirs::config_dir().ok_or_else(|| anyhow!("Could not find config directory"))?;
 
-        path.push("meetily");
-        path.push("notifications.json");
+        let path = config_dir.join("ClawScribe").join("notifications.json");
+        let legacy_path = config_dir.join("meetily").join("notifications.json");
 
         // Ensure parent directory exists
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
+        }
+
+        if !path.exists() && legacy_path.exists() {
+            std::fs::copy(&legacy_path, &path)?;
         }
 
         Ok(path)

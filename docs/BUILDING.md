@@ -5,6 +5,10 @@ Windows Tauri desktop app is the primary release target. The old Linux-specific
 Meetily build guide has been removed because it no longer described the current
 product or release flow.
 
+The supported runtime is the Tauri desktop app under `frontend/`. There is no
+standalone Python/FastAPI backend, Docker backend, or manually started
+whisper-server in the current build or release path.
+
 ## Prerequisites
 
 For normal Windows development:
@@ -110,6 +114,9 @@ Rust workspace:
 ```powershell
 cargo check
 ```
+
+The CI validation workflow also guards against reintroducing the removed
+backend directory or stale archived whisper-server package/sample paths.
 
 Targeted Rust tests:
 

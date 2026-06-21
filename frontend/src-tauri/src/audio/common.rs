@@ -17,11 +17,6 @@ pub(crate) async fn acquire_engine_lifecycle_lock() -> OwnedMutexGuard<()> {
 /// Unload the transcription engine after a batch job (import or retranscription).
 /// Skips unloading if a live recording is currently in progress, since recording
 /// uses the same global engine instances.
-pub(crate) async fn unload_engine_after_batch(use_parakeet: bool) {
-    unload_engine_after_batch_for(use_parakeet, false).await
-}
-
-/// Like `unload_engine_after_batch`, but can also target the Nemotron engine.
 pub(crate) async fn unload_engine_after_batch_for(use_parakeet: bool, use_nemotron: bool) {
     let _engine_lifecycle_guard = acquire_engine_lifecycle_lock().await;
 

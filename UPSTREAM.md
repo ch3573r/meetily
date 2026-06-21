@@ -15,6 +15,7 @@ Compatibility references intentionally retained for now include:
 - `meetily-json-v1` artifact layout names
 - `openclaw.meetily-submission*.v1` handoff marker schemas
 - `MEETILY_OPENCLAW_*` and `MEETILY_LLAMA_HELPER` environment variables
+- legacy `Meetily/templates` custom-template fallback
 - Previous Meetily installation import text and Homebrew database paths
 - Upstream repository and model-host URLs
 

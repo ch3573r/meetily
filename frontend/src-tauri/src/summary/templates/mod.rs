@@ -31,9 +31,11 @@
 //! # Custom Templates
 //!
 //! Users can add custom templates to:
-//! - macOS: `~/Library/Application Support/Meetily/templates/`
-//! - Windows: `%APPDATA%\Meetily\templates\`
-//! - Linux: `~/.config/Meetily/templates/`
+//! - macOS: `~/Library/Application Support/ClawScribe/templates/`
+//! - Windows: `%APPDATA%\ClawScribe\templates\`
+//! - Linux: `~/.config/ClawScribe/templates/`
+//!
+//! Existing `Meetily/templates` directories are still read as a legacy fallback.
 //!
 //! Custom templates must follow the JSON schema defined in `types::Template`.
 

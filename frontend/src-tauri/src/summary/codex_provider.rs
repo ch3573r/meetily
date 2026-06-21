@@ -38,7 +38,6 @@ pub enum CodexHomeMode {
 #[cfg(test)]
 mod app_server_tests {
     use super::*;
-    use std::io::Write;
 
     fn make_executable(path: &Path) {
         fs::write(path, "# app-server placeholder\n").unwrap();
@@ -1320,10 +1319,12 @@ fn app_server_initialized_notification() -> Value {
     })
 }
 
+#[cfg(test)]
 fn app_server_account_read_request(id: u64) -> Value {
     json_rpc_request(id, "account/read", serde_json::json!({}))
 }
 
+#[cfg(test)]
 fn app_server_login_start_request(id: u64, login_type: &str) -> Value {
     json_rpc_request(
         id,
@@ -1334,10 +1335,12 @@ fn app_server_login_start_request(id: u64, login_type: &str) -> Value {
     )
 }
 
+#[cfg(test)]
 fn app_server_logout_request(id: u64) -> Value {
     json_rpc_request(id, "account/logout", serde_json::json!({}))
 }
 
+#[cfg(test)]
 fn app_server_thread_start_request(id: u64) -> Value {
     json_rpc_request(id, "thread/start", serde_json::json!({}))
 }

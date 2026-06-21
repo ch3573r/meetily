@@ -62,6 +62,10 @@ cd frontend
 .\scripts\build-windows-release.ps1 -CheckOnly
 ```
 
+The release path builds the Tauri desktop app only. It must not require a
+standalone Python/FastAPI backend, Docker backend, or manually started
+whisper-server.
+
 Build both installer formats:
 
 ```powershell
@@ -114,8 +118,8 @@ SHA256SUMS.txt
 BUILD-METADATA.txt
 ```
 
-`BUILD-METADATA.txt` records the ClawScribe version, build commit, upstream
-Meetily base version, Codex runtime version, Codex runtime SHA256, source
+`BUILD-METADATA.txt` records the ClawScribe version, build commit,
+`upstream_base_version`, Codex runtime version, Codex runtime SHA256, source
 package, source URL, and license.
 
 The release script generates `SHA256SUMS.txt` after a successful installer

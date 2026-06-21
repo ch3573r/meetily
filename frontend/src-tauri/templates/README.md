@@ -47,11 +47,12 @@ Each template JSON file follows this schema:
 
 Users can add custom templates to the application data directory:
 
-- **macOS**: `~/Library/Application Support/Meetily/templates/`
-- **Windows**: `%APPDATA%\Meetily\templates\`
-- **Linux**: `~/.config/Meetily/templates/`
+- **macOS**: `~/Library/Application Support/ClawScribe/templates/`
+- **Windows**: `%APPDATA%\ClawScribe\templates\`
+- **Linux**: `~/.config/ClawScribe/templates/`
 
 Custom templates override built-in templates with the same filename.
+Existing `Meetily/templates` directories are still read as a legacy fallback.
 
 ## Template Fields
 

@@ -19,14 +19,35 @@ pub fn set_bundled_templates_dir(path: PathBuf) {
 /// Get the user's custom templates directory path
 ///
 /// Returns the platform-specific application data directory for custom templates:
-/// - macOS: ~/Library/Application Support/Meetily/templates/
-/// - Windows: %APPDATA%\Meetily\templates\
-/// - Linux: ~/.config/Meetily/templates/
+/// - macOS: ~/Library/Application Support/ClawScribe/templates/
+/// - Windows: %APPDATA%\ClawScribe\templates\
+/// - Linux: ~/.config/ClawScribe/templates/
 fn get_custom_templates_dir() -> Option<PathBuf> {
+    data_templates_dir("ClawScribe")
+}
+
+fn get_legacy_custom_templates_dir() -> Option<PathBuf> {
+    data_templates_dir("Meetily")
+}
+
+fn data_templates_dir(app_name: &str) -> Option<PathBuf> {
     let mut path = dirs::data_dir()?;
-    path.push("Meetily");
+    path.push(app_name);
     path.push("templates");
     Some(path)
+}
+
+fn custom_template_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Some(dir) = get_custom_templates_dir() {
+        dirs.push(dir);
+    }
+    if let Some(dir) = get_legacy_custom_templates_dir() {
+        if !dirs.contains(&dir) {
+            dirs.push(dir);
+        }
+    }
+    dirs
 }
 
 /// Load a template from the bundled resources directory
@@ -65,24 +86,26 @@ fn load_bundled_template(template_id: &str) -> Option<String> {
 /// # Returns
 /// The template JSON content if found, None otherwise
 fn load_custom_template(template_id: &str) -> Option<String> {
-    let custom_dir = get_custom_templates_dir()?;
-    let template_path = custom_dir.join(format!("{}.json", template_id));
+    for custom_dir in custom_template_dirs() {
+        let template_path = custom_dir.join(format!("{}.json", template_id));
 
-    debug!("Checking for custom template at: {:?}", template_path);
+        debug!("Checking for custom template at: {:?}", template_path);
 
-    match std::fs::read_to_string(&template_path) {
-        Ok(content) => {
-            info!(
-                "Loaded custom template '{}' from {:?}",
-                template_id, template_path
-            );
-            Some(content)
-        }
-        Err(e) => {
-            debug!("No custom template '{}' found: {}", template_id, e);
-            None
+        match std::fs::read_to_string(&template_path) {
+            Ok(content) => {
+                info!(
+                    "Loaded custom template '{}' from {:?}",
+                    template_id, template_path
+                );
+                return Some(content);
+            }
+            Err(e) => {
+                debug!("No custom template '{}' found: {}", template_id, e);
+            }
         }
     }
+
+    None
 }
 
 /// Load and parse a template by identifier
@@ -177,7 +200,7 @@ pub fn list_template_ids() -> Vec<String> {
     }
 
     // Add custom templates if directory exists
-    if let Some(custom_dir) = get_custom_templates_dir() {
+    for custom_dir in custom_template_dirs() {
         if custom_dir.exists() {
             match std::fs::read_dir(&custom_dir) {
                 Ok(entries) => {

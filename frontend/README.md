@@ -32,7 +32,7 @@ A modern desktop application for recording, transcribing, and analyzing meetings
 ```
 /frontend
 ├── src/                   # Next.js frontend code
-├── src-tauri/             # Rust backend for Tauri
+├── src-tauri/             # Rust/Tauri app core
 ├── public/                # Static assets
 └── package.json           # Project dependencies
 ```
@@ -145,7 +145,7 @@ For build and acceleration details, see:
 - To run only the frontend: `pnpm run dev`
 
 ### Backend (Tauri)
-- The Rust backend is in the `src-tauri/` directory
+- The Rust/Tauri app core is in the `src-tauri/` directory
 - Handles audio capture, file system access, transcription, storage, and native integrations
 - To run only the Tauri development server: `pnpm run tauri:dev`
 

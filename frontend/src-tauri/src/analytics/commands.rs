@@ -1,4 +1,4 @@
-use crate::analytics::{AnalyticsClient, AnalyticsConfig};
+use crate::analytics::AnalyticsClient;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::command;

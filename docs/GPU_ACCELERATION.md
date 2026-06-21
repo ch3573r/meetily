@@ -43,7 +43,7 @@ coreml
 hipblas
 ```
 
-Use the explicit frontend scripts when validating a backend:
+Use the explicit frontend scripts when validating a feature set:
 
 ```powershell
 cd frontend
@@ -61,7 +61,7 @@ make performance regressions easier to compare.
 | --- | --- | --- |
 | Parakeet | v3 int8, v3 SmoothQuant int8, v2 int8 | Fast default. Best current realtime path on DirectML-capable Windows systems. |
 | Nemotron | fp16, int8 | Multilingual beta path. Requires per-hardware validation because DirectML graph behavior varies. |
-| Whisper | local whisper.cpp models | Compatibility path with backend-specific acceleration features. |
+| Whisper | local whisper.cpp models | Compatibility path with feature-specific acceleration options. |
 
 Model downloads are managed in app settings. Large-file sizes are checked so CDN
 errors, interrupted downloads, and Git LFS pointer stubs are rejected instead of
