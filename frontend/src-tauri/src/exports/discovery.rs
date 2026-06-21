@@ -21,6 +21,13 @@ pub struct SectionInfo {
     pub display_name: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NotebookWithSections {
+    #[serde(default)]
+    sections: Vec<SectionInfo>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlanInfo {
     pub id: String,
@@ -49,9 +56,7 @@ fn get_request(url: String) -> GraphRequest {
     }
 }
 
-fn map_outcome<T: serde::de::DeserializeOwned>(
-    outcome: GraphOutcome,
-) -> Result<Vec<T>, String> {
+fn map_outcome<T: serde::de::DeserializeOwned>(outcome: GraphOutcome) -> Result<Vec<T>, String> {
     match outcome {
         GraphOutcome::Success(resp) => {
             let list: GraphListResponse<T> = serde_json::from_str(&resp.body)
@@ -162,10 +167,11 @@ pub async fn ensure_section<T: GraphTransport, S: Sleeper>(
         }
         Err(err) => return Err(err),
     };
-    if let Some(existing) = sections
-        .into_iter()
-        .find(|s| s.display_name.trim().eq_ignore_ascii_case(display_name.trim()))
-    {
+    if let Some(existing) = sections.into_iter().find(|s| {
+        s.display_name
+            .trim()
+            .eq_ignore_ascii_case(display_name.trim())
+    }) {
         return Ok((existing, false));
     }
     let created = create_section(client, token, notebook_id, display_name).await?;
@@ -224,7 +230,29 @@ pub async fn list_sections<T: GraphTransport, S: Sleeper>(
     let request = get_request(format!(
         "{GRAPH_BASE}/me/onenote/notebooks/{notebook_id}/sections?$select=id,displayName&$top=100"
     ));
-    map_outcome(client.execute(&request, token).await)
+    match map_outcome(client.execute(&request, token).await) {
+        Ok(sections) => Ok(sections),
+        Err(err) if is_onenote_large_library_error(&err) => {
+            log::warn!(
+                "OneNote direct section listing hit Graph 10008; retrying via notebook expand"
+            );
+            list_sections_via_notebook_expand(client, token, notebook_id).await
+        }
+        Err(err) => Err(err),
+    }
+}
+
+async fn list_sections_via_notebook_expand<T: GraphTransport, S: Sleeper>(
+    client: &GraphClient<T, S>,
+    token: &str,
+    notebook_id: &str,
+) -> Result<Vec<SectionInfo>, String> {
+    let request = get_request(format!(
+        "{GRAPH_BASE}/me/onenote/notebooks/{notebook_id}?$select=id,displayName&$expand=sections"
+    ));
+    let notebook: NotebookWithSections =
+        map_single(client.execute(&request, token).await, "notebook sections")?;
+    Ok(notebook.sections)
 }
 
 pub async fn list_plans<T: GraphTransport, S: Sleeper>(
@@ -357,7 +385,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ensure_section_creates_without_listing_when_onenote_library_is_too_large() {
+    async fn list_sections_falls_back_to_notebook_expand_when_direct_listing_is_too_large() {
         let transport = MockGraphTransport::new();
         transport.queue_default([
             GraphResponse {
@@ -367,6 +395,40 @@ mod tests {
                 error_message: Some(
                     "One or more document libraries contains more than 5,000 OneNote items"
                         .into(),
+                ),
+                body: String::new(),
+            },
+            GraphResponse::success(
+                200,
+                r#"{"id":"nb-1","displayName":"Meetings","sections":[{"id":"section-1","displayName":"Notes"}]}"#,
+            ),
+        ]);
+        let c = client(transport);
+        let sections = list_sections(&c, "token", "nb-1").await.unwrap();
+        assert_eq!(sections.len(), 1);
+        assert_eq!(sections[0].id, "section-1");
+        assert_eq!(sections[0].display_name, "Notes");
+    }
+
+    #[tokio::test]
+    async fn ensure_section_creates_without_listing_when_onenote_library_is_too_large() {
+        let transport = MockGraphTransport::new();
+        transport.queue_default([
+            GraphResponse {
+                status: 403,
+                retry_after_secs: None,
+                error_code: Some("10008".into()),
+                error_message: Some(
+                    "One or more document libraries contains more than 5,000 OneNote items".into(),
+                ),
+                body: String::new(),
+            },
+            GraphResponse {
+                status: 403,
+                retry_after_secs: None,
+                error_code: Some("10008".into()),
+                error_message: Some(
+                    "One or more document libraries contains more than 5,000 OneNote items".into(),
                 ),
                 body: String::new(),
             },
