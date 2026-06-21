@@ -12,7 +12,7 @@ const MainContent: React.FC<MainContentProps> = ({ children }) => {
 
   return (
     <main
-      className={`min-h-screen flex-1 transition-all duration-300 ${
+      className={`h-[calc(100vh-var(--titlebar-height))] min-h-0 flex-1 overflow-hidden transition-all duration-300 ${
         isCollapsed ? 'ml-16' : 'ml-[17.5rem]'
       }`}
     >

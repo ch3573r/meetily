@@ -2,13 +2,29 @@
 
 export type ThemePreference = "light" | "dark" | "system"
 export type ResolvedTheme = "light" | "dark"
+export type FontPreference = "source-sans" | "inter" | "manrope" | "ibm-plex-sans" | "system"
 
 export const THEME_STORAGE_KEY = "clawscribe.theme"
+export const FONT_STORAGE_KEY = "clawscribe.font"
 
 export const themePreferences: ThemePreference[] = ["light", "dark", "system"]
+export const fontPreferences: FontPreference[] = [
+  "source-sans",
+  "inter",
+  "manrope",
+  "ibm-plex-sans",
+  "system",
+]
 
 const isThemePreference = (value: string | null): value is ThemePreference =>
   value === "light" || value === "dark" || value === "system"
+
+const isFontPreference = (value: string | null): value is FontPreference =>
+  value === "source-sans" ||
+  value === "inter" ||
+  value === "manrope" ||
+  value === "ibm-plex-sans" ||
+  value === "system"
 
 export function getStoredThemePreference(): ThemePreference {
   if (typeof window === "undefined") return "system"
@@ -66,6 +82,46 @@ export function setThemePreference(preference: ThemePreference): ResolvedTheme {
   }
 
   return applyThemePreference(preference)
+}
+
+// ── Interface font ─────────────────────────────────────────────────────────
+
+const FONT_STACKS: Record<FontPreference, string> = {
+  "source-sans": "var(--font-source-sans-3), ui-sans-serif, system-ui, sans-serif",
+  inter: "var(--font-inter), ui-sans-serif, system-ui, sans-serif",
+  manrope: "var(--font-manrope), ui-sans-serif, system-ui, sans-serif",
+  "ibm-plex-sans": "var(--font-ibm-plex-sans), ui-sans-serif, system-ui, sans-serif",
+  system: 'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+}
+
+export function getStoredFontPreference(): FontPreference {
+  if (typeof window === "undefined") return "source-sans"
+
+  try {
+    const stored = window.localStorage.getItem(FONT_STORAGE_KEY)
+    return isFontPreference(stored) ? stored : "source-sans"
+  } catch {
+    return "source-sans"
+  }
+}
+
+export function applyFontPreference(preference: FontPreference): void {
+  if (typeof document === "undefined") return
+
+  const root = document.documentElement
+  root.dataset.fontPreference = preference
+  root.style.setProperty("--font-app-sans", FONT_STACKS[preference])
+}
+
+export function setFontPreference(preference: FontPreference): void {
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(FONT_STORAGE_KEY, preference)
+    } catch {
+      // Apply even if storage is unavailable.
+    }
+  }
+  applyFontPreference(preference)
 }
 
 // ── Accent color ───────────────────────────────────────────────────────────

@@ -542,7 +542,7 @@ const Sidebar: React.FC = () => {
   ];
 
   return (
-    <div className="fixed left-0 top-0 z-40 h-screen">
+    <div className="fixed left-0 top-[var(--titlebar-height)] z-40 h-[calc(100vh-var(--titlebar-height))]">
       <button
         onClick={toggleCollapse}
         className="absolute -right-3 top-24 z-50 flex h-7 w-7 items-center justify-center rounded-full border border-sidebar-border bg-sidebar text-muted-foreground shadow-sm transition hover:bg-sidebar-hover hover:text-sidebar-foreground"
@@ -556,7 +556,7 @@ const Sidebar: React.FC = () => {
       </button>
 
       <aside
-        className={`flex h-screen flex-col border-r border-sidebar-border bg-sidebar text-muted-foreground shadow-sm transition-all duration-300 ${
+        className={`flex h-full flex-col border-r border-sidebar-border bg-sidebar text-muted-foreground shadow-sm transition-all duration-300 ${
           isCollapsed ? "w-16" : "w-[17.5rem]"
         }`}
       >

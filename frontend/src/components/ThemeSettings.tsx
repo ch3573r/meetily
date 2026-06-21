@@ -1,20 +1,32 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Monitor, Moon, Sun } from "lucide-react";
+import { Monitor, Moon, Sun, Type } from "lucide-react";
 import {
   accentColors,
   applyAccent,
+  applyFontPreference,
   applyNativeThemePreference,
   applyThemePreference,
+  fontPreferences,
   getStoredAccentId,
+  getStoredFontPreference,
   getStoredThemePreference,
   setAccent,
+  setFontPreference,
   setThemePreference,
   subscribeToSystemTheme,
   themePreferences,
+  type FontPreference,
   type ThemePreference,
 } from "@/lib/theme";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const themeOptions: Record<
   ThemePreference,
@@ -41,6 +53,29 @@ const themeOptions: Record<
   },
 };
 
+const fontOptions: Record<FontPreference, { label: string; description: string }> = {
+  "source-sans": {
+    label: "Source Sans 3",
+    description: "Default. Compact and readable for dense notes.",
+  },
+  inter: {
+    label: "Inter",
+    description: "Neutral UI font with clear controls.",
+  },
+  manrope: {
+    label: "Manrope",
+    description: "Softer geometric feel with wider forms.",
+  },
+  "ibm-plex-sans": {
+    label: "IBM Plex Sans",
+    description: "Technical, structured, and slightly narrower.",
+  },
+  system: {
+    label: "System",
+    description: "Use the Windows/macOS/Linux interface font.",
+  },
+};
+
 export function ThemeInitializer() {
   useEffect(() => {
     const applyStoredTheme = () => {
@@ -51,6 +86,7 @@ export function ThemeInitializer() {
 
     applyStoredTheme();
     applyAccent(getStoredAccentId());
+    applyFontPreference(getStoredFontPreference());
 
     const unsubscribeSystemTheme = subscribeToSystemTheme(applyStoredTheme);
     window.addEventListener("storage", applyStoredTheme);
@@ -67,9 +103,11 @@ export function ThemeInitializer() {
 export function ThemeSettings() {
   const [preference, setPreference] = useState<ThemePreference>("system");
   const [accentId, setAccentId] = useState<string>("default");
+  const [fontId, setFontId] = useState<FontPreference>("source-sans");
 
   useEffect(() => {
     setAccentId(getStoredAccentId());
+    setFontId(getStoredFontPreference());
   }, []);
 
   const handleAccentChange = (id: string) => {
@@ -101,80 +139,133 @@ export function ThemeSettings() {
     void applyNativeThemePreference(nextPreference);
   };
 
+  const handleFontChange = (nextFont: FontPreference) => {
+    setFontId(nextFont);
+    setFontPreference(nextFont);
+  };
+
   return (
-    <div className="rounded-md border border-border bg-card p-6 shadow-sm">
-      <div className="mb-4">
-        <h3 className="text-lg font-semibold text-foreground">Theme</h3>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Follow light, dark, or your system setting.
-        </p>
-      </div>
+    <div className="space-y-4">
+      <section className="rounded-md border border-border bg-card p-6 shadow-sm">
+        <div className="mb-4">
+          <h3 className="text-lg font-semibold text-foreground">Theme</h3>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Follow light, dark, or your system setting.
+          </p>
+        </div>
 
-      <div
-        className="grid gap-2 sm:grid-cols-3"
-        role="radiogroup"
-        aria-label="Theme preference"
-      >
-        {themePreferences.map((option) => {
-          const { label, description, Icon } = themeOptions[option];
-          const isSelected = option === preference;
+        <div
+          className="grid gap-2 sm:grid-cols-3"
+          role="radiogroup"
+          aria-label="Theme preference"
+        >
+          {themePreferences.map((option) => {
+            const { label, description, Icon } = themeOptions[option];
+            const isSelected = option === preference;
 
-          return (
-            <button
-              key={option}
-              type="button"
-              role="radio"
-              aria-checked={isSelected}
-              onClick={() => handlePreferenceChange(option)}
-              className={`flex min-h-24 flex-col items-start gap-3 rounded-md border p-4 text-left transition-colors ${
-                isSelected
-                  ? "border-primary/30 bg-primary/10 text-primary ring-1 ring-primary/50"
-                  : "border-border bg-background text-muted-foreground hover:border-primary/70 hover:bg-muted"
-              }`}
-            >
-              <span className="flex items-center gap-2 text-sm font-semibold">
-                <Icon className="h-4 w-4" />
-                {label}
-              </span>
-              <span className="text-xs leading-5">{description}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="mt-6">
-        <h4 className="text-sm font-semibold text-foreground">Accent color</h4>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Used for highlights, links, and primary buttons.
-        </p>
-        <div className="mt-3 flex flex-wrap gap-2" role="radiogroup" aria-label="Accent color">
-          {accentColors.map((accent) => {
-            const isSelected = accent.id === accentId;
             return (
               <button
-                key={accent.id}
+                key={option}
                 type="button"
                 role="radio"
                 aria-checked={isSelected}
-                title={accent.name}
-                onClick={() => handleAccentChange(accent.id)}
-                className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                onClick={() => handlePreferenceChange(option)}
+                className={`flex min-h-24 flex-col items-start gap-3 rounded-md border p-4 text-left transition-colors ${
                   isSelected
-                    ? "border-foreground/30 text-foreground ring-2 ring-offset-2 ring-offset-card"
-                    : "border-border text-muted-foreground hover:bg-muted"
+                    ? "border-primary/30 bg-primary/10 text-primary ring-1 ring-primary/50"
+                    : "border-border bg-background text-muted-foreground hover:border-primary/70 hover:bg-muted"
                 }`}
-                style={isSelected ? { boxShadow: `0 0 0 2px hsl(${accent.primary})` } : undefined}
               >
-                <span
-                  className="h-3.5 w-3.5 rounded-full"
-                  style={{ backgroundColor: `hsl(${accent.primary})` }}
-                />
-                {accent.name}
+                <span className="flex items-center gap-2 text-sm font-semibold">
+                  <Icon className="h-4 w-4" />
+                  {label}
+                </span>
+                <span className="text-xs leading-5">{description}</span>
               </button>
             );
           })}
         </div>
-      </div>
+
+        <div className="mt-6">
+          <h4 className="text-sm font-semibold text-foreground">Accent color</h4>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Used for highlights, links, and primary buttons.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2" role="radiogroup" aria-label="Accent color">
+            {accentColors.map((accent) => {
+              const isSelected = accent.id === accentId;
+              return (
+                <button
+                  key={accent.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={isSelected}
+                  title={accent.name}
+                  onClick={() => handleAccentChange(accent.id)}
+                  className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                    isSelected
+                      ? "border-foreground/30 text-foreground ring-2 ring-offset-2 ring-offset-card"
+                      : "border-border text-muted-foreground hover:bg-muted"
+                  }`}
+                  style={isSelected ? { boxShadow: `0 0 0 2px hsl(${accent.primary})` } : undefined}
+                >
+                  <span
+                    className="h-3.5 w-3.5 rounded-full"
+                    style={{ backgroundColor: `hsl(${accent.primary})` }}
+                  />
+                  {accent.name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-md border border-border bg-card p-6 shadow-sm">
+        <div className="mb-4 flex items-start gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background text-primary">
+            <Type className="h-4 w-4" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-foreground">Interface font</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Applies to navigation, settings, transcripts, and summaries.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(15rem,18rem)] sm:items-start">
+          <div className="rounded-md border border-border bg-background p-4">
+            <p className="text-sm font-semibold text-foreground">
+              Meeting notes stay readable at dense sizes.
+            </p>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              Review transcript text, action items, and export controls with the selected interface font.
+            </p>
+            <p className="mt-3 font-mono text-xs text-muted-foreground">
+              00:14 | Generate summary | Export to OneNote
+            </p>
+          </div>
+
+          <div>
+            <Select value={fontId} onValueChange={(value) => handleFontChange(value as FontPreference)}>
+              <SelectTrigger aria-label="Interface font">
+                <SelectValue placeholder="Choose font" />
+              </SelectTrigger>
+              <SelectContent>
+                {fontPreferences.map((font) => (
+                  <SelectItem key={font} value={font}>
+                    {fontOptions[font].label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="mt-2 text-xs leading-5 text-muted-foreground">
+              {fontOptions[fontId].description}
+            </p>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

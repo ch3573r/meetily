@@ -1,10 +1,11 @@
 'use client'
 
 import './globals.css'
-import { Source_Sans_3, IBM_Plex_Mono } from 'next/font/google'
+import { IBM_Plex_Mono, IBM_Plex_Sans, Inter, Manrope, Source_Sans_3 } from 'next/font/google'
 import Sidebar from '@/components/Sidebar'
 import { SidebarProvider } from '@/components/Sidebar/SidebarProvider'
 import MainContent from '@/components/MainContent'
+import { AppTitlebar } from '@/components/AppTitlebar'
 import AnalyticsProvider from '@/components/AnalyticsProvider'
 import { Toaster, toast } from 'sonner'
 import "sonner/dist/styles.css"
@@ -35,6 +36,23 @@ const sourceSans3 = Source_Sans_3({
   subsets: ['latin'],
   weight: ['400', '500', '600', '700'],
   variable: '--font-source-sans-3',
+})
+
+const inter = Inter({
+  subsets: ['latin'],
+  variable: '--font-inter',
+})
+
+const manrope = Manrope({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-manrope',
+})
+
+const ibmPlexSans = IBM_Plex_Sans({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-ibm-plex-sans',
 })
 
 // Utility/data face: timestamps, durations, speaker labels, model ids, paths,
@@ -274,9 +292,10 @@ export default function RootLayout({
 
   return (
     <html lang="en">
-      <body className={`${sourceSans3.variable} ${plexMono.variable} font-sans antialiased`}>
+      <body className={`${sourceSans3.variable} ${inter.variable} ${manrope.variable} ${ibmPlexSans.variable} ${plexMono.variable} font-sans antialiased`}>
         <ThemeInitializer />
         <AppShortcuts />
+        <AppTitlebar />
         <AnalyticsProvider>
           <RecordingStateProvider>
             <TranscriptProvider>
@@ -296,9 +315,11 @@ export default function RootLayout({
 
                               {/* Show onboarding or main app */}
                               {showOnboarding ? (
-                                <OnboardingFlow onComplete={handleOnboardingComplete} />
+                                <div className="pt-[var(--titlebar-height)]">
+                                  <OnboardingFlow onComplete={handleOnboardingComplete} />
+                                </div>
                               ) : (
-                                <div className="flex">
+                                <div className="flex pt-[var(--titlebar-height)]">
                                   <Sidebar />
                                   <MainContent>{children}</MainContent>
                                 </div>

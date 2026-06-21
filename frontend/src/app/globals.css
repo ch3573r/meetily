@@ -98,6 +98,8 @@
     --brand-blue: 214 90% 56%;
     --brand-gradient: linear-gradient(145deg, hsl(var(--brand-cyan)), hsl(var(--brand-blue)));
     --brand-gradient-v: linear-gradient(to bottom, hsl(var(--brand-cyan)), hsl(var(--brand-blue)));
+    --font-app-sans: var(--font-source-sans-3), ui-sans-serif, system-ui, sans-serif;
+    --titlebar-height: 32px;
     /* Primary-action gradient, derived from the chosen accent so it follows the
        accent picker (bold, but the switches still matter). color-mix needs a
        modern webview — WebView2 / WKGTK both qualify. */

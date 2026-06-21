@@ -142,7 +142,7 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
+    <div className="flex h-full flex-col overflow-hidden bg-background text-foreground">
       {/* Top bar */}
       <header className="flex shrink-0 items-center gap-4 border-b border-border px-6 py-4">
         <button
