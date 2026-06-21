@@ -81,6 +81,15 @@ fn map_single<T: serde::de::DeserializeOwned>(
     }
 }
 
+pub fn is_onenote_large_library_error(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    lower.contains("10008")
+        || lower.contains("5,000 onenote items")
+        || lower.contains("5000 onenote items")
+        || lower.contains("more than 5,000")
+        || lower.contains("more than 5000")
+}
+
 pub async fn list_notebooks<T: GraphTransport, S: Sleeper>(
     client: &GraphClient<T, S>,
     token: &str,
@@ -142,7 +151,17 @@ pub async fn ensure_section<T: GraphTransport, S: Sleeper>(
     notebook_id: &str,
     display_name: &str,
 ) -> Result<(SectionInfo, bool), String> {
-    let sections = list_sections(client, token, notebook_id).await?;
+    let sections = match list_sections(client, token, notebook_id).await {
+        Ok(sections) => sections,
+        Err(err) if is_onenote_large_library_error(&err) => {
+            log::warn!(
+                "OneNote section listing hit Graph 10008; creating section without enumeration"
+            );
+            let created = create_section(client, token, notebook_id, display_name).await?;
+            return Ok((created, true));
+        }
+        Err(err) => return Err(err),
+    };
     if let Some(existing) = sections
         .into_iter()
         .find(|s| s.display_name.trim().eq_ignore_ascii_case(display_name.trim()))
@@ -260,7 +279,6 @@ mod tests {
     use crate::exports::client::{GraphClient, RetryPolicy};
     use crate::exports::transport::{GraphResponse, MockGraphTransport};
     use async_trait::async_trait;
-    use std::sync::Mutex;
     use std::time::Duration;
 
     #[derive(Default)]
@@ -336,5 +354,29 @@ mod tests {
         let c = client(transport);
         let err = list_sections(&c, "token", "nb-1").await.unwrap_err();
         assert!(err.contains("unauthorized"));
+    }
+
+    #[tokio::test]
+    async fn ensure_section_creates_without_listing_when_onenote_library_is_too_large() {
+        let transport = MockGraphTransport::new();
+        transport.queue_default([
+            GraphResponse {
+                status: 403,
+                retry_after_secs: None,
+                error_code: Some("10008".into()),
+                error_message: Some(
+                    "One or more document libraries contains more than 5,000 OneNote items"
+                        .into(),
+                ),
+                body: String::new(),
+            },
+            GraphResponse::success(201, r#"{"id":"section-9","displayName":"Meeting notes"}"#),
+        ]);
+        let c = client(transport);
+        let (section, created) = ensure_section(&c, "token", "nb-1", "Meeting notes")
+            .await
+            .unwrap();
+        assert!(created);
+        assert_eq!(section.id, "section-9");
     }
 }

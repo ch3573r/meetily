@@ -87,6 +87,20 @@ export interface PolishedPlannerTask {
   details: string;
 }
 
+export const ONENOTE_LARGE_LIBRARY_MESSAGE =
+  "OneNote cannot list notebooks or sections because this OneDrive library has more than 5,000 OneNote items. Create a new notebook/section or use a saved destination; export can still write to a known section.";
+
+export function isOneNoteLargeLibraryError(error: unknown): boolean {
+  const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
+  return (
+    message.includes("10008") ||
+    message.includes("5,000 onenote items") ||
+    message.includes("5000 onenote items") ||
+    message.includes("more than 5,000") ||
+    message.includes("more than 5000")
+  );
+}
+
 export const microsoftExportService = {
   async signIn(): Promise<void> {
     // Opens the system browser for interactive sign-in; completion arrives via

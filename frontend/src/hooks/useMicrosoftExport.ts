@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
+  isOneNoteLargeLibraryError,
   microsoftExportService,
   type MicrosoftConnectionInfo,
   type NotebookInfo,
@@ -26,6 +27,8 @@ export function useMicrosoftExport() {
   const [sections, setSections] = useState<SectionInfo[]>([]);
   const [plans, setPlans] = useState<PlanInfo[]>([]);
   const [buckets, setBuckets] = useState<BucketInfo[]>([]);
+  const [oneNoteNotebookListingLimited, setOneNoteNotebookListingLimited] = useState(false);
+  const [oneNoteSectionListingLimited, setOneNoteSectionListingLimited] = useState(false);
 
   const [loadingNotebooks, setLoadingNotebooks] = useState(false);
   const [loadingSections, setLoadingSections] = useState(false);
@@ -70,6 +73,8 @@ export function useMicrosoftExport() {
         setSections([]);
         setPlans([]);
         setBuckets([]);
+        setOneNoteNotebookListingLimited(false);
+        setOneNoteSectionListingLimited(false);
         setCalendarEvents([]);
         setCurrentMeeting(null);
       },
@@ -106,6 +111,8 @@ export function useMicrosoftExport() {
       setSections([]);
       setPlans([]);
       setBuckets([]);
+      setOneNoteNotebookListingLimited(false);
+      setOneNoteSectionListingLimited(false);
       setCalendarEvents([]);
       setCurrentMeeting(null);
       // Drop any stored calendar associations (attendee PII) on sign-out.
@@ -123,8 +130,16 @@ export function useMicrosoftExport() {
     setLoadingNotebooks(true);
     try {
       setNotebooks(await microsoftExportService.listNotebooks());
+      setOneNoteNotebookListingLimited(false);
+      setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      if (isOneNoteLargeLibraryError(e)) {
+        setNotebooks([]);
+        setOneNoteNotebookListingLimited(true);
+        setError(null);
+      } else {
+        setError(e instanceof Error ? e.message : String(e));
+      }
     } finally {
       setLoadingNotebooks(false);
     }
@@ -134,8 +149,16 @@ export function useMicrosoftExport() {
     setLoadingSections(true);
     try {
       setSections(await microsoftExportService.listSections(notebookId));
+      setOneNoteSectionListingLimited(false);
+      setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setSections([]);
+      if (isOneNoteLargeLibraryError(e)) {
+        setOneNoteSectionListingLimited(true);
+        setError(null);
+      } else {
+        setError(e instanceof Error ? e.message : String(e));
+      }
     } finally {
       setLoadingSections(false);
     }
@@ -195,6 +218,7 @@ export function useMicrosoftExport() {
         setNotebooks((prev) =>
           prev.some((n) => n.id === nb.id) ? prev : [...prev, nb],
         );
+        setOneNoteNotebookListingLimited(false);
         return nb;
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
@@ -215,6 +239,7 @@ export function useMicrosoftExport() {
         setSections((prev) =>
           prev.some((s) => s.id === section.id) ? prev : [...prev, section],
         );
+        setOneNoteSectionListingLimited(false);
         return section;
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
@@ -253,6 +278,8 @@ export function useMicrosoftExport() {
     buckets,
     loadingNotebooks,
     loadingSections,
+    oneNoteNotebookListingLimited,
+    oneNoteSectionListingLimited,
     loadingPlans,
     loadingBuckets,
     loadNotebooks,

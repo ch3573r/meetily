@@ -22,6 +22,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  ONENOTE_LARGE_LIBRARY_MESSAGE,
+  isOneNoteLargeLibraryError,
   microsoftExportService,
   type MicrosoftConnectionInfo,
   type NotebookInfo,
@@ -113,9 +115,13 @@ export function MeetingExportButtons({
   const [oneNoteSections, setOneNoteSections] = useState<SectionInfo[]>([]);
   const [oneNoteNotebookId, setOneNoteNotebookId] = useState("");
   const [oneNoteSectionId, setOneNoteSectionId] = useState("");
+  const [oneNoteSavedNotebookName, setOneNoteSavedNotebookName] = useState<string | null>(null);
+  const [oneNoteSavedSectionName, setOneNoteSavedSectionName] = useState<string | null>(null);
   const [oneNotePageTitle, setOneNotePageTitle] = useState("");
   const [loadingOneNoteNotebooks, setLoadingOneNoteNotebooks] = useState(false);
   const [loadingOneNoteSections, setLoadingOneNoteSections] = useState(false);
+  const [oneNoteNotebookListingLimited, setOneNoteNotebookListingLimited] = useState(false);
+  const [oneNoteSectionListingLimited, setOneNoteSectionListingLimited] = useState(false);
   const [creatingNotebook, setCreatingNotebook] = useState(false);
   const [creatingSection, setCreatingSection] = useState(false);
   const [newNotebookName, setNewNotebookName] = useState("");
@@ -127,10 +133,16 @@ export function MeetingExportButtons({
     setLoadingOneNoteNotebooks(true);
     try {
       setOneNoteNotebooks(await microsoftExportService.listNotebooks());
+      setOneNoteNotebookListingLimited(false);
     } catch (e) {
-      toast.error("Could not load OneNote notebooks", {
-        description: errorText(e),
-      });
+      if (isOneNoteLargeLibraryError(e)) {
+        setOneNoteNotebooks([]);
+        setOneNoteNotebookListingLimited(true);
+      } else {
+        toast.error("Could not load OneNote notebooks", {
+          description: errorText(e),
+        });
+      }
     } finally {
       setLoadingOneNoteNotebooks(false);
     }
@@ -144,11 +156,16 @@ export function MeetingExportButtons({
     setLoadingOneNoteSections(true);
     try {
       setOneNoteSections(await microsoftExportService.listSections(notebookId));
+      setOneNoteSectionListingLimited(false);
     } catch (e) {
       setOneNoteSections([]);
-      toast.error("Could not load OneNote sections", {
-        description: errorText(e),
-      });
+      if (isOneNoteLargeLibraryError(e)) {
+        setOneNoteSectionListingLimited(true);
+      } else {
+        toast.error("Could not load OneNote sections", {
+          description: errorText(e),
+        });
+      }
     } finally {
       setLoadingOneNoteSections(false);
     }
@@ -218,6 +235,29 @@ export function MeetingExportButtons({
     void loadOneNoteSections(oneNoteNotebookId);
   }, [loadOneNoteSections, oneNoteNotebookId, oneNoteOpen]);
 
+  useEffect(() => {
+    if (
+      oneNoteOpen &&
+      oneNoteNotebookId &&
+      oneNoteSectionListingLimited &&
+      !oneNoteSectionId &&
+      !creatingSection
+    ) {
+      setCreatingSection(true);
+      setNewSectionName((prev) =>
+        prev || sanitizeSectionName(defaultDatedTitle(meetingTitle, meetingCreatedAt)),
+      );
+    }
+  }, [
+    creatingSection,
+    meetingCreatedAt,
+    meetingTitle,
+    oneNoteNotebookId,
+    oneNoteOpen,
+    oneNoteSectionId,
+    oneNoteSectionListingLimited,
+  ]);
+
   const submitNewNotebook = useCallback(async () => {
     const name = sanitizeNotebookName(newNotebookName).trim();
     if (!name) return;
@@ -228,7 +268,11 @@ export function MeetingExportButtons({
         prev.some((n) => n.id === notebook.id) ? prev : [...prev, notebook],
       );
       setOneNoteNotebookId(notebook.id);
+      setOneNoteSavedNotebookName(notebook.displayName);
       setOneNoteSectionId("");
+      setOneNoteSavedSectionName(null);
+      setOneNoteNotebookListingLimited(false);
+      setOneNoteSectionListingLimited(false);
       setCreatingNotebook(false);
       setNewNotebookName("");
       setOneNoteSections([]);
@@ -254,6 +298,8 @@ export function MeetingExportButtons({
         prev.some((s) => s.id === section.id) ? prev : [...prev, section],
       );
       setOneNoteSectionId(section.id);
+      setOneNoteSavedSectionName(section.displayName);
+      setOneNoteSectionListingLimited(false);
       setCreatingSection(false);
       setNewSectionName("");
     } catch (e) {
@@ -271,7 +317,11 @@ export function MeetingExportButtons({
     const saved = getExportDestinations();
     setOneNoteNotebookId(saved.notebookId ?? "");
     setOneNoteSectionId(saved.sectionId ?? "");
+    setOneNoteSavedNotebookName(saved.notebookName ?? null);
+    setOneNoteSavedSectionName(saved.sectionName ?? null);
     setOneNotePageTitle(defaultDatedTitle(meetingTitle, meetingCreatedAt));
+    setOneNoteNotebookListingLimited(false);
+    setOneNoteSectionListingLimited(false);
     setCreatingNotebook(false);
     setCreatingSection(false);
     setNewNotebookName("");
@@ -296,10 +346,14 @@ export function MeetingExportButtons({
         toast.info("Nothing to export yet — generate a summary first.");
         return;
       }
-      const notebookName = oneNoteNotebooks.find((n) => n.id === oneNoteNotebookId)
-        ?.displayName;
-      const sectionName = oneNoteSections.find((s) => s.id === oneNoteSectionId)
-        ?.displayName;
+      const notebookName =
+        oneNoteNotebooks.find((n) => n.id === oneNoteNotebookId)?.displayName ??
+        oneNoteSavedNotebookName ??
+        undefined;
+      const sectionName =
+        oneNoteSections.find((s) => s.id === oneNoteSectionId)?.displayName ??
+        oneNoteSavedSectionName ??
+        undefined;
       setExportDestinations({
         notebookId: oneNoteNotebookId,
         notebookName,
@@ -328,11 +382,18 @@ export function MeetingExportButtons({
     meetingTitle,
     oneNoteNotebookId,
     oneNoteNotebooks,
+    oneNoteSavedNotebookName,
+    oneNoteSavedSectionName,
     oneNotePageTitle,
     oneNoteSectionId,
     oneNoteSections,
     reportToast,
   ]);
+
+  const selectedNotebookMissing =
+    !!oneNoteNotebookId && !oneNoteNotebooks.some((n) => n.id === oneNoteNotebookId);
+  const selectedSectionMissing =
+    !!oneNoteSectionId && !oneNoteSections.some((s) => s.id === oneNoteSectionId);
 
   // Planner export opens a review dialog (pick/edit/route action items) rather
   // than creating tasks immediately.
@@ -501,7 +562,10 @@ export function MeetingExportButtons({
                   }
                   setCreatingNotebook(false);
                   setOneNoteNotebookId(e.target.value);
+                  setOneNoteSavedNotebookName(null);
                   setOneNoteSectionId("");
+                  setOneNoteSavedSectionName(null);
+                  setOneNoteSectionListingLimited(false);
                   setCreatingSection(false);
                 }}
                 disabled={loadingOneNoteNotebooks || busy === "onenote"}
@@ -514,9 +578,20 @@ export function MeetingExportButtons({
                     {notebook.displayName}
                   </option>
                 ))}
+                {selectedNotebookMissing && (
+                  <option value={oneNoteNotebookId}>
+                    {oneNoteSavedNotebookName ?? "Saved notebook"}
+                  </option>
+                )}
                 <option value="__new__">+ New notebook...</option>
               </select>
             </div>
+
+            {oneNoteNotebookListingLimited && (
+              <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-200">
+                {ONENOTE_LARGE_LIBRARY_MESSAGE}
+              </p>
+            )}
 
             {creatingNotebook && (
               <div className="space-y-2 rounded-lg border border-border bg-muted p-3">
@@ -568,6 +643,7 @@ export function MeetingExportButtons({
                   }
                   setCreatingSection(false);
                   setOneNoteSectionId(e.target.value);
+                  setOneNoteSavedSectionName(null);
                 }}
                 disabled={!oneNoteNotebookId || loadingOneNoteSections || busy === "onenote"}
               >
@@ -583,9 +659,22 @@ export function MeetingExportButtons({
                     {section.displayName}
                   </option>
                 ))}
+                {selectedSectionMissing && (
+                  <option value={oneNoteSectionId}>
+                    {oneNoteSavedSectionName ?? "Saved section"}
+                  </option>
+                )}
                 {oneNoteNotebookId && <option value="__new__">+ New section...</option>}
               </select>
             </div>
+
+            {oneNoteSectionListingLimited && oneNoteNotebookId && (
+              <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-200">
+                OneNote cannot list sections for this notebook because of the
+                5,000-item Graph limit. Create a new section here, or export to
+                the saved section if one is already selected.
+              </p>
+            )}
 
             {creatingSection && (
               <div className="space-y-2 rounded-lg border border-border bg-muted p-3">

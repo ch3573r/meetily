@@ -36,6 +36,7 @@ import {
   confluenceExportService,
   type ConfluenceConnectionStatus,
 } from "@/services/confluenceExportService";
+import { ONENOTE_LARGE_LIBRARY_MESSAGE } from "@/services/microsoftExportService";
 import {
   getTeamsDetectionMode,
   setTeamsDetectionMode,
@@ -393,6 +394,25 @@ function OneNotePanel() {
     }
   }, [isConnected, selectedNotebook]);
 
+  useEffect(() => {
+    if (
+      isConnected &&
+      selectedNotebook &&
+      ms.oneNoteSectionListingLimited &&
+      !selectedSection &&
+      !creatingSection
+    ) {
+      setCreatingSection(true);
+      setNewSectionName((prev) => prev || "Meeting notes");
+    }
+  }, [
+    creatingSection,
+    isConnected,
+    ms.oneNoteSectionListingLimited,
+    selectedNotebook,
+    selectedSection,
+  ]);
+
   // Persist the explicit destination. Notebook-only is allowed as a partial
   // setup state, but exporting requires a selected section.
   useEffect(() => {
@@ -414,6 +434,10 @@ function OneNotePanel() {
   const detail = isConnected
     ? "Pick the notebook and section where meeting pages should be created."
     : "Sign in with Microsoft above to enable OneNote export.";
+  const selectedNotebookMissing =
+    !!selectedNotebook && !ms.notebooks.some((nb) => nb.id === selectedNotebook);
+  const selectedSectionMissing =
+    !!selectedSection && !ms.sections.some((section) => section.id === selectedSection);
 
   return (
     <AddonPanel
@@ -464,9 +488,20 @@ function OneNotePanel() {
                   {nb.displayName}
                 </option>
               ))}
+              {selectedNotebookMissing && (
+                <option value={selectedNotebook}>
+                  {saved.notebookName ?? "Saved notebook"}
+                </option>
+              )}
               <option value={NEW_OPTION}>+ New notebook…</option>
             </select>
           </div>
+
+          {ms.oneNoteNotebookListingLimited && (
+            <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-200">
+              {ONENOTE_LARGE_LIBRARY_MESSAGE}
+            </p>
+          )}
 
           {creatingNotebook && (
             <div className="space-y-2 rounded-lg border border-border bg-muted p-3">
@@ -560,9 +595,22 @@ function OneNotePanel() {
                   {section.displayName}
                 </option>
               ))}
+              {selectedSectionMissing && (
+                <option value={selectedSection}>
+                  {saved.sectionName ?? "Saved section"}
+                </option>
+              )}
               {selectedNotebook && <option value={NEW_OPTION}>+ New section…</option>}
             </select>
           </div>
+
+          {ms.oneNoteSectionListingLimited && selectedNotebook && (
+            <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-200">
+              OneNote cannot list sections for this notebook because of the
+              5,000-item Graph limit. Create a new section here, or keep using
+              the saved section if one is already selected.
+            </p>
+          )}
 
           {creatingSection && (
             <div className="space-y-2 rounded-lg border border-border bg-muted p-3">
