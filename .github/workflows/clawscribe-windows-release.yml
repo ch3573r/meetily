@@ -310,7 +310,34 @@ jobs:
         run: |
           $bundleRoot = "frontend\src-tauri\target\release\bundle"
           $version = $env:CLAWSCRIBE_SOURCE_VERSION
+          $runtimeVersion = $env:CLAWSCRIBE_INSTALLER_VERSION
           $short = git rev-parse --short HEAD
+          $changelog = New-Object System.Collections.Generic.List[string]
+          $changelogPath = "CHANGELOG.md"
+          if (Test-Path -LiteralPath $changelogPath) {
+            $capture = $false
+            foreach ($line in Get-Content -LiteralPath $changelogPath) {
+              if ($line -eq "## $version") {
+                $capture = $true
+                continue
+              }
+              if ($capture -and $line -match "^##\s+") {
+                break
+              }
+              if ($capture) {
+                $changelog.Add($line)
+              }
+            }
+          }
+          while ($changelog.Count -gt 0 -and [string]::IsNullOrWhiteSpace($changelog[0])) {
+            $changelog.RemoveAt(0)
+          }
+          while ($changelog.Count -gt 0 -and [string]::IsNullOrWhiteSpace($changelog[$changelog.Count - 1])) {
+            $changelog.RemoveAt($changelog.Count - 1)
+          }
+          if ($changelog.Count -eq 0) {
+            $changelog.Add("- See the commits included in this release for details.")
+          }
           # Built line-by-line (no backticks) to avoid PowerShell here-string escaping.
           $lines = @(
             "ClawScribe $version ($short) - ${{ inputs.feature }} build (DirectML: ${{ inputs.directml }}).",
@@ -319,14 +346,26 @@ jobs:
             "> SmartScreen may warn on first run: click More info -> Run anyway to",
             "> install. Code signing is planned for a later release.",
             "",
-            "### Install",
-            "- Recommended: the ``*_x64-setup.exe`` (NSIS) installer",
-            "- Or the ``*_x64_en-US.msi``",
-            "",
-            "### SHA-256 checksums",
+            "### What's changed",
             ""
           )
+          $lines += $changelog
+          $lines += @(
+            "",
+            "### Update behavior",
+            "- ``latest.json`` advertises runtime version ``$runtimeVersion``.",
+            "- The app updater downloads the NSIS setup installer.",
+            "",
+            "### Install",
+            "- Recommended: ``ClawScribe_${version}_x64-setup.exe``",
+            "- Alternative: ``ClawScribe_${version}_x64_en-US.msi``",
+            "",
+            "### SHA-256 checksums",
+            "",
+            "```text"
+          )
           $lines += (Get-Content -LiteralPath (Join-Path $bundleRoot "SHA256SUMS.txt"))
+          $lines += "```"
           $lines | Set-Content -LiteralPath (Join-Path $bundleRoot "RELEASE-NOTES.md") -Encoding utf8
 
       - name: Generate updater manifest (latest.json)

@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.10
+
+- Reworked the custom Windows titlebar into a quiet app-shell drag region:
+  branding now lives in the sidebar, while only the native window controls stay
+  in the top-right corner.
+- Added a Meetings overview page and renamed the old Meeting Notes navigation
+  entry to Meetings so saved recordings have a clearer home.
+- Rebalanced the collapsed icon rail with primary navigation at the top,
+  recording/import actions at the bottom, and a compact status/version footer.
+- Polished the Home dashboard, Settings surfaces, Add-ons readiness cards, and
+  Meeting details layout for denser desktop use.
+- Graduated Import Audio and Retranscribe from beta into the production meeting
+  workflow, including cancel/error handling and safer retranscribe warnings.
+- Improved recording start feedback so the app acknowledges capture initiation
+  immediately while the backend finishes setup.
+- Preserved the `latest.json` updater path with runtime version `0.5.10`, so
+  installed `0.5.9` clients can discover this update.
+
 ## 0.5.0-alpha.2
 
 - Prepared the corrective productization QA/build metadata pass.
