@@ -260,9 +260,10 @@ pub async fn list_todo_lists<T: GraphTransport, S: Sleeper>(
     client: &GraphClient<T, S>,
     token: &str,
 ) -> Result<Vec<ToDoListInfo>, String> {
-    let request = get_request(format!(
-        "{GRAPH_BASE}/me/todo/lists?$select=id,displayName,wellknownListName&$top=50"
-    ));
+    // Microsoft To Do list enumeration is touchy with OData query parameters
+    // on some accounts. Use the documented plain endpoint; the default payload
+    // already includes id, displayName, and wellknownListName.
+    let request = get_request(format!("{GRAPH_BASE}/me/todo/lists"));
     map_outcome(client.execute(&request, token).await)
 }
 
@@ -395,6 +396,10 @@ mod tests {
         assert_eq!(lists.len(), 1);
         assert_eq!(lists[0].display_name, "Tasks");
         assert_eq!(lists[0].wellknown_list_name.as_deref(), Some("defaultList"));
+        assert_eq!(
+            c.transport().recorded()[0].url,
+            format!("{GRAPH_BASE}/me/todo/lists")
+        );
     }
 
     #[tokio::test]
