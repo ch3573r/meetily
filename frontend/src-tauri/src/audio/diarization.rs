@@ -20,8 +20,12 @@ use std::sync::{
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 use tokio::io::AsyncWriteExt;
+use uuid::Uuid;
 
 const FLOAT_TIE_EPSILON: f64 = 1e-9;
+const MIN_SPLIT_SPEAKER_OVERLAP_SECONDS: f64 = 0.25;
+const SAME_SPEAKER_MERGE_GAP_SECONDS: f64 = 0.25;
+const SPLIT_BOUNDARY_SEARCH_WORDS: usize = 10;
 const DIARIZATION_SAMPLE_RATE: i32 = 16_000;
 const SEGMENTATION_MODEL_DIR: &str = "sherpa-onnx-pyannote-segmentation-3-0";
 const EMBEDDING_MODEL_DIR: &str =
@@ -51,9 +55,24 @@ pub type DiarizationSegment = DiarizationTurn;
 pub struct TranscriptSegment {
     pub id: String,
     pub text: String,
+    pub timestamp: Option<String>,
     pub audio_start_time: Option<f64>,
     pub audio_end_time: Option<f64>,
+    pub duration: Option<f64>,
     pub speaker: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct TranscriptSpeakerSpan {
+    start_time: f64,
+    end_time: f64,
+    speaker: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct WordToken {
+    start_byte: usize,
+    end_byte: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -96,18 +115,35 @@ pub fn map_diarization_to_transcript_segments(
 ) -> Vec<TranscriptSegment> {
     transcript_segments
         .iter()
-        .map(|segment| {
+        .flat_map(|segment| {
             if should_preserve_existing_speaker(segment, options.existing_speaker_policy) {
-                return segment.clone();
+                return vec![segment.clone()];
             }
 
-            let mut mapped = segment.clone();
-            mapped.speaker = assign_speaker(segment, diarization_turns, options.mode)
-                .map(speaker_label)
-                .or_else(|| segment.speaker.clone());
-            mapped
+            split_or_label_transcript_segment(segment, diarization_turns, options.mode)
         })
         .collect()
+}
+
+fn split_or_label_transcript_segment(
+    segment: &TranscriptSegment,
+    diarization_turns: &[DiarizationTurn],
+    mode: DiarizationMappingMode,
+) -> Vec<TranscriptSegment> {
+    let spans = speaker_spans_for_segment(segment, diarization_turns);
+    if spans.len() > 1 {
+        let split_segments = split_transcript_segment_by_speaker_spans(segment, &spans);
+        if split_segments.len() > 1 {
+            return split_segments;
+        }
+    }
+
+    let mut mapped = segment.clone();
+    mapped.speaker = assign_speaker(segment, diarization_turns, mode)
+        .map(speaker_label)
+        .or_else(|| spans.first().map(|span| speaker_label(span.speaker)))
+        .or_else(|| segment.speaker.clone());
+    vec![mapped]
 }
 
 pub fn assign_speaker(
@@ -175,6 +211,258 @@ fn best_speaker_by_midpoint(
 
 fn overlap_seconds(a_start: f64, a_end: f64, b_start: f64, b_end: f64) -> f64 {
     (a_end.min(b_end) - a_start.max(b_start)).max(0.0)
+}
+
+fn speaker_spans_for_segment(
+    segment: &TranscriptSegment,
+    diarization_turns: &[DiarizationTurn],
+) -> Vec<TranscriptSpeakerSpan> {
+    let Some(start) = segment.audio_start_time else {
+        return Vec::new();
+    };
+    let Some(end) = segment.audio_end_time else {
+        return Vec::new();
+    };
+    if !is_valid_interval(start, end) {
+        return Vec::new();
+    }
+
+    let mut spans: Vec<TranscriptSpeakerSpan> = diarization_turns
+        .iter()
+        .filter(|turn| is_valid_interval(turn.start_time, turn.end_time))
+        .filter_map(|turn| {
+            let overlap = overlap_seconds(start, end, turn.start_time, turn.end_time);
+            if overlap < MIN_SPLIT_SPEAKER_OVERLAP_SECONDS {
+                return None;
+            }
+
+            Some(TranscriptSpeakerSpan {
+                start_time: turn.start_time.max(start),
+                end_time: turn.end_time.min(end),
+                speaker: turn.speaker,
+            })
+        })
+        .collect();
+
+    spans.sort_by(|a, b| {
+        a.start_time
+            .partial_cmp(&b.start_time)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.speaker.cmp(&b.speaker))
+    });
+
+    collapse_adjacent_same_speaker_spans(spans)
+}
+
+fn collapse_adjacent_same_speaker_spans(
+    spans: Vec<TranscriptSpeakerSpan>,
+) -> Vec<TranscriptSpeakerSpan> {
+    let mut collapsed: Vec<TranscriptSpeakerSpan> = Vec::new();
+    for span in spans {
+        let Some(last) = collapsed.last_mut() else {
+            collapsed.push(span);
+            continue;
+        };
+
+        if last.speaker == span.speaker
+            && span.start_time <= last.end_time + SAME_SPEAKER_MERGE_GAP_SECONDS
+        {
+            last.end_time = last.end_time.max(span.end_time);
+        } else {
+            collapsed.push(span);
+        }
+    }
+
+    collapsed
+}
+
+fn split_transcript_segment_by_speaker_spans(
+    segment: &TranscriptSegment,
+    spans: &[TranscriptSpeakerSpan],
+) -> Vec<TranscriptSegment> {
+    let Some(segment_start) = segment.audio_start_time else {
+        return vec![segment.clone()];
+    };
+    let Some(segment_end) = segment.audio_end_time else {
+        return vec![segment.clone()];
+    };
+    if spans.len() <= 1 || !is_valid_interval(segment_start, segment_end) {
+        return vec![segment.clone()];
+    }
+
+    let boundaries: Vec<f64> = spans
+        .iter()
+        .take(spans.len().saturating_sub(1))
+        .map(|span| span.end_time.clamp(segment_start, segment_end))
+        .collect();
+    let text_parts =
+        split_text_by_time_boundaries(&segment.text, segment_start, segment_end, &boundaries);
+    if text_parts.len() != spans.len() || text_parts.iter().any(|part| part.trim().is_empty()) {
+        return vec![segment.clone()];
+    }
+
+    spans
+        .iter()
+        .enumerate()
+        .map(|(index, span)| {
+            let audio_start_time = if index == 0 {
+                segment_start
+            } else {
+                span.start_time.max(segment_start)
+            };
+            let audio_end_time = if index + 1 == spans.len() {
+                segment_end
+            } else {
+                span.end_time.min(segment_end)
+            };
+
+            TranscriptSegment {
+                id: if index == 0 {
+                    segment.id.clone()
+                } else {
+                    format!("transcript-{}", Uuid::new_v4())
+                },
+                text: text_parts[index].clone(),
+                timestamp: segment.timestamp.clone(),
+                audio_start_time: Some(audio_start_time),
+                audio_end_time: Some(audio_end_time),
+                duration: Some((audio_end_time - audio_start_time).max(0.0)),
+                speaker: Some(speaker_label(span.speaker)),
+            }
+        })
+        .collect()
+}
+
+fn split_text_by_time_boundaries(
+    text: &str,
+    segment_start: f64,
+    segment_end: f64,
+    boundaries: &[f64],
+) -> Vec<String> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() || boundaries.is_empty() || !is_valid_interval(segment_start, segment_end)
+    {
+        return vec![trimmed.to_string()];
+    }
+
+    let tokens = word_tokens(trimmed);
+    let piece_count = boundaries.len() + 1;
+    if tokens.len() < piece_count {
+        return vec![trimmed.to_string()];
+    }
+
+    let mut split_indices = Vec::<usize>::with_capacity(boundaries.len());
+    let mut previous_index = 0usize;
+    for (boundary_index, boundary_time) in boundaries.iter().enumerate() {
+        let remaining_boundaries = boundaries.len() - boundary_index - 1;
+        let lower = previous_index + 1;
+        let upper = tokens.len().saturating_sub(remaining_boundaries + 1);
+        if lower > upper {
+            return vec![trimmed.to_string()];
+        }
+
+        let ratio =
+            ((*boundary_time - segment_start) / (segment_end - segment_start)).clamp(0.0, 1.0);
+        let target = ((ratio * tokens.len() as f64).round() as usize).clamp(lower, upper);
+        let split_index = best_text_split_index(trimmed, &tokens, target, lower, upper);
+        split_indices.push(split_index);
+        previous_index = split_index;
+    }
+
+    let mut parts = Vec::with_capacity(piece_count);
+    let mut start_token_index = 0usize;
+    for end_token_index in split_indices
+        .into_iter()
+        .chain(std::iter::once(tokens.len()))
+    {
+        let start_byte = tokens[start_token_index].start_byte;
+        let end_byte = tokens[end_token_index - 1].end_byte;
+        parts.push(trimmed[start_byte..end_byte].trim().to_string());
+        start_token_index = end_token_index;
+    }
+
+    parts
+}
+
+fn word_tokens(text: &str) -> Vec<WordToken> {
+    let mut tokens = Vec::new();
+    let mut token_start = None;
+
+    for (index, character) in text.char_indices() {
+        if character.is_whitespace() {
+            if let Some(start_byte) = token_start.take() {
+                tokens.push(WordToken {
+                    start_byte,
+                    end_byte: index,
+                });
+            }
+        } else if token_start.is_none() {
+            token_start = Some(index);
+        }
+    }
+
+    if let Some(start_byte) = token_start {
+        tokens.push(WordToken {
+            start_byte,
+            end_byte: text.len(),
+        });
+    }
+
+    tokens
+}
+
+fn best_text_split_index(
+    text: &str,
+    tokens: &[WordToken],
+    target: usize,
+    lower: usize,
+    upper: usize,
+) -> usize {
+    let search_lower = lower.max(target.saturating_sub(SPLIT_BOUNDARY_SEARCH_WORDS));
+    let search_upper = upper.min(target.saturating_add(SPLIT_BOUNDARY_SEARCH_WORDS));
+
+    (search_lower..=search_upper)
+        .min_by_key(|candidate| text_split_boundary_score(text, tokens, *candidate, target))
+        .unwrap_or(target)
+}
+
+fn text_split_boundary_score(
+    text: &str,
+    tokens: &[WordToken],
+    boundary: usize,
+    target: usize,
+) -> i32 {
+    let mut score = (boundary.abs_diff(target) as i32) * 10;
+    let previous_word = &text[tokens[boundary - 1].start_byte..tokens[boundary - 1].end_byte];
+    let next_word = &text[tokens[boundary].start_byte..tokens[boundary].end_byte];
+
+    if word_ends_sentence(previous_word) {
+        score -= 35;
+    } else if word_ends_clause(previous_word) {
+        score -= 12;
+    }
+
+    let next_lower = next_word
+        .trim_matches(|character: char| !character.is_alphanumeric())
+        .to_lowercase();
+    if matches!(
+        next_lower.as_str(),
+        "and" | "but" | "or" | "so" | "yeah" | "no" | "well" | "okay"
+    ) {
+        score -= 4;
+    }
+
+    score
+}
+
+fn word_ends_sentence(word: &str) -> bool {
+    word.trim_end_matches(|character: char| matches!(character, '"' | '\'' | ')' | ']' | '}'))
+        .ends_with(['.', '?', '!'])
+}
+
+fn word_ends_clause(word: &str) -> bool {
+    word.trim_end_matches(|character: char| matches!(character, '"' | '\'' | ')' | ']' | '}'))
+        .ends_with([',', ';', ':'])
 }
 
 fn is_valid_interval(start: f64, end: f64) -> bool {
@@ -623,8 +911,10 @@ async fn run_speaker_diarization_for_meeting<R: Runtime>(
         .map(|segment| TranscriptSegment {
             id: segment.id.clone(),
             text: segment.transcript.clone(),
+            timestamp: Some(segment.timestamp.clone()),
             audio_start_time: segment.audio_start_time,
             audio_end_time: segment.audio_end_time,
+            duration: segment.duration,
             speaker: segment.speaker.clone(),
         })
         .collect();
@@ -642,45 +932,57 @@ async fn run_speaker_diarization_for_meeting<R: Runtime>(
         },
     );
 
-    let mut updated_segments = 0usize;
-    let mut tx = pool.begin().await?;
-    for (stored, mapped) in stored_segments.iter().zip(mapped_segments.iter()) {
-        if stored.speaker == mapped.speaker {
-            continue;
-        }
-
-        let result =
-            sqlx::query("UPDATE transcripts SET speaker = ? WHERE meeting_id = ? AND id = ?")
-                .bind(&mapped.speaker)
-                .bind(&meeting_id)
-                .bind(&stored.id)
-                .execute(&mut *tx)
-                .await?;
-
-        if result.rows_affected() > 0 {
-            updated_segments += 1;
-        }
-    }
-
+    let updated_segments = count_changed_transcript_segments(&stored_segments, &mapped_segments);
     if updated_segments > 0 {
+        let mut tx = pool.begin().await?;
+        sqlx::query("DELETE FROM transcripts WHERE meeting_id = ?")
+            .bind(&meeting_id)
+            .execute(&mut *tx)
+            .await?;
+
+        for mapped in &mapped_segments {
+            sqlx::query(
+                "INSERT INTO transcripts (id, meeting_id, transcript, timestamp, audio_start_time, audio_end_time, duration, speaker)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            )
+            .bind(&mapped.id)
+            .bind(&meeting_id)
+            .bind(&mapped.text)
+            .bind(
+                mapped
+                    .timestamp
+                    .as_deref()
+                    .unwrap_or_else(|| stored_segments[0].timestamp.as_str()),
+            )
+            .bind(mapped.audio_start_time)
+            .bind(mapped.audio_end_time)
+            .bind(mapped.duration)
+            .bind(&mapped.speaker)
+            .execute(&mut *tx)
+            .await?;
+        }
+
         sqlx::query("UPDATE meetings SET updated_at = ? WHERE id = ?")
             .bind(Utc::now())
             .bind(&meeting_id)
             .execute(&mut *tx)
             .await?;
+        tx.commit().await?;
     }
-    tx.commit().await?;
 
-    let transcript_file_segments: Vec<ApiTranscriptSegment> = stored_segments
+    let fallback_timestamp = stored_segments[0].timestamp.as_str();
+    let transcript_file_segments: Vec<ApiTranscriptSegment> = mapped_segments
         .iter()
-        .zip(mapped_segments.iter())
-        .map(|(stored, mapped)| ApiTranscriptSegment {
-            id: stored.id.clone(),
-            text: stored.transcript.clone(),
-            timestamp: stored.timestamp.clone(),
-            audio_start_time: stored.audio_start_time,
-            audio_end_time: stored.audio_end_time,
-            duration: stored.duration,
+        .map(|mapped| ApiTranscriptSegment {
+            id: mapped.id.clone(),
+            text: mapped.text.clone(),
+            timestamp: mapped
+                .timestamp
+                .clone()
+                .unwrap_or_else(|| fallback_timestamp.to_string()),
+            audio_start_time: mapped.audio_start_time,
+            audio_end_time: mapped.audio_end_time,
+            duration: mapped.duration,
             speaker: mapped.speaker.clone(),
         })
         .collect();
@@ -706,6 +1008,37 @@ async fn run_speaker_diarization_for_meeting<R: Runtime>(
         speaker_count,
         updated_segments,
     })
+}
+
+fn count_changed_transcript_segments(
+    stored_segments: &[StoredTranscriptSegment],
+    mapped_segments: &[TranscriptSegment],
+) -> usize {
+    if stored_segments.len() != mapped_segments.len() {
+        return mapped_segments.len();
+    }
+
+    stored_segments
+        .iter()
+        .zip(mapped_segments.iter())
+        .filter(|(stored, mapped)| {
+            stored.id != mapped.id
+                || stored.transcript != mapped.text
+                || Some(stored.timestamp.as_str()) != mapped.timestamp.as_deref()
+                || !optional_seconds_equal(stored.audio_start_time, mapped.audio_start_time)
+                || !optional_seconds_equal(stored.audio_end_time, mapped.audio_end_time)
+                || !optional_seconds_equal(stored.duration, mapped.duration)
+                || stored.speaker != mapped.speaker
+        })
+        .count()
+}
+
+fn optional_seconds_equal(left: Option<f64>, right: Option<f64>) -> bool {
+    match (left, right) {
+        (Some(left), Some(right)) => (left - right).abs() <= FLOAT_TIE_EPSILON,
+        (None, None) => true,
+        _ => false,
+    }
 }
 
 async fn run_sherpa_diarization(
@@ -982,11 +1315,24 @@ mod tests {
     fn transcript(id: &str, start: Option<f64>, end: Option<f64>) -> TranscriptSegment {
         TranscriptSegment {
             id: id.to_string(),
-            text: format!("segment {id}"),
+            text: format!("segment-{id}"),
+            timestamp: Some("2026-06-22T12:00:00Z".to_string()),
             audio_start_time: start,
             audio_end_time: end,
+            duration: start.zip(end).map(|(start, end)| end - start),
             speaker: None,
         }
+    }
+
+    fn transcript_with_text(
+        id: &str,
+        text: &str,
+        start: Option<f64>,
+        end: Option<f64>,
+    ) -> TranscriptSegment {
+        let mut segment = transcript(id, start, end);
+        segment.text = text.to_string();
+        segment
     }
 
     fn turn(start: f64, end: f64, speaker: usize) -> DiarizationTurn {
@@ -1064,6 +1410,40 @@ mod tests {
 
         assert_eq!(mapped[0].speaker.as_deref(), Some("Speaker 1"));
         assert_eq!(mapped[1].speaker.as_deref(), Some("Speaker 2"));
+    }
+
+    #[test]
+    fn splits_segment_when_speaker_changes_inside_transcript_row() {
+        let transcripts = vec![transcript_with_text(
+            "a",
+            "Rogan opens the topic. Guest adds the drone contract point. Rogan asks who made money?",
+            Some(0.0),
+            Some(12.0),
+        )];
+        let turns = vec![turn(0.0, 5.0, 0), turn(5.0, 9.0, 1), turn(9.0, 12.0, 0)];
+
+        let mapped = map_diarization_to_transcript_segments(
+            &transcripts,
+            &turns,
+            DiarizationMappingOptions {
+                existing_speaker_policy: ExistingSpeakerPolicy::Overwrite,
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(mapped.len(), 3);
+        assert_eq!(mapped[0].speaker.as_deref(), Some("Speaker 1"));
+        assert_eq!(mapped[0].text, "Rogan opens the topic.");
+        assert_eq!(mapped[0].audio_start_time, Some(0.0));
+        assert_eq!(mapped[0].audio_end_time, Some(5.0));
+        assert_eq!(mapped[1].speaker.as_deref(), Some("Speaker 2"));
+        assert_eq!(mapped[1].text, "Guest adds the drone contract point.");
+        assert_eq!(mapped[1].audio_start_time, Some(5.0));
+        assert_eq!(mapped[1].audio_end_time, Some(9.0));
+        assert_eq!(mapped[2].speaker.as_deref(), Some("Speaker 1"));
+        assert_eq!(mapped[2].text, "Rogan asks who made money?");
+        assert_eq!(mapped[2].audio_start_time, Some(9.0));
+        assert_eq!(mapped[2].audio_end_time, Some(12.0));
     }
 
     #[test]
