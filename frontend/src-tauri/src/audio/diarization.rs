@@ -53,6 +53,7 @@ const SHERPA_RUNTIME_DLLS: &[&str] = &[
 static DIARIZATION_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 static DIARIZATION_DIRECTML_UNAVAILABLE: AtomicBool = AtomicBool::new(false);
 static DIARIZATION_DIRECTML_SLOW: AtomicBool = AtomicBool::new(false);
+static DIARIZATION_DIRECTML_FAST: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DiarizationTurn {
@@ -1300,6 +1301,14 @@ async fn select_diarization_provider<R: Runtime>(
         return Ok(provider);
     }
 
+    if DIARIZATION_DIRECTML_FAST.load(Ordering::SeqCst) {
+        profile.set_decision(
+            "directml",
+            "DirectML probe was already faster earlier in this app session",
+        );
+        return Ok("directml");
+    }
+
     emit_progress(
         app,
         meeting_id,
@@ -1333,6 +1342,7 @@ async fn select_diarization_provider<R: Runtime>(
                 &directml_error.error,
             );
             DIARIZATION_DIRECTML_UNAVAILABLE.store(true, Ordering::SeqCst);
+            DIARIZATION_DIRECTML_FAST.store(false, Ordering::SeqCst);
             log::warn!(
                 "DirectML speaker diarization probe failed; falling back to CPU: {}",
                 directml_error.error
@@ -1378,6 +1388,7 @@ async fn select_diarization_provider<R: Runtime>(
                 "directml",
                 "CPU probe failed after DirectML probe succeeded",
             );
+            DIARIZATION_DIRECTML_FAST.store(true, Ordering::SeqCst);
             return Ok("directml");
         }
     };
@@ -1398,10 +1409,12 @@ async fn select_diarization_provider<R: Runtime>(
             "DirectML speaker detection is faster on this machine; using DirectML...",
         );
         profile.set_decision("directml", "DirectML probe was faster than CPU");
+        DIARIZATION_DIRECTML_FAST.store(true, Ordering::SeqCst);
         return Ok("directml");
     }
 
     DIARIZATION_DIRECTML_SLOW.store(true, Ordering::SeqCst);
+    DIARIZATION_DIRECTML_FAST.store(false, Ordering::SeqCst);
     log::warn!(
         "DirectML speaker diarization rejected as slower: directml={:?} ({} turns), cpu={:?} ({} turns)",
         directml_result.elapsed,
@@ -1563,6 +1576,7 @@ async fn run_sherpa_diarization_with_fallback<R: Runtime>(
                 &directml_error.error,
             );
             DIARIZATION_DIRECTML_UNAVAILABLE.store(true, Ordering::SeqCst);
+            DIARIZATION_DIRECTML_FAST.store(false, Ordering::SeqCst);
             log::warn!(
                 "DirectML speaker diarization failed; falling back to CPU: {}",
                 directml_error.error

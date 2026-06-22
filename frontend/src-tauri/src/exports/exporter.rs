@@ -378,7 +378,7 @@ pub async fn export_todo<T: GraphTransport, S: Sleeper>(
             correlation_id: uuid::Uuid::new_v4().to_string(),
             headers: Vec::new(),
         };
-        let (result, stop) = run_item(
+        let (mut result, stop) = run_item(
             client,
             ledger,
             ctx.bearer_token,
@@ -389,7 +389,8 @@ pub async fn export_todo<T: GraphTransport, S: Sleeper>(
         .await;
         if result.status == ExportStatus::Succeeded {
             if let Some(task_id) = result.resource_id.as_deref() {
-                patch_todo_task(
+                let mut patch_codes = Vec::new();
+                if let Some(code) = patch_todo_task(
                     client,
                     ctx.bearer_token,
                     &destination.list_id,
@@ -397,9 +398,12 @@ pub async fn export_todo<T: GraphTransport, S: Sleeper>(
                     todo::build_task_body_patch(meeting, action),
                     "body",
                 )
-                .await;
+                .await
+                {
+                    patch_codes.push(code);
+                }
                 if let Some(due_patch) = todo::build_task_due_date_patch(action) {
-                    patch_todo_task(
+                    if let Some(code) = patch_todo_task(
                         client,
                         ctx.bearer_token,
                         &destination.list_id,
@@ -407,7 +411,15 @@ pub async fn export_todo<T: GraphTransport, S: Sleeper>(
                         due_patch,
                         "due date",
                     )
-                    .await;
+                    .await
+                    {
+                        patch_codes.push(code);
+                    }
+                }
+
+                if !patch_codes.is_empty() {
+                    result.status = ExportStatus::PartialFailure;
+                    result.code = Some(patch_codes.join(","));
                 }
             }
         }
@@ -435,7 +447,7 @@ async fn patch_todo_task<T: GraphTransport, S: Sleeper>(
     task_id: &str,
     body: serde_json::Value,
     label: &str,
-) {
+) -> Option<String> {
     let request = GraphRequest {
         method: "PATCH".into(),
         url: todo_task_url(list_id, task_id),
@@ -445,18 +457,36 @@ async fn patch_todo_task<T: GraphTransport, S: Sleeper>(
         headers: Vec::new(),
     };
     match client.execute(&request, token).await {
-        GraphOutcome::Success(_) => {}
+        GraphOutcome::Success(_) => None,
         GraphOutcome::Failed(kind, detail) => {
             let detail = detail.unwrap_or_else(|| kind.code().to_string());
             log::warn!(
                 "Microsoft To Do {label} patch failed ({}): {detail}",
                 kind.code()
             );
+            Some(todo_patch_failure_code(label, kind.code()))
         }
         GraphOutcome::Unknown(msg) => {
             log::warn!("Microsoft To Do {label} patch network failure: {msg}");
+            Some(todo_patch_failure_code(label, "network"))
         }
     }
+}
+
+fn todo_patch_failure_code(label: &str, reason: &str) -> String {
+    let label = label
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('_')
+        .to_string();
+    format!("todo_{}_patch_{}", label, reason)
 }
 
 /// Best-effort: set a Planner task's description (its "notes"). Planner keeps
@@ -876,6 +906,52 @@ mod tests {
                 .transport()
                 .calls_for(&format!("{GRAPH_BASE}/me/todo/lists/list-1/tasks/todo-1")),
             2
+        );
+    }
+
+    #[tokio::test]
+    async fn todo_patch_failure_surfaces_partial_export_without_recreating_task() {
+        let transport = MockGraphTransport::new();
+        transport.queue_default([
+            GraphResponse::success(201, r#"{"id":"todo-1"}"#),
+            GraphResponse::failure(403, Some("AccessDenied")),
+            GraphResponse::success(200, r#"{"id":"todo-1"}"#),
+        ]);
+        let client = client(transport);
+        let mut ledger = ExportLedger::new("m1");
+        let mut m = meeting();
+        m.action_items.truncate(1);
+        m.action_items[0].due_date = Some("2026-07-01".into());
+        let dest = ToDoDestination {
+            list_id: "list-1".into(),
+        };
+
+        let report = export_todo(&client, &mut ledger, &m, &dest, &ctx())
+            .await
+            .unwrap();
+
+        assert_eq!(report.overall, ExportStatus::PartialFailure);
+        assert_eq!(report.items[0].status, ExportStatus::PartialFailure);
+        assert_eq!(report.items[0].resource_id.as_deref(), Some("todo-1"));
+        assert_eq!(
+            report.items[0].code.as_deref(),
+            Some("todo_body_patch_access_denied")
+        );
+
+        let ledger_entry = ledger.entry(&report.items[0].dedupe_key).unwrap();
+        assert_eq!(ledger_entry.status, ExportStatus::Succeeded);
+        assert_eq!(ledger_entry.resource_id.as_deref(), Some("todo-1"));
+
+        let report2 = export_todo(&client, &mut ledger, &m, &dest, &ctx())
+            .await
+            .unwrap();
+        assert_eq!(report2.overall, ExportStatus::Succeeded);
+        assert!(!report2.items[0].graph_called);
+        assert_eq!(
+            client
+                .transport()
+                .calls_for(&format!("{GRAPH_BASE}/me/todo/lists/list-1/tasks")),
+            1
         );
     }
 
