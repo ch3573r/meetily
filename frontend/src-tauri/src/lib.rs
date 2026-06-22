@@ -66,6 +66,7 @@ pub mod whisper_engine;
 use audio::{list_audio_devices, trigger_audio_permission, AudioDevice};
 use log::{error as log_error, info as log_info};
 use notifications::commands::NotificationManagerState;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::{AppHandle, Manager, Runtime, Theme};
 use tokio::sync::RwLock;
@@ -234,12 +235,71 @@ fn read_audio_file(file_path: String) -> Result<Vec<u8>, String> {
 }
 
 #[tauri::command]
-fn resolve_meeting_audio_file(meeting_folder: String) -> Result<Option<String>, String> {
-    let folder = std::path::PathBuf::from(meeting_folder);
-    if !folder.is_dir() {
+async fn resolve_meeting_audio_file(
+    state: tauri::State<'_, state::AppState>,
+    meeting_folder: String,
+) -> Result<Option<String>, String> {
+    let Some(folder) = canonicalize_existing_dir(&meeting_folder)? else {
+        return Ok(None);
+    };
+
+    let saved_meeting_folders = sqlx::query_scalar::<_, String>(
+        "SELECT folder_path FROM meetings WHERE folder_path IS NOT NULL AND TRIM(folder_path) <> ''",
+    )
+    .fetch_all(state.db_manager.pool())
+    .await
+    .map_err(|e| format!("Failed to verify meeting folder: {}", e))?;
+
+    if !canonical_folder_is_registered(&folder, saved_meeting_folders.iter().map(String::as_str)) {
+        log::warn!(
+            "Refusing to resolve audio from unregistered meeting folder: {}",
+            folder.display()
+        );
         return Ok(None);
     }
 
+    find_audio_file_in_meeting_folder(&folder)
+}
+
+fn canonicalize_existing_dir(path: impl AsRef<Path>) -> Result<Option<PathBuf>, String> {
+    let path = path.as_ref();
+    if !path.is_dir() {
+        return Ok(None);
+    }
+
+    path.canonicalize()
+        .map(Some)
+        .map_err(|e| format!("Failed to resolve meeting folder {}: {}", path.display(), e))
+}
+
+fn canonical_folder_is_registered<'a>(
+    requested_folder: &Path,
+    meeting_folders: impl IntoIterator<Item = &'a str>,
+) -> bool {
+    meeting_folders.into_iter().any(|meeting_folder| {
+        canonicalize_existing_dir(meeting_folder)
+            .ok()
+            .flatten()
+            .is_some_and(|registered_folder| {
+                canonical_paths_equal(&registered_folder, requested_folder)
+            })
+    })
+}
+
+fn canonical_paths_equal(left: &Path, right: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        left.to_string_lossy()
+            .eq_ignore_ascii_case(&right.to_string_lossy())
+    }
+
+    #[cfg(not(windows))]
+    {
+        left == right
+    }
+}
+
+fn find_audio_file_in_meeting_folder(folder: &Path) -> Result<Option<String>, String> {
     let candidates = [
         "audio.mp4",
         "audio.m4a",
@@ -280,6 +340,51 @@ fn resolve_meeting_audio_file(meeting_folder: String) -> Result<Option<String>, 
     }
 
     Ok(None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn registered_meeting_folder_requires_existing_canonical_match() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let meeting_folder = temp_dir.path().join("Meeting A");
+        let other_folder = temp_dir.path().join("Other");
+        std::fs::create_dir_all(&meeting_folder).unwrap();
+        std::fs::create_dir_all(&other_folder).unwrap();
+
+        let requested = meeting_folder.canonicalize().unwrap();
+
+        assert!(canonical_folder_is_registered(
+            &requested,
+            [meeting_folder.to_string_lossy().as_ref()]
+        ));
+        assert!(!canonical_folder_is_registered(
+            &requested,
+            [other_folder.to_string_lossy().as_ref()]
+        ));
+        assert!(!canonical_folder_is_registered(
+            &requested,
+            [temp_dir.path().join("Missing").to_string_lossy().as_ref()]
+        ));
+    }
+
+    #[test]
+    fn find_audio_file_prefers_named_audio_file() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let meeting_folder = temp_dir.path();
+        let fallback_audio = meeting_folder.join("clip.wav");
+        let preferred_audio = meeting_folder.join("audio.m4a");
+        std::fs::write(&fallback_audio, b"fallback").unwrap();
+        std::fs::write(&preferred_audio, b"preferred").unwrap();
+
+        let resolved = find_audio_file_in_meeting_folder(meeting_folder)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(PathBuf::from(resolved), preferred_audio);
+    }
 }
 
 #[tauri::command]

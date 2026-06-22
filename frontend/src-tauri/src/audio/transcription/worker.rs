@@ -645,6 +645,9 @@ fn estimate_word_timestamps(
     confidence: Option<f32>,
     speaker: Option<&str>,
 ) -> Option<Vec<TranscriptWord>> {
+    // Playback-only approximation: Whisper is still running without native word
+    // timestamps here, so distribute words across the segment duration by text
+    // weight. Do not treat these anchors as exact quote boundaries.
     if !start_time.is_finite() || !end_time.is_finite() || end_time <= start_time {
         return None;
     }
