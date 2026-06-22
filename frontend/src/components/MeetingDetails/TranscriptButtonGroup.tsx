@@ -129,38 +129,38 @@ export function TranscriptButtonGroup({
           title={transcriptCount === 0 ? 'No transcript available' : 'Copy Transcript'}
         >
           <Copy />
-          <span className="hidden lg:inline">Copy</span>
+          <span className="hidden 2xl:inline">Copy</span>
         </Button>
 
         <Button
           size="sm"
           variant="outline"
-          className="xl:px-4"
+          className="2xl:px-4"
           onClick={() => {
             Analytics.trackButtonClick('open_recording_folder', 'meeting_details');
             onOpenMeetingFolder();
           }}
           title="Open Recording Folder"
         >
-          <FolderOpen className="xl:mr-2" size={18} />
-          <span className="hidden lg:inline">Recording</span>
+          <FolderOpen className="2xl:mr-2" size={18} />
+          <span className="hidden 2xl:inline">Recording</span>
         </Button>
 
         {meetingId && meetingFolderPath && (
           <Button
             size="sm"
             variant="outline"
-            className="xl:px-4"
+            className="2xl:px-4"
             onClick={() => void handleRunSpeakerDiarization()}
             disabled={transcriptCount === 0 || isDiarizing}
             title={diarizationMessage ?? "Detect speakers from the saved recording"}
           >
             {isDiarizing ? (
-              <RefreshCw className="animate-spin xl:mr-2" size={18} />
+              <RefreshCw className="animate-spin 2xl:mr-2" size={18} />
             ) : (
-              <Users className="xl:mr-2" size={18} />
+              <Users className="2xl:mr-2" size={18} />
             )}
-            <span className="hidden lg:inline">Speakers</span>
+            <span className="hidden 2xl:inline">Speakers</span>
           </Button>
         )}
 
@@ -168,15 +168,15 @@ export function TranscriptButtonGroup({
           <Button
             size="sm"
             variant="outline"
-            className="bg-primary/10 hover:bg-primary/20 border-primary/30 text-foreground xl:px-4"
+            className="bg-primary/10 hover:bg-primary/20 border-primary/30 text-foreground 2xl:px-4"
             onClick={() => {
               Analytics.trackButtonClick('enhance_transcript', 'meeting_details');
               setShowRetranscribeDialog(true);
             }}
             title="Retranscribe to enhance your recorded audio"
           >
-            <RefreshCw className="xl:mr-2" size={18} />
-            <span className="hidden lg:inline">Enhance</span>
+            <RefreshCw className="2xl:mr-2" size={18} />
+            <span className="hidden 2xl:inline">Enhance</span>
           </Button>
         )}
       </ButtonGroup>

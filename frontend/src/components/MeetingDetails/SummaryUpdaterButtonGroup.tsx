@@ -46,7 +46,7 @@ export function SummaryUpdaterButtonGroup({
         disabled={isSaving}
       >
         {isSaving ? <Loader2 className="animate-spin" /> : <Save />}
-        <span className="hidden lg:inline">{isSaving ? 'Saving…' : 'Save'}</span>
+        <span className="hidden 2xl:inline">{isSaving ? 'Saving…' : 'Save'}</span>
       </Button>
 
       <DropdownMenu>

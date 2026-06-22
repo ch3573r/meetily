@@ -344,7 +344,7 @@ export function SummaryPanel({
           aria-label="Set summary language"
         >
           <Languages size={18} />
-          <span className="hidden lg:inline">{effectiveLangLabel}</span>
+          <span className="hidden 2xl:inline">{effectiveLangLabel}</span>
           <ChevronDown size={14} className="text-muted-foreground" />
         </Button>
       </PopoverTrigger>
@@ -366,8 +366,8 @@ export function SummaryPanel({
     <div className="flex-1 min-w-0 flex flex-col bg-card overflow-hidden">
       {/* Title area */}
       <div className="border-b border-border p-3">
-        <div className="flex items-center justify-between gap-4">
-          <div className="min-w-0">
+        <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+          <div className="min-w-0 flex-1 basis-64">
             {isEditingTitle ? (
               <input
                 value={meetingTitle}
@@ -377,7 +377,7 @@ export function SummaryPanel({
                   if (e.key === 'Enter') onFinishEditTitle();
                   if (e.key === 'Escape') onFinishEditTitle();
                 }}
-                className="w-full min-w-[16rem] rounded-md border border-input bg-background px-2 py-1 text-sm font-semibold text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
+                className="w-full min-w-0 rounded-md border border-input bg-background px-2 py-1 text-sm font-semibold text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                 autoFocus
               />
             ) : (
@@ -397,7 +397,7 @@ export function SummaryPanel({
 
           {/* Button groups - only show when summary exists */}
           {aiSummary && !isSummaryLoading && (
-            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+            <div className="flex min-w-0 max-w-full flex-1 basis-[28rem] flex-wrap items-center justify-end gap-2">
               <SummaryGeneratorButtonGroup
                 modelConfig={modelConfig}
                 setModelConfig={setModelConfig}

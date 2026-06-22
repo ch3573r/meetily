@@ -427,12 +427,12 @@ export function MeetingExportButtons({
         <DropdownMenuTrigger asChild>
           <Button type="button" variant="outline" size="sm" disabled={busy !== null}>
             {busy !== null ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin 2xl:mr-2" />
             ) : (
-              <Upload className="mr-2 h-4 w-4" />
+              <Upload className="h-4 w-4 2xl:mr-2" />
             )}
-            Export
-            <ChevronDown className="ml-1.5 h-3.5 w-3.5 opacity-70" />
+            <span className="hidden 2xl:inline">Export</span>
+            <ChevronDown className="h-3.5 w-3.5 opacity-70 2xl:ml-1.5" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">
