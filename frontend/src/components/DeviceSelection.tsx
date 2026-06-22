@@ -45,10 +45,12 @@ export function DeviceSelection({ selectedDevices, onDeviceChange, disabled = fa
   const [audioLevels, setAudioLevels] = useState<Map<string, AudioLevelData>>(new Map());
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [showLevels, setShowLevels] = useState(false);
+  const [monitoredDeviceNames, setMonitoredDeviceNames] = useState<Set<string>>(new Set());
 
   // Filter devices by type
   const inputDevices = devices.filter(device => device.device_type === 'Input');
   const outputDevices = devices.filter(device => device.device_type === 'Output');
+  const monitoredInputDevices = inputDevices.filter(device => monitoredDeviceNames.has(device.name));
 
   // Fetch available audio devices
   const fetchDevices = async () => {
@@ -173,20 +175,29 @@ export function DeviceSelection({ selectedDevices, onDeviceChange, disabled = fa
   // Start audio level monitoring
   const startAudioLevelMonitoring = async () => {
     try {
-      // Only monitor input devices for now (microphones)
-      const deviceNames = inputDevices.map(device => device.name);
+      // Only monitor input devices for now (microphones). If the user picked a
+      // specific microphone, test that device; otherwise show all detected mics.
+      const selectedMicName = selectedDevices.micDevice
+        ? selectedDevices.micDevice.replace(/\s+\(input\)$/i, '').trim()
+        : null;
+      const deviceNames = selectedMicName
+        ? [selectedMicName]
+        : inputDevices.map(device => device.name);
+
       if (deviceNames.length === 0) {
         setError('No microphone devices found to monitor');
         return;
       }
 
+      setError(null);
       await invoke('start_audio_level_monitoring', { deviceNames });
       setIsMonitoring(true);
       setShowLevels(true);
+      setMonitoredDeviceNames(new Set(deviceNames));
       console.log('Started audio level monitoring for input devices:', deviceNames);
     } catch (err) {
       console.error('Failed to start audio level monitoring:', err);
-      setError('Failed to start audio level monitoring');
+      setError(`Failed to start audio level monitoring: ${String(err)}`);
     }
   };
 
@@ -195,7 +206,10 @@ export function DeviceSelection({ selectedDevices, onDeviceChange, disabled = fa
     try {
       await invoke('stop_audio_level_monitoring');
       setIsMonitoring(false);
+      setShowLevels(false);
       setAudioLevels(new Map());
+      setMonitoredDeviceNames(new Set());
+      setError(null);
       console.log('Stopped audio level monitoring');
     } catch (err) {
       console.error('Failed to stop audio level monitoring:', err);
@@ -291,10 +305,12 @@ export function DeviceSelection({ selectedDevices, onDeviceChange, disabled = fa
           )}
 
           {/* Audio Level Meters for Input Devices */}
-          {showLevels && inputDevices.length > 0 && (
+          {showLevels && monitoredInputDevices.length > 0 && (
             <div className="space-y-2 pt-2 border-t border-border">
-              <p className="text-xs text-muted-foreground font-medium">Microphone Levels:</p>
-              {inputDevices.map((device) => {
+              <p className="text-xs text-muted-foreground font-medium">
+                {monitoredInputDevices.length === 1 ? 'Microphone Level:' : 'Microphone Levels:'}
+              </p>
+              {monitoredInputDevices.map((device) => {
                 const levelData = audioLevels.get(device.name);
                 return (
                   <div key={`level-${device.name}`} className="space-y-1">
