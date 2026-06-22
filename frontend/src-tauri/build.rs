@@ -36,14 +36,14 @@ fn detect_and_report_gpu_capabilities() {
         "windows" => {
             if cfg!(feature = "vulkan") && cfg!(feature = "directml") {
                 println!(
-                    "cargo:warning=✅ Windows: Vulkan + DirectML GPU acceleration ENABLED"
+                    "cargo:warning=✅ Windows: Whisper Vulkan + ONNX/sherpa DirectML acceleration ENABLED"
                 );
             } else if cfg!(feature = "cuda") {
                 println!("cargo:warning=✅ Windows: CUDA GPU acceleration ENABLED");
             } else if cfg!(feature = "vulkan") {
-                println!("cargo:warning=✅ Windows: Vulkan GPU acceleration ENABLED");
+                println!("cargo:warning=✅ Windows: Whisper Vulkan GPU acceleration ENABLED");
             } else if cfg!(feature = "directml") {
-                println!("cargo:warning=✅ Windows: DirectML GPU acceleration ENABLED");
+                println!("cargo:warning=✅ Windows: ONNX/sherpa DirectML GPU acceleration ENABLED");
             } else if cfg!(feature = "openblas") {
                 println!("cargo:warning=✅ Windows: OpenBLAS CPU optimization ENABLED");
             } else {
@@ -52,7 +52,10 @@ fn detect_and_report_gpu_capabilities() {
                 );
                 println!("cargo:warning=💡 For NVIDIA GPU: cargo build --release --features cuda");
                 println!(
-                    "cargo:warning=💡 For AMD/Intel GPU: cargo build --release --features vulkan"
+                    "cargo:warning=💡 For AMD/Intel Whisper GPU: cargo build --release --features vulkan"
+                );
+                println!(
+                    "cargo:warning=💡 For DirectML ONNX/sherpa GPU: cargo build --release --features directml"
                 );
                 println!(
                     "cargo:warning=💡 For Windows GPU artifact: cargo build --release --features windows-gpu"

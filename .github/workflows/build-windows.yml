@@ -668,7 +668,7 @@ jobs:
       - name: Stage sherpa-onnx runtime DLLs
         shell: pwsh
         run: |
-          .\frontend\scripts\stage-sherpa-runtime.ps1 -TauriRoot "frontend\src-tauri"
+          .\frontend\scripts\stage-sherpa-runtime.ps1 -TauriRoot "frontend\src-tauri" -Runtime directml
 
       - name: Cache FFmpeg binary
         uses: actions/cache@v4

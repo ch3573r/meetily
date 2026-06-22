@@ -379,7 +379,7 @@ jobs:
         if: contains(matrix.platform, 'windows')
         shell: pwsh
         run: |
-          .\frontend\scripts\stage-sherpa-runtime.ps1 -TauriRoot "frontend\src-tauri"
+          .\frontend\scripts\stage-sherpa-runtime.ps1 -TauriRoot "frontend\src-tauri" -Runtime directml
 
       # Build step (with code signing)
       - name: Build Tauri app (with code signing)

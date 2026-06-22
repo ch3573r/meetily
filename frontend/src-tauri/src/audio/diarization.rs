@@ -25,7 +25,7 @@ use uuid::Uuid;
 const FLOAT_TIE_EPSILON: f64 = 1e-9;
 const MIN_SPLIT_SPEAKER_OVERLAP_SECONDS: f64 = 0.25;
 const SAME_SPEAKER_MERGE_GAP_SECONDS: f64 = 0.25;
-const SPLIT_BOUNDARY_SEARCH_WORDS: usize = 10;
+const SPLIT_BOUNDARY_SEARCH_WORDS: usize = 8;
 const DIARIZATION_SAMPLE_RATE: i32 = 16_000;
 const SEGMENTATION_MODEL_DIR: &str = "sherpa-onnx-pyannote-segmentation-3-0";
 const EMBEDDING_MODEL_DIR: &str =
@@ -40,6 +40,7 @@ const SHORT_CLIP_OVERCLUSTERED_SPEAKERS: usize = 4;
 const SHORT_CLIP_RETRY_NUM_SPEAKERS: i32 = 2;
 
 static DIARIZATION_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
+static DIARIZATION_DIRECTML_UNAVAILABLE: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DiarizationTurn {
@@ -364,7 +365,10 @@ fn split_text_by_time_boundaries(
         let ratio =
             ((*boundary_time - segment_start) / (segment_end - segment_start)).clamp(0.0, 1.0);
         let target = ((ratio * tokens.len() as f64).round() as usize).clamp(lower, upper);
-        let split_index = best_text_split_index(trimmed, &tokens, target, lower, upper);
+        let Some(split_index) = best_text_split_index(trimmed, &tokens, target, lower, upper)
+        else {
+            return vec![trimmed.to_string()];
+        };
         split_indices.push(split_index);
         previous_index = split_index;
     }
@@ -417,52 +421,26 @@ fn best_text_split_index(
     target: usize,
     lower: usize,
     upper: usize,
-) -> usize {
+) -> Option<usize> {
     let search_lower = lower.max(target.saturating_sub(SPLIT_BOUNDARY_SEARCH_WORDS));
     let search_upper = upper.min(target.saturating_add(SPLIT_BOUNDARY_SEARCH_WORDS));
 
+    // We do not have word-level timestamps, only a diarization timestamp and a
+    // full transcript row. Splitting at arbitrary proportional word offsets
+    // creates mid-sentence fragments, so only accept nearby sentence endings.
     (search_lower..=search_upper)
-        .min_by_key(|candidate| text_split_boundary_score(text, tokens, *candidate, target))
-        .unwrap_or(target)
+        .filter(|candidate| is_sentence_split_boundary(text, tokens, *candidate))
+        .min_by_key(|candidate| candidate.abs_diff(target))
 }
 
-fn text_split_boundary_score(
-    text: &str,
-    tokens: &[WordToken],
-    boundary: usize,
-    target: usize,
-) -> i32 {
-    let mut score = (boundary.abs_diff(target) as i32) * 10;
+fn is_sentence_split_boundary(text: &str, tokens: &[WordToken], boundary: usize) -> bool {
     let previous_word = &text[tokens[boundary - 1].start_byte..tokens[boundary - 1].end_byte];
-    let next_word = &text[tokens[boundary].start_byte..tokens[boundary].end_byte];
-
-    if word_ends_sentence(previous_word) {
-        score -= 35;
-    } else if word_ends_clause(previous_word) {
-        score -= 12;
-    }
-
-    let next_lower = next_word
-        .trim_matches(|character: char| !character.is_alphanumeric())
-        .to_lowercase();
-    if matches!(
-        next_lower.as_str(),
-        "and" | "but" | "or" | "so" | "yeah" | "no" | "well" | "okay"
-    ) {
-        score -= 4;
-    }
-
-    score
+    word_ends_sentence(previous_word)
 }
 
 fn word_ends_sentence(word: &str) -> bool {
     word.trim_end_matches(|character: char| matches!(character, '"' | '\'' | ')' | ']' | '}'))
         .ends_with(['.', '?', '!'])
-}
-
-fn word_ends_clause(word: &str) -> bool {
-    word.trim_end_matches(|character: char| matches!(character, '"' | '\'' | ')' | ']' | '}'))
-        .ends_with([',', ';', ':'])
 }
 
 fn is_valid_interval(start: f64, end: f64) -> bool {
@@ -503,7 +481,7 @@ impl SherpaDiarizationConfig {
             segmentation_model_path: segmentation_model_path.into(),
             embedding_model_path: embedding_model_path.into(),
             num_threads: 1,
-            provider: "cpu".to_string(),
+            provider: preferred_diarization_provider().to_string(),
             num_clusters: None,
             clustering_threshold: 0.5,
             min_duration_on: 0.3,
@@ -835,13 +813,18 @@ async fn run_speaker_diarization_for_meeting<R: Runtime>(
 
     let sample_count = samples.len();
     let audio_minutes = audio_duration_minutes(sample_count);
+    let provider = preferred_diarization_provider();
     let diarization_message = if audio_minutes >= 1.0 {
         format!(
-            "Detecting speaker turns in {:.1} min of audio...",
-            audio_minutes
+            "Detecting speaker turns in {:.1} min of audio{}...",
+            audio_minutes,
+            diarization_provider_message_suffix(provider)
         )
     } else {
-        "Detecting speaker turns...".to_string()
+        format!(
+            "Detecting speaker turns{}...",
+            diarization_provider_message_suffix(provider)
+        )
     };
     emit_progress(&app, &meeting_id, "diarizing", 45, &diarization_message);
 
@@ -854,7 +837,9 @@ async fn run_speaker_diarization_for_meeting<R: Runtime>(
     config.num_threads = default_diarization_threads();
     config.num_clusters = explicit_num_speakers;
 
-    let mut turns = run_sherpa_diarization(config, Arc::clone(&samples)).await?;
+    let mut turns =
+        run_sherpa_diarization_with_fallback(&app, &meeting_id, config, Arc::clone(&samples))
+            .await?;
     if should_retry_short_clip_with_two_speakers(sample_count, &turns, explicit_num_speakers) {
         emit_progress(
             &app,
@@ -870,7 +855,13 @@ async fn run_speaker_diarization_for_meeting<R: Runtime>(
         );
         retry_config.num_threads = default_diarization_threads();
         retry_config.num_clusters = Some(SHORT_CLIP_RETRY_NUM_SPEAKERS);
-        turns = run_sherpa_diarization(retry_config, Arc::clone(&samples)).await?;
+        turns = run_sherpa_diarization_with_fallback(
+            &app,
+            &meeting_id,
+            retry_config,
+            Arc::clone(&samples),
+        )
+        .await?;
     }
 
     if turns.is_empty() {
@@ -1061,6 +1052,48 @@ async fn run_sherpa_diarization(
     .map_err(|e| anyhow!("Speaker diarization task failed: {}", e))?
 }
 
+async fn run_sherpa_diarization_with_fallback<R: Runtime>(
+    app: &AppHandle<R>,
+    meeting_id: &str,
+    config: SherpaDiarizationConfig,
+    samples: Arc<Vec<f32>>,
+) -> Result<Vec<DiarizationTurn>> {
+    let provider = normalized_diarization_provider(&config.provider);
+    if provider != "directml" {
+        return run_sherpa_diarization(config, samples).await;
+    }
+
+    match run_sherpa_diarization(config.clone(), Arc::clone(&samples)).await {
+        Ok(turns) => Ok(turns),
+        Err(directml_error) => {
+            DIARIZATION_DIRECTML_UNAVAILABLE.store(true, Ordering::SeqCst);
+            log::warn!(
+                "DirectML speaker diarization failed; falling back to CPU: {}",
+                directml_error
+            );
+            emit_progress(
+                app,
+                meeting_id,
+                "diarizing",
+                55,
+                "DirectML speaker diarization is unavailable; falling back to CPU...",
+            );
+
+            let mut cpu_config = config;
+            cpu_config.provider = "cpu".to_string();
+            run_sherpa_diarization(cpu_config, samples)
+                .await
+                .map_err(|cpu_error| {
+                    anyhow!(
+                        "DirectML speaker diarization failed ({}); CPU fallback also failed ({})",
+                        directml_error,
+                        cpu_error
+                    )
+                })
+        }
+    }
+}
+
 fn emit_progress<R: Runtime>(
     app: &AppHandle<R>,
     meeting_id: &str,
@@ -1083,6 +1116,33 @@ fn default_diarization_threads() -> i32 {
     std::thread::available_parallelism()
         .map(|threads| threads.get().clamp(1, 4) as i32)
         .unwrap_or(2)
+}
+
+fn preferred_diarization_provider() -> &'static str {
+    if cfg!(all(target_os = "windows", feature = "directml"))
+        && !DIARIZATION_DIRECTML_UNAVAILABLE.load(Ordering::SeqCst)
+    {
+        "directml"
+    } else {
+        "cpu"
+    }
+}
+
+fn normalized_diarization_provider(provider: &str) -> &str {
+    let provider = provider.trim();
+    if provider.is_empty() {
+        "cpu"
+    } else {
+        provider
+    }
+}
+
+fn diarization_provider_message_suffix(provider: &str) -> &'static str {
+    if provider == "directml" {
+        " with DirectML"
+    } else {
+        ""
+    }
 }
 
 fn resolve_model_paths<R: Runtime>(
@@ -1444,6 +1504,33 @@ mod tests {
         assert_eq!(mapped[2].text, "Rogan asks who made money?");
         assert_eq!(mapped[2].audio_start_time, Some(9.0));
         assert_eq!(mapped[2].audio_end_time, Some(12.0));
+    }
+
+    #[test]
+    fn does_not_split_transcript_row_inside_a_sentence() {
+        let transcripts = vec![transcript_with_text(
+            "a",
+            "Just like the Patriot Act until you listen to people who explain how nonprofits become a fucking scam.",
+            Some(0.0),
+            Some(16.0),
+        )];
+        let turns = vec![turn(0.0, 8.0, 0), turn(8.0, 12.0, 1), turn(12.0, 16.0, 0)];
+
+        let mapped = map_diarization_to_transcript_segments(
+            &transcripts,
+            &turns,
+            DiarizationMappingOptions {
+                existing_speaker_policy: ExistingSpeakerPolicy::Overwrite,
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(mapped.len(), 1);
+        assert_eq!(
+            mapped[0].text,
+            "Just like the Patriot Act until you listen to people who explain how nonprofits become a fucking scam."
+        );
+        assert_eq!(mapped[0].speaker.as_deref(), Some("Speaker 1"));
     }
 
     #[test]

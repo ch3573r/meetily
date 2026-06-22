@@ -224,7 +224,8 @@ jobs:
             $featureList += "directml"
           }
           $features = ($featureList | Select-Object -Unique) -join ","
-          .\frontend\scripts\stage-sherpa-runtime.ps1 -TauriRoot "frontend\src-tauri"
+          $sherpaRuntime = if ($featureList -contains "directml" -or $featureList -contains "windows-gpu") { "directml" } else { "cpu" }
+          .\frontend\scripts\stage-sherpa-runtime.ps1 -TauriRoot "frontend\src-tauri" -Runtime $sherpaRuntime
           Remove-Item -LiteralPath "frontend\src-tauri\target\release\bundle\msi" -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item -LiteralPath "frontend\src-tauri\target\release\bundle\nsis" -Recurse -Force -ErrorAction SilentlyContinue
           cd frontend

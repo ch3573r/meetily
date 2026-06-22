@@ -68,7 +68,8 @@ Assert-Command "cargo"
 Assert-VulkanSdk
 
 & (Join-Path $PSScriptRoot "verify-brand-icons.ps1") -FrontendRoot $frontendRoot
-& (Join-Path $PSScriptRoot "stage-sherpa-runtime.ps1") -TauriRoot $tauriRoot
+$sherpaRuntime = if ($Feature -in @("directml", "windows-gpu")) { "directml" } else { "cpu" }
+& (Join-Path $PSScriptRoot "stage-sherpa-runtime.ps1") -TauriRoot $tauriRoot -Runtime $sherpaRuntime
 
 $windowsTarget = "x86_64-pc-windows-msvc"
 $llamaHelperBinary = Join-Path $tauriRoot "binaries\llama-helper-$windowsTarget.exe"

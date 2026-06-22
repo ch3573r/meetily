@@ -45,10 +45,10 @@ platform-default = []
 metal = ["whisper-rs/metal"]       # macOS: Apple Metal GPU (Auto-enabled on macOS)
 coreml = ["whisper-rs/coreml"]     # macOS: Apple CoreML acceleration
 cuda = ["whisper-rs/cuda"]         # Windows/Linux: NVIDIA CUDA GPU
-vulkan = ["whisper-rs/vulkan"]     # Windows/Linux: AMD/Intel Vulkan GPU
+vulkan = ["whisper-rs/vulkan"]     # Windows/Linux: AMD/Intel Vulkan GPU for Whisper
 hipblas = ["whisper-rs/hipblas"]   # Linux: AMD ROCm HIP
-directml = ["ort/directml"]        # Windows: DirectML EP for ort-backed ONNX paths (not sherpa-onnx)
-windows-gpu = ["vulkan", "directml"] # Windows: Whisper Vulkan + ONNX Runtime DirectML build alias
+directml = ["ort/directml"]        # Windows: DirectML EP for ort-backed ONNX paths; sherpa uses staged DML runtime
+windows-gpu = ["vulkan", "directml"] # Windows: Whisper Vulkan + ONNX/sherpa DirectML build alias
 
 # CPU optimizations (fallback for systems without GPU)
 openblas = ["whisper-rs/openblas"] # Optimized BLAS (Auto-enabled on Windows/Linux)
@@ -188,13 +188,14 @@ whisper-rs = { version = "0.13.2", features = ["raw-api", "metal", "coreml"] }
 # Default: CPU-only build (no BLAS)
 # Users can enable features manually:
 #   --features cuda     (NVIDIA GPUs)
-#   --features vulkan   (AMD/Intel GPUs)
+#   --features vulkan   (AMD/Intel GPUs for Whisper)
+#   --features directml (DirectML for ONNX/sherpa paths)
 #   --features openblas (OpenBLAS optimization, requires BLAS_INCLUDE_DIRS)
 [target.'cfg(target_os = "windows")'.dependencies]
 whisper-rs = { version = "0.13.2", features = ["raw-api"] }
 futures-channel = "0.3.31"
 # Shared CPU build avoids MSVC static/dynamic runtime conflicts with existing native deps.
-# sherpa-onnx 1.13.3 exposes only static/shared Cargo features; no DirectML/Vulkan feature exists.
+# sherpa-onnx 1.13.3 exposes only static/shared Cargo features; DirectML is supplied by staged DLLs.
 sherpa-onnx = { version = "1.13.3", default-features = false, features = ["shared"] }
 
 # Linux-specific dependencies
