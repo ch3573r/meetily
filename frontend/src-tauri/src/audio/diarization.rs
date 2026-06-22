@@ -495,7 +495,15 @@ fn split_transcript_segment_by_speaker_spans(
         .map(|span| span.end_time.clamp(segment_start, segment_end))
         .collect();
     let text_parts =
-        split_text_by_time_boundaries(&segment.text, segment_start, segment_end, &boundaries);
+        split_text_by_word_timestamps(&segment.text, &segment.word_timestamps, &boundaries)
+            .unwrap_or_else(|| {
+                split_text_by_time_boundaries(
+                    &segment.text,
+                    segment_start,
+                    segment_end,
+                    &boundaries,
+                )
+            });
     if text_parts.len() != spans.len() || text_parts.iter().any(|part| part.trim().is_empty()) {
         return vec![segment.clone()];
     }
@@ -581,7 +589,10 @@ fn word_timestamps_for_interval(
     let speaker = speaker.map(str::to_string);
     let filtered = words
         .iter()
-        .filter(|word| word.end > start_time + FLOAT_TIE_EPSILON && word.start < end_time)
+        .filter(|word| {
+            let midpoint = word_midpoint(word);
+            midpoint >= start_time - FLOAT_TIE_EPSILON && midpoint < end_time
+        })
         .map(|word| TranscriptWord {
             text: word.text.clone(),
             start: word.start.max(start_time),
@@ -636,6 +647,60 @@ fn join_transcript_text(left: &str, right: &str) -> String {
     format!("{left} {right}")
 }
 
+fn split_text_by_word_timestamps(
+    text: &str,
+    word_timestamps: &Option<Vec<TranscriptWord>>,
+    boundaries: &[f64],
+) -> Option<Vec<String>> {
+    let trimmed = text.trim();
+    let words = word_timestamps.as_ref()?;
+    if trimmed.is_empty() || boundaries.is_empty() {
+        return None;
+    }
+
+    let tokens = word_tokens(trimmed);
+    let piece_count = boundaries.len() + 1;
+    if tokens.len() < piece_count || tokens.len() != words.len() {
+        return None;
+    }
+    if words
+        .iter()
+        .any(|word| !is_valid_interval(word.start, word.end))
+    {
+        return None;
+    }
+
+    let mut split_indices = Vec::<usize>::with_capacity(boundaries.len());
+    let mut previous_index = 0usize;
+    for (boundary_index, boundary_time) in boundaries.iter().enumerate() {
+        if !boundary_time.is_finite() {
+            return None;
+        }
+
+        let remaining_boundaries = boundaries.len() - boundary_index - 1;
+        let lower = previous_index + 1;
+        let upper = tokens.len().saturating_sub(remaining_boundaries + 1);
+        if lower > upper {
+            return None;
+        }
+
+        let midpoint_split = words
+            .iter()
+            .take(tokens.len())
+            .take_while(|word| word_midpoint(word) < *boundary_time)
+            .count();
+        let split_index = midpoint_split.clamp(lower, upper);
+        split_indices.push(split_index);
+        previous_index = split_index;
+    }
+
+    Some(split_text_by_token_indices(
+        trimmed,
+        &tokens,
+        &split_indices,
+    ))
+}
+
 fn split_text_by_time_boundaries(
     text: &str,
     segment_start: f64,
@@ -675,10 +740,19 @@ fn split_text_by_time_boundaries(
         previous_index = split_index;
     }
 
-    let mut parts = Vec::with_capacity(piece_count);
+    split_text_by_token_indices(trimmed, &tokens, &split_indices)
+}
+
+fn split_text_by_token_indices(
+    text: &str,
+    tokens: &[WordToken],
+    split_indices: &[usize],
+) -> Vec<String> {
+    let mut parts = Vec::with_capacity(split_indices.len() + 1);
     let mut start_token_index = 0usize;
     for end_token_index in split_indices
-        .into_iter()
+        .iter()
+        .copied()
         .chain(std::iter::once(tokens.len()))
     {
         let start_byte = tokens[start_token_index].start_byte;
@@ -688,6 +762,10 @@ fn split_text_by_time_boundaries(
     }
 
     parts
+}
+
+fn word_midpoint(word: &TranscriptWord) -> f64 {
+    word.start + ((word.end - word.start) / 2.0)
 }
 
 fn word_tokens(text: &str) -> Vec<WordToken> {
@@ -2760,6 +2838,33 @@ mod tests {
         segment
     }
 
+    fn transcript_with_word_timestamps(
+        id: &str,
+        words: &[(&str, f64, f64)],
+        start: f64,
+        end: f64,
+    ) -> TranscriptSegment {
+        let text = words
+            .iter()
+            .map(|(word, _, _)| *word)
+            .collect::<Vec<_>>()
+            .join(" ");
+        let mut segment = transcript_with_text(id, &text, Some(start), Some(end));
+        segment.word_timestamps = Some(
+            words
+                .iter()
+                .map(|(word, start, end)| TranscriptWord {
+                    text: (*word).to_string(),
+                    start: *start,
+                    end: *end,
+                    confidence: None,
+                    speaker: None,
+                })
+                .collect(),
+        );
+        segment
+    }
+
     fn turn(start: f64, end: f64, speaker: usize) -> DiarizationTurn {
         DiarizationTurn {
             start_time: start,
@@ -3171,7 +3276,62 @@ mod tests {
     }
 
     #[test]
-    fn does_not_split_transcript_row_inside_a_sentence() {
+    fn splits_transcript_row_inside_sentence_with_word_timestamps() {
+        let transcripts = vec![transcript_with_word_timestamps(
+            "a",
+            &[
+                ("Just", 0.0, 1.0),
+                ("like", 1.0, 2.0),
+                ("the", 2.0, 3.0),
+                ("Patriot", 3.0, 4.0),
+                ("Act", 4.0, 5.0),
+                ("until", 5.0, 6.0),
+                ("you", 6.0, 7.0),
+                ("hear", 7.0, 8.0),
+                ("scam", 8.0, 9.0),
+                ("explained", 9.0, 10.0),
+            ],
+            0.0,
+            10.0,
+        )];
+        let turns = vec![turn(0.0, 5.0, 0), turn(5.0, 7.0, 1), turn(7.0, 10.0, 0)];
+
+        let mapped = map_diarization_to_transcript_segments(
+            &transcripts,
+            &turns,
+            DiarizationMappingOptions {
+                existing_speaker_policy: ExistingSpeakerPolicy::Overwrite,
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(mapped.len(), 3);
+        assert_eq!(mapped[0].speaker.as_deref(), Some("Speaker 1"));
+        assert_eq!(mapped[0].text, "Just like the Patriot Act");
+        assert_eq!(
+            mapped[0]
+                .word_timestamps
+                .as_ref()
+                .unwrap()
+                .iter()
+                .map(|word| word.text.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Just", "like", "the", "Patriot", "Act"]
+        );
+        assert_eq!(mapped[1].speaker.as_deref(), Some("Speaker 2"));
+        assert_eq!(mapped[1].text, "until you");
+        assert!(mapped[1]
+            .word_timestamps
+            .as_ref()
+            .unwrap()
+            .iter()
+            .all(|word| word.speaker.as_deref() == Some("Speaker 2")));
+        assert_eq!(mapped[2].speaker.as_deref(), Some("Speaker 1"));
+        assert_eq!(mapped[2].text, "hear scam explained");
+    }
+
+    #[test]
+    fn does_not_split_transcript_row_inside_sentence_without_word_timestamps() {
         let transcripts = vec![transcript_with_text(
             "a",
             "Just like the Patriot Act until you listen to people who explain how nonprofits become a fucking scam.",
