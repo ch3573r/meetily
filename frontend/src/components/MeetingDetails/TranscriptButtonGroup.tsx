@@ -3,7 +3,15 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
-import { Copy, FolderOpen, RefreshCw, Users } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { ChevronDown, Copy, FolderOpen, RefreshCw, Users } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
@@ -118,19 +126,20 @@ export function TranscriptButtonGroup({
     };
   }, [clearDiarizationProgress, meetingId, onRefetchTranscripts, showDiarizationProgress]);
 
-  const handleRunSpeakerDiarization = useCallback(async () => {
+  const handleRunSpeakerDiarization = useCallback(async (numSpeakers: number | null = null) => {
     if (!meetingId || !meetingFolderPath) return;
+    const speakerMode = numSpeakers ? `${numSpeakers} speakers` : 'Auto speaker detection';
     setIsDiarizing(true);
-    setDiarizationMessage('Starting speaker diarization...');
-    showDiarizationProgress('Starting speaker diarization...', 0);
+    setDiarizationMessage(`Starting ${speakerMode.toLowerCase()}...`);
+    showDiarizationProgress(`Starting ${speakerMode.toLowerCase()}...`, 0);
     try {
-      Analytics.trackButtonClick('speaker_diarization', 'meeting_details');
+      Analytics.trackButtonClick(numSpeakers ? `speaker_diarization_${numSpeakers}` : 'speaker_diarization_auto', 'meeting_details');
       await invoke('start_speaker_diarization_command', {
         meetingId,
         meetingFolderPath,
         segmentationModelPath: null,
         embeddingModelPath: null,
-        numSpeakers: null,
+        numSpeakers,
         preserveExistingLabels: false,
       });
     } catch (error) {
@@ -142,6 +151,8 @@ export function TranscriptButtonGroup({
       });
     }
   }, [clearDiarizationProgress, meetingFolderPath, meetingId, showDiarizationProgress]);
+
+  const speakerDetectionDisabled = transcriptCount === 0 || isDiarizing;
 
   return (
     <div className="flex shrink-0 items-center justify-end gap-2">
@@ -175,21 +186,37 @@ export function TranscriptButtonGroup({
         </Button>
 
         {showSpeakerAttribution && meetingId && meetingFolderPath && (
-          <Button
-            size="sm"
-            variant="outline"
-            className="2xl:px-4"
-            onClick={() => void handleRunSpeakerDiarization()}
-            disabled={transcriptCount === 0 || isDiarizing}
-            title={diarizationMessage ?? "Detect speakers from the saved recording"}
-          >
-            {isDiarizing ? (
-              <RefreshCw className="animate-spin 2xl:mr-2" size={18} />
-            ) : (
-              <Users className="2xl:mr-2" size={18} />
-            )}
-            <span className="hidden 2xl:inline">Speakers</span>
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                size="sm"
+                variant="outline"
+                className="2xl:px-4"
+                disabled={speakerDetectionDisabled}
+                title={diarizationMessage ?? "Detect speakers from the saved recording"}
+              >
+                {isDiarizing ? (
+                  <RefreshCw className="animate-spin 2xl:mr-2" size={18} />
+                ) : (
+                  <Users className="2xl:mr-2" size={18} />
+                )}
+                <span className="hidden 2xl:inline">Speakers</span>
+                <ChevronDown className="ml-1 size-3.5 opacity-70" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuLabel>Speaker count</DropdownMenuLabel>
+              <DropdownMenuItem onSelect={() => void handleRunSpeakerDiarization(null)}>
+                Auto detect
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              {[2, 3, 4, 5, 6].map((count) => (
+                <DropdownMenuItem key={count} onSelect={() => void handleRunSpeakerDiarization(count)}>
+                  {count} speakers
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
 
         {meetingId && meetingFolderPath && (
