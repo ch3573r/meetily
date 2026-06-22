@@ -8,9 +8,7 @@
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::exports::auth::{
-    refresh_access_token, MicrosoftAuthConfig, MsAuthError, TokenResponse,
-};
+use crate::exports::auth::{refresh_access_token, MicrosoftAuthConfig, MsAuthError, TokenResponse};
 
 const SERVICE_NAME: &str = "net.rismondo.openclaw.clawscribe.microsoft";
 const ACCOUNT_NAME: &str = "default";

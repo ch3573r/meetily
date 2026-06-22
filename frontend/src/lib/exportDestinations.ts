@@ -9,6 +9,14 @@ const STORAGE_KEY = "clawscribe.exportDestinations.v1";
 
 export type ConfluenceExportMode = "draft" | "rest";
 
+export interface SavedDriveDestination {
+  driveId: string;
+  itemId: string;
+  name: string;
+  webUrl?: string | null;
+  source: string;
+}
+
 export interface ExportDestinations {
   notebookId?: string;
   notebookName?: string;
@@ -21,6 +29,12 @@ export interface ExportDestinations {
   bucketName?: string;
   todoListId?: string;
   todoListName?: string;
+  /** OneDrive/SharePoint folder where DOCX/PDF meeting files are uploaded. */
+  oneDriveDestination?: SavedDriveDestination;
+  /** Export a PDF copy alongside the DOCX. Defaults to true. */
+  oneDriveIncludePdf?: boolean;
+  /** Create organization-scoped view links for uploaded files. Defaults to false. */
+  oneDriveCreateOrganizationLink?: boolean;
   /** AI-polish Planner task titles & notes before export (default off). */
   plannerAiPolish?: boolean;
   /** Confluence export mode. Draft is clipboard/browser only; REST uses a saved PAT. */
@@ -68,6 +82,11 @@ export function hasPlannerDestination(d: ExportDestinations = getExportDestinati
 
 export function hasToDoDestination(d: ExportDestinations = getExportDestinations()): boolean {
   return !!d.todoListId;
+}
+
+export function hasOneDriveDestination(d: ExportDestinations = getExportDestinations()): boolean {
+  const destination = d.oneDriveDestination;
+  return !!destination?.driveId && !!destination?.itemId;
 }
 
 export function hasConfluenceDraftTarget(d: ExportDestinations = getExportDestinations()): boolean {

@@ -149,7 +149,10 @@ impl NemotronEngine {
             }
         };
 
-        log::info!("NemotronEngine using models directory: {}", models_dir.display());
+        log::info!(
+            "NemotronEngine using models directory: {}",
+            models_dir.display()
+        );
         if !models_dir.exists() {
             std::fs::create_dir_all(&models_dir)?;
         }
@@ -232,7 +235,9 @@ impl NemotronEngine {
 
         log::info!("Loading Nemotron model: {}", model_name);
         // fp16 tries DirectML then falls back to CPU; int8 is GPU-only.
-        let cpu_capable = variant_for(model_name).map(|v| v.cpu_capable).unwrap_or(true);
+        let cpu_capable = variant_for(model_name)
+            .map(|v| v.cpu_capable)
+            .unwrap_or(true);
         let model = NemotronModel::new(&path, cpu_capable)
             .map_err(|e| anyhow!("Failed to load Nemotron model {}: {}", model_name, e))?;
 
@@ -293,7 +298,10 @@ impl NemotronEngine {
                 return Err(anyhow!("Download already in progress for {}", model_name));
             }
         }
-        self.active_downloads.write().await.insert(model_name.to_string());
+        self.active_downloads
+            .write()
+            .await
+            .insert(model_name.to_string());
         *self.cancel_download_flag.write().await = None;
 
         // Ensure catalog is populated.
@@ -375,7 +383,8 @@ impl NemotronEngine {
             let mut stream = response.bytes_stream();
             if !resuming && existing_size > 0 {
                 // Server ignored Range; we overwrote, so drop the stale count.
-                total_downloaded = total_downloaded.saturating_sub(existing_size.min(*expected_size));
+                total_downloaded =
+                    total_downloaded.saturating_sub(existing_size.min(*expected_size));
             }
 
             loop {
@@ -404,7 +413,8 @@ impl NemotronEngine {
                             let speed = (total_downloaded.saturating_sub(already)) as f64
                                 / 1_048_576.0
                                 / elapsed;
-                            let prog = DownloadProgress::new(total_downloaded, total_size_bytes, speed);
+                            let prog =
+                                DownloadProgress::new(total_downloaded, total_size_bytes, speed);
                             if prog.percent != last_pct {
                                 last_pct = prog.percent;
                                 if let Some(cb) = &progress_callback {
@@ -449,7 +459,11 @@ impl NemotronEngine {
         // Re-validate so status flips to Available.
         let _ = self.discover_models().await;
         if let Some(cb) = &progress_callback {
-            cb(DownloadProgress::new(total_size_bytes, total_size_bytes, 0.0));
+            cb(DownloadProgress::new(
+                total_size_bytes,
+                total_size_bytes,
+                0.0,
+            ));
         }
         log::info!("Nemotron model {} download complete", model_name);
         Ok(())

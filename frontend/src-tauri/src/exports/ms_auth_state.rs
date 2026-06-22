@@ -43,7 +43,13 @@ impl MicrosoftAuthState {
                     Some(t.user_id.clone()),
                     Some(t),
                 ),
-                None => (MicrosoftConnectionState::NotConnected, None, None, None, None),
+                None => (
+                    MicrosoftConnectionState::NotConnected,
+                    None,
+                    None,
+                    None,
+                    None,
+                ),
             };
 
         MicrosoftAuthState {

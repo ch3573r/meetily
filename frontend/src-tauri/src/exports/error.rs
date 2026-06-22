@@ -123,17 +123,38 @@ mod tests {
 
     #[test]
     fn maps_status_codes() {
-        assert_eq!(GraphErrorKind::from_status(401, None), GraphErrorKind::Unauthorized);
-        assert_eq!(GraphErrorKind::from_status(404, None), GraphErrorKind::NotFound);
-        assert_eq!(GraphErrorKind::from_status(413, None), GraphErrorKind::PayloadTooLarge);
-        assert_eq!(GraphErrorKind::from_status(429, None), GraphErrorKind::Throttled);
-        assert_eq!(GraphErrorKind::from_status(507, None), GraphErrorKind::SectionFull);
-        assert_eq!(GraphErrorKind::from_status(418, None), GraphErrorKind::Unknown);
+        assert_eq!(
+            GraphErrorKind::from_status(401, None),
+            GraphErrorKind::Unauthorized
+        );
+        assert_eq!(
+            GraphErrorKind::from_status(404, None),
+            GraphErrorKind::NotFound
+        );
+        assert_eq!(
+            GraphErrorKind::from_status(413, None),
+            GraphErrorKind::PayloadTooLarge
+        );
+        assert_eq!(
+            GraphErrorKind::from_status(429, None),
+            GraphErrorKind::Throttled
+        );
+        assert_eq!(
+            GraphErrorKind::from_status(507, None),
+            GraphErrorKind::SectionFull
+        );
+        assert_eq!(
+            GraphErrorKind::from_status(418, None),
+            GraphErrorKind::Unknown
+        );
     }
 
     #[test]
     fn splits_403_by_code() {
-        assert_eq!(GraphErrorKind::from_status(403, None), GraphErrorKind::AccessDenied);
+        assert_eq!(
+            GraphErrorKind::from_status(403, None),
+            GraphErrorKind::AccessDenied
+        );
         assert_eq!(
             GraphErrorKind::from_status(403, Some("AccessDenied")),
             GraphErrorKind::AccessDenied
@@ -155,9 +176,21 @@ mod tests {
         assert!(!GraphErrorKind::Unauthorized.is_retriable());
         assert!(!GraphErrorKind::AccessDenied.is_retriable());
 
-        assert_eq!(GraphErrorKind::Unauthorized.export_status(), ExportStatus::FailedAuth);
-        assert_eq!(GraphErrorKind::TenantBlocked.export_status(), ExportStatus::TenantBlocked);
-        assert_eq!(GraphErrorKind::NotFound.export_status(), ExportStatus::DestinationNotFound);
-        assert_eq!(GraphErrorKind::SectionFull.export_status(), ExportStatus::DestinationNotFound);
+        assert_eq!(
+            GraphErrorKind::Unauthorized.export_status(),
+            ExportStatus::FailedAuth
+        );
+        assert_eq!(
+            GraphErrorKind::TenantBlocked.export_status(),
+            ExportStatus::TenantBlocked
+        );
+        assert_eq!(
+            GraphErrorKind::NotFound.export_status(),
+            ExportStatus::DestinationNotFound
+        );
+        assert_eq!(
+            GraphErrorKind::SectionFull.export_status(),
+            ExportStatus::DestinationNotFound
+        );
     }
 }

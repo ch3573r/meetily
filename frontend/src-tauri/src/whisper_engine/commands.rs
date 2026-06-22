@@ -75,8 +75,7 @@ pub async fn whisper_get_acceleration_status() -> Result<WhisperAccelerationStat
     let accel =
         whisper_context_acceleration_for(backend, profile.gpu_type, profile.performance_tier);
 
-    let gpu_available_but_unused =
-        !accel.use_gpu && !matches!(profile.gpu_type, GpuType::None);
+    let gpu_available_but_unused = !accel.use_gpu && !matches!(profile.gpu_type, GpuType::None);
 
     Ok(WhisperAccelerationStatus {
         compiled_backend: backend.as_str().to_string(),

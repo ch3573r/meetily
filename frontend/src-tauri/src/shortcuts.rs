@@ -116,9 +116,7 @@ pub fn on_shortcut<R: Runtime>(app: &AppHandle<R>, shortcut: &Shortcut, state: S
                 // still reports a minimized window as "visible", so without the
                 // is_minimized check the hotkey would hide a minimized window
                 // instead of restoring it to the front.
-                if window.is_visible().unwrap_or(false)
-                    && !window.is_minimized().unwrap_or(false)
-                {
+                if window.is_visible().unwrap_or(false) && !window.is_minimized().unwrap_or(false) {
                     let _ = window.hide();
                 } else {
                     let _ = window.unminimize();
@@ -146,9 +144,21 @@ pub fn apply_bindings<R: Runtime>(
 
     let mut conflicts = Vec::new();
     for (key, accel, action) in [
-        ("startStop", bindings.start_stop.as_str(), ShortcutAction::StartStop),
-        ("pauseResume", bindings.pause_resume.as_str(), ShortcutAction::PauseResume),
-        ("toggleWindow", bindings.toggle_window.as_str(), ShortcutAction::ToggleWindow),
+        (
+            "startStop",
+            bindings.start_stop.as_str(),
+            ShortcutAction::StartStop,
+        ),
+        (
+            "pauseResume",
+            bindings.pause_resume.as_str(),
+            ShortcutAction::PauseResume,
+        ),
+        (
+            "toggleWindow",
+            bindings.toggle_window.as_str(),
+            ShortcutAction::ToggleWindow,
+        ),
     ] {
         match Shortcut::from_str(accel) {
             Ok(shortcut) => match gs.register(shortcut) {

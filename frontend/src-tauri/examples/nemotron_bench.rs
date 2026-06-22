@@ -47,7 +47,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let start = Instant::now();
     let text = model.transcribe_samples(samples, lang_slot)?;
     let elapsed = start.elapsed().as_secs_f64();
-    println!("bench: elapsed={elapsed:.3}s rtf={:.3}", elapsed / secs.max(0.001));
+    println!(
+        "bench: elapsed={elapsed:.3}s rtf={:.3}",
+        elapsed / secs.max(0.001)
+    );
     println!("bench: transcript={}", text.trim());
     Ok(())
 }

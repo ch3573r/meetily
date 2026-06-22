@@ -10,6 +10,7 @@ use crate::exports::calendar;
 use crate::exports::client::{GraphClient, RetryPolicy, TokioSleeper};
 use crate::exports::discovery;
 use crate::exports::exporter::{self, ExportContext, OneNoteTarget};
+use crate::exports::files;
 use crate::exports::ledger::ExportLedger;
 use crate::exports::model::MicrosoftConnectionState;
 use crate::exports::ms_auth_state::MicrosoftAuthState;
@@ -57,7 +58,9 @@ impl From<exporter::ExportReport> for ExportReportResponse {
     fn from(r: exporter::ExportReport) -> Self {
         ExportReportResponse {
             overall: format!("{:?}", r.overall).to_ascii_lowercase(),
-            connection_state: r.connection_state.map(|s| format!("{s:?}").to_ascii_lowercase()),
+            connection_state: r
+                .connection_state
+                .map(|s| format!("{s:?}").to_ascii_lowercase()),
             items: r
                 .items
                 .into_iter()
@@ -96,14 +99,11 @@ pub async fn microsoft_sign_in<R: Runtime>(
 
     let app_handle = app.clone();
     tauri::async_runtime::spawn(async move {
-        let result = crate::exports::interactive_auth::run_interactive_sign_in(
-            &http,
-            &config,
-            |url| {
+        let result =
+            crate::exports::interactive_auth::run_interactive_sign_in(&http, &config, |url| {
                 let _ = open_url_in_default_browser(url);
-            },
-        )
-        .await;
+            })
+            .await;
 
         let state = app_handle.state::<MicrosoftAuthState>();
         match result {
@@ -169,9 +169,7 @@ pub async fn microsoft_sign_in<R: Runtime>(
 }
 
 #[tauri::command]
-pub async fn microsoft_sign_out(
-    state: tauri::State<'_, MicrosoftAuthState>,
-) -> Result<(), String> {
+pub async fn microsoft_sign_out(state: tauri::State<'_, MicrosoftAuthState>) -> Result<(), String> {
     let _ = token_store::delete_token();
     let mut inner = state.inner.write().await;
     inner.connection_state = MicrosoftConnectionState::NotConnected;
@@ -213,7 +211,13 @@ fn export_ledger_dir<R: Runtime>(app: &AppHandle<R>, meeting_id: &str) -> Result
         .map_err(|e| format!("Failed to resolve app data dir: {e}"))?;
     let safe: String = meeting_id
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect();
     let safe = if safe.trim_matches('-').is_empty() {
         "meeting".to_string()
@@ -288,8 +292,7 @@ pub async fn export_to_onenote<R: Runtime>(
     let (token, tenant_id, user_id) = get_token_and_context(&state).await?;
 
     let notes: crate::summary::codex_provider::MeetingNotesOutput =
-        serde_json::from_str(&summary_json)
-            .map_err(|e| format!("Failed to parse summary: {e}"))?;
+        serde_json::from_str(&summary_json).map_err(|e| format!("Failed to parse summary: {e}"))?;
 
     let meeting_export =
         crate::exports::meeting_export_from_notes(&meeting_id, &meeting_title, None, &notes, None);
@@ -335,8 +338,7 @@ pub async fn export_to_planner<R: Runtime>(
     let (token, tenant_id, user_id) = get_token_and_context(&state).await?;
 
     let notes: crate::summary::codex_provider::MeetingNotesOutput =
-        serde_json::from_str(&summary_json)
-            .map_err(|e| format!("Failed to parse summary: {e}"))?;
+        serde_json::from_str(&summary_json).map_err(|e| format!("Failed to parse summary: {e}"))?;
 
     let meeting_export =
         crate::exports::meeting_export_from_notes(&meeting_id, &meeting_title, None, &notes, None);
@@ -352,8 +354,8 @@ pub async fn export_to_planner<R: Runtime>(
         bearer_token: &token,
     };
 
-    let result = exporter::export_planner(&client, &mut ledger, &meeting_export, &destination, &ctx)
-        .await;
+    let result =
+        exporter::export_planner(&client, &mut ledger, &meeting_export, &destination, &ctx).await;
     save_ledger(&app, &meeting_id, &ledger);
     let report = result.map_err(|e| e.to_string())?;
 
@@ -427,8 +429,9 @@ pub async fn export_meeting_markdown_to_onenote<R: Runtime>(
 /// characters (Graph errors 20153 / 20155). Replace forbidden characters with
 /// spaces, collapse whitespace, and truncate to 49 chars on a char boundary.
 fn sanitize_onenote_section_name(raw: &str) -> String {
-    const FORBIDDEN: &[char] =
-        &['?', '*', '\\', '/', ':', '<', '>', '|', '&', '#', '\'', '%', '~', '"'];
+    const FORBIDDEN: &[char] = &[
+        '?', '*', '\\', '/', ':', '<', '>', '|', '&', '#', '\'', '%', '~', '"',
+    ];
     let replaced: String = raw
         .chars()
         .map(|c| if FORBIDDEN.contains(&c) { ' ' } else { c })
@@ -488,7 +491,9 @@ pub async fn export_meeting_to_onenote_section<R: Runtime>(
         &client,
         &mut ledger,
         &meeting_export,
-        &OneNoteTarget { section_id: section.id.clone() },
+        &OneNoteTarget {
+            section_id: section.id.clone(),
+        },
         &ctx,
     )
     .await;
@@ -547,8 +552,8 @@ pub async fn export_meeting_markdown_to_planner<R: Runtime>(
         bearer_token: &token,
     };
 
-    let result = exporter::export_planner(&client, &mut ledger, &meeting_export, &destination, &ctx)
-        .await;
+    let result =
+        exporter::export_planner(&client, &mut ledger, &meeting_export, &destination, &ctx).await;
     save_ledger(&app, &meeting_id, &ledger);
     let report = result.map_err(|e| e.to_string())?;
 
@@ -669,7 +674,10 @@ pub async fn export_selected_planner_tasks<R: Runtime>(
 
     let mut by_bucket: BTreeMap<String, Vec<PlannerTaskInput>> = BTreeMap::new();
     for task in tasks {
-        by_bucket.entry(task.bucket_id.clone()).or_default().push(task);
+        by_bucket
+            .entry(task.bucket_id.clone())
+            .or_default()
+            .push(task);
     }
 
     let transport = ReqwestGraphTransport::new();
@@ -951,6 +959,54 @@ pub async fn create_todo_list(
     let transport = ReqwestGraphTransport::new();
     let client = GraphClient::new(transport, TokioSleeper, RetryPolicy::default());
     discovery::create_todo_list(&client, &token, &name).await
+}
+
+// ── OneDrive/SharePoint file export commands ───────────────────────────
+
+#[tauri::command]
+pub async fn list_onedrive_destinations(
+    state: tauri::State<'_, MicrosoftAuthState>,
+) -> Result<Vec<files::DriveDestination>, String> {
+    let (token, _, _) = get_token_and_context(&state).await?;
+    let transport = ReqwestGraphTransport::new();
+    let client = GraphClient::new(transport, TokioSleeper, RetryPolicy::default());
+    Ok(vec![
+        files::resolve_default_drive_root(&client, &token).await?,
+    ])
+}
+
+#[tauri::command]
+pub async fn resolve_onedrive_destination_url(
+    state: tauri::State<'_, MicrosoftAuthState>,
+    sharing_url: String,
+) -> Result<files::DriveDestination, String> {
+    let (token, _, _) = get_token_and_context(&state).await?;
+    let transport = ReqwestGraphTransport::new();
+    let client = GraphClient::new(transport, TokioSleeper, RetryPolicy::default());
+    files::resolve_sharing_url(&client, &token, &sharing_url).await
+}
+
+#[tauri::command]
+pub async fn create_onedrive_destination_folder(
+    state: tauri::State<'_, MicrosoftAuthState>,
+    parent: files::DriveDestination,
+    folder_name: String,
+) -> Result<files::DriveDestination, String> {
+    let (token, _, _) = get_token_and_context(&state).await?;
+    let transport = ReqwestGraphTransport::new();
+    let client = GraphClient::new(transport, TokioSleeper, RetryPolicy::default());
+    files::create_folder(&client, &token, &parent, &folder_name).await
+}
+
+#[tauri::command]
+pub async fn export_meeting_to_onedrive_files(
+    state: tauri::State<'_, MicrosoftAuthState>,
+    request: files::OneDriveExportRequest,
+) -> Result<files::OneDriveExportResponse, String> {
+    let (token, _, _) = get_token_and_context(&state).await?;
+    let transport = ReqwestGraphTransport::new();
+    let client = GraphClient::new(transport, TokioSleeper, RetryPolicy::default());
+    files::export_meeting_files(&client, &token, request).await
 }
 
 #[tauri::command]

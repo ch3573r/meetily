@@ -162,7 +162,10 @@ pub async fn validate_transcription_model_ready<R: Runtime>(
                 .await
             {
                 Ok(model_name) => {
-                    info!("✅ Nemotron model validation successful: {} is ready", model_name);
+                    info!(
+                        "✅ Nemotron model validation successful: {} is ready",
+                        model_name
+                    );
                     Ok(())
                 }
                 Err(e) => {
@@ -257,7 +260,9 @@ pub async fn get_or_init_transcription_engine<R: Runtime>(
         "nemotron" => {
             info!("🌊 Initializing Nemotron transcription engine");
             let engine = {
-                let guard = crate::nemotron_engine::commands::NEMOTRON_ENGINE.lock().unwrap();
+                let guard = crate::nemotron_engine::commands::NEMOTRON_ENGINE
+                    .lock()
+                    .unwrap();
                 guard.as_ref().cloned()
             };
             match engine {

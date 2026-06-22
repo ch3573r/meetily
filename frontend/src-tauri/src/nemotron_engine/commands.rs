@@ -3,9 +3,7 @@
 // Tauri commands for the Nemotron engine: init, list, download, cancel,
 // validate-and-load, and the DirectML toggle. Mirrors parakeet_engine::commands.
 
-use crate::nemotron_engine::nemotron_engine::{
-    ModelInfo, NemotronEngine, NEMOTRON_MODEL,
-};
+use crate::nemotron_engine::nemotron_engine::{ModelInfo, NemotronEngine, NEMOTRON_MODEL};
 use crate::parakeet_engine::ModelStatus;
 use std::sync::{Arc, Mutex};
 use tauri::{command, AppHandle, Emitter, Manager, Runtime};
@@ -21,11 +19,7 @@ pub async fn nemotron_init<R: Runtime>(app: AppHandle<R>) -> Result<(), String> 
         }
     }
     // Use the same models root as the other engines (app_data_dir/models).
-    let models_dir = app
-        .path()
-        .app_data_dir()
-        .map(|d| d.join("models"))
-        .ok();
+    let models_dir = app.path().app_data_dir().map(|d| d.join("models")).ok();
     let engine = NemotronEngine::new_with_models_dir(models_dir)
         .map_err(|e| format!("Failed to initialize Nemotron engine: {}", e))?;
     *NEMOTRON_ENGINE.lock().unwrap() = Some(Arc::new(engine));
@@ -113,12 +107,11 @@ pub async fn nemotron_validate_model_ready_with_config<R: Runtime>(
     }
 
     // Resolve the configured model name (single v1 model otherwise).
-    let configured = match crate::api::api::api_get_transcript_config(app.clone(), app.state(), None)
-        .await
-    {
-        Ok(Some(cfg)) if cfg.provider == "nemotron" && !cfg.model.is_empty() => cfg.model,
-        _ => NEMOTRON_MODEL.to_string(),
-    };
+    let configured =
+        match crate::api::api::api_get_transcript_config(app.clone(), app.state(), None).await {
+            Ok(Some(cfg)) if cfg.provider == "nemotron" && !cfg.model.is_empty() => cfg.model,
+            _ => NEMOTRON_MODEL.to_string(),
+        };
 
     let models = engine
         .discover_models()

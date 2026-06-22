@@ -58,6 +58,25 @@ export function ToDoIcon({ className = "h-5 w-5" }: IntegrationIconProps) {
   );
 }
 
+export function OneDriveIcon({ className = "h-5 w-5" }: IntegrationIconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true" focusable="false">
+      <path
+        d="M10.2 8.6a5.4 5.4 0 0 1 9.4 2.8 4.2 4.2 0 0 1-.5 8.4H7.4a4.9 4.9 0 0 1-1.1-9.7 5.7 5.7 0 0 1 3.9-1.5z"
+        fill="#0078D4"
+      />
+      <path
+        d="M10.2 8.6a5.7 5.7 0 0 0-3.9 1.5 4.9 4.9 0 0 0-3.6 4.7 4.8 4.8 0 0 0 .8 2.7l8.4-5.1 5.2 3.2 2.5-4.2a5.4 5.4 0 0 0-9.4-2.8z"
+        fill="#1490DF"
+      />
+      <path
+        d="M7.4 19.8h11.7a4.2 4.2 0 0 0 3-7.2l-5 3-5.2-3.2-8.4 5.1a4.9 4.9 0 0 0 3.9 2.3z"
+        fill="#28A8EA"
+      />
+    </svg>
+  );
+}
+
 export function TeamsIcon({ className = "h-5 w-5" }: IntegrationIconProps) {
   return (
     <svg viewBox="0 0 24 24" className={className} aria-hidden="true" focusable="false">

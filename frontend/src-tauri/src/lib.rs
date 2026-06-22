@@ -47,6 +47,7 @@ pub mod console_utils;
 pub mod database;
 pub mod exports;
 pub mod groq;
+pub mod nemotron_engine;
 pub mod notifications;
 pub mod ollama;
 pub mod onboarding;
@@ -54,7 +55,6 @@ pub mod openai;
 pub mod openclaw;
 pub mod openrouter;
 pub mod parakeet_engine;
-pub mod nemotron_engine;
 pub mod shortcuts;
 pub mod state;
 pub mod summary;
@@ -892,6 +892,10 @@ pub fn run() {
             exports::commands::create_onenote_section,
             exports::commands::create_planner_bucket,
             exports::commands::create_todo_list,
+            exports::commands::list_onedrive_destinations,
+            exports::commands::resolve_onedrive_destination_url,
+            exports::commands::create_onedrive_destination_folder,
+            exports::commands::export_meeting_to_onedrive_files,
             exports::commands::list_calendar_events,
             exports::commands::current_or_next_meeting,
             exports::commands::preview_planner_tasks,

@@ -57,7 +57,12 @@ fn random_state() -> String {
     URL_SAFE_NO_PAD.encode(bytes)
 }
 
-fn authorize_url(config: &MicrosoftAuthConfig, redirect_uri: &str, challenge: &str, state: &str) -> String {
+fn authorize_url(
+    config: &MicrosoftAuthConfig,
+    redirect_uri: &str,
+    challenge: &str,
+    state: &str,
+) -> String {
     let mut url = url::Url::parse(&format!(
         "https://login.microsoftonline.com/{}/oauth2/v2.0/authorize",
         config.tenant_id
@@ -116,8 +121,7 @@ fn wait_for_redirect(listener: TcpListener) -> Result<Redirect, MsAuthError> {
         let full = format!("http://localhost{path}");
         let parsed = url::Url::parse(&full).ok();
 
-        let (mut code, mut state, mut error, mut error_description) =
-            (None, None, None, None);
+        let (mut code, mut state, mut error, mut error_description) = (None, None, None, None);
         if let Some(u) = parsed.as_ref() {
             for (k, v) in u.query_pairs() {
                 match k.as_ref() {
@@ -273,7 +277,12 @@ mod tests {
     #[test]
     fn authorize_url_has_pkce_and_loopback() {
         let config = MicrosoftAuthConfig::default();
-        let u = authorize_url(&config, "http://localhost:12345", "challenge123", "state456");
+        let u = authorize_url(
+            &config,
+            "http://localhost:12345",
+            "challenge123",
+            "state456",
+        );
         assert!(u.contains("code_challenge=challenge123"));
         assert!(u.contains("code_challenge_method=S256"));
         assert!(u.contains("response_type=code"));

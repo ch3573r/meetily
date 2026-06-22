@@ -169,7 +169,11 @@ mod tests {
 
         let mut edited = base.clone();
         edited.executive_summary = "Different".into();
-        assert_ne!(h1, edited.artifact_hash(), "edited content must change hash");
+        assert_ne!(
+            h1,
+            edited.artifact_hash(),
+            "edited content must change hash"
+        );
     }
 
     #[test]

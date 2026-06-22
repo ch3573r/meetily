@@ -21,10 +21,11 @@ pub const DEFAULT_AUTHORITY: &str = "organizations";
 
 // Least-privilege: every scope here must map to an endpoint the app actually
 // calls. OneNote export -> Notes.*; Planner/To Do export -> Tasks.ReadWrite;
-// calendar add-on -> Calendars.Read; sign-in -> User.Read; token refresh ->
-// offline_access. Teams meeting detection is local (window/process scanning),
-// so it needs no Graph scope. Don't add OnlineMeetings/Presence/Files unless a
-// code path calls /me/onlineMeetings, /me/presence, or /me/drive respectively.
+// calendar add-on -> Calendars.Read; OneDrive/SharePoint file export ->
+// Files.ReadWrite; sign-in -> User.Read; token refresh -> offline_access.
+// Teams meeting detection is local (window/process scanning), so it needs no
+// Graph scope. Don't add OnlineMeetings/Presence or broader Files scopes unless
+// a code path calls those endpoints.
 pub const DEFAULT_SCOPES: &[&str] = &[
     "User.Read",
     "Notes.ReadWrite",
@@ -34,6 +35,7 @@ pub const DEFAULT_SCOPES: &[&str] = &[
     "Notes.ReadWrite.All",
     "Tasks.ReadWrite",
     "Calendars.Read",
+    "Files.ReadWrite",
     "offline_access",
 ];
 
@@ -271,6 +273,7 @@ mod tests {
         assert_eq!(config.tenant_id, DEFAULT_AUTHORITY);
         assert_eq!(config.tenant_id, "organizations");
         assert!(config.scopes.contains(&"Notes.ReadWrite".to_string()));
+        assert!(config.scopes.contains(&"Files.ReadWrite".to_string()));
         assert!(config.scopes.contains(&"offline_access".to_string()));
     }
 

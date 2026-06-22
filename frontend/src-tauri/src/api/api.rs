@@ -199,10 +199,7 @@ pub struct TranscriptSegment {
 }
 
 fn normalize_speaker_label(speaker: Option<String>) -> Option<String> {
-    let trimmed = speaker?
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
+    let trimmed = speaker?.split_whitespace().collect::<Vec<_>>().join(" ");
     if trimmed.is_empty() {
         None
     } else {

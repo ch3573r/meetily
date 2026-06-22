@@ -6,6 +6,7 @@ import { Loader2, Upload, ChevronDown } from "lucide-react";
 import {
   ConfluenceIcon,
   OneNoteIcon,
+  OneDriveIcon,
   PlannerIcon,
   ToDoIcon,
 } from "@/components/IntegrationIcons";
@@ -55,9 +56,11 @@ interface MeetingExportButtonsProps {
   meetingCreatedAt?: string;
   /** Resolves the current summary as markdown. */
   getMarkdown: () => Promise<string>;
+  /** Resolves the current transcript as plain text for file exports. */
+  getTranscript?: () => string;
 }
 
-type Busy = "onenote" | "planner" | "todo" | "confluence" | null;
+type Busy = "onenote" | "onedrive" | "planner" | "todo" | "confluence" | null;
 
 const ONENOTE_NOTEBOOK_MAX = 128;
 function sanitizeNotebookName(raw: string): string {
@@ -117,6 +120,7 @@ export function MeetingExportButtons({
   meetingTitle,
   meetingCreatedAt,
   getMarkdown,
+  getTranscript,
 }: MeetingExportButtonsProps) {
   const [connected, setConnected] = useState(false);
   const [hasActionItems, setHasActionItems] = useState(false);
@@ -421,6 +425,46 @@ export function MeetingExportButtons({
     }
   }, [getMarkdown, meetingCreatedAt, meetingId, meetingTitle]);
 
+  const exportOneDrive = useCallback(async () => {
+    setBusy("onedrive");
+    try {
+      const md = await getMarkdown();
+      if (!md.trim()) {
+        toast.info("Nothing to export yet — generate a summary first.");
+        return;
+      }
+
+      const destinations = getExportDestinations();
+      const response = await microsoftExportService.exportMeetingToOneDriveFiles({
+        meetingId,
+        meetingTitle: defaultDatedTitle(meetingTitle, meetingCreatedAt),
+        markdown: md,
+        transcript: getTranscript?.() ?? null,
+        destination: destinations.oneDriveDestination ?? null,
+        includePdf: destinations.oneDriveIncludePdf ?? true,
+        createOrganizationLink: destinations.oneDriveCreateOrganizationLink ?? false,
+      });
+
+      const openUrl =
+        response.files.find((file) => file.sharingLink)?.sharingLink ??
+        response.files.find((file) => file.webUrl)?.webUrl ??
+        null;
+      const kinds = response.files.map((file) => file.kind.toUpperCase()).join(" + ");
+      toast.success("OneDrive export complete", {
+        description: `${kinds || "Files"} uploaded to ${response.destination.name}.`,
+        action: openUrl
+          ? { label: "Open", onClick: () => window.open(openUrl, "_blank") }
+          : undefined,
+      });
+    } catch (e) {
+      toast.error("OneDrive export failed", {
+        description: errorText(e),
+      });
+    } finally {
+      setBusy(null);
+    }
+  }, [getMarkdown, getTranscript, meetingCreatedAt, meetingId, meetingTitle]);
+
   return (
     <div className="flex items-center gap-2">
       <DropdownMenu>
@@ -441,6 +485,12 @@ export function MeetingExportButtons({
             <DropdownMenuItem onClick={openOneNote}>
               <OneNoteIcon className="mr-2 h-4 w-4" />
               OneNote
+            </DropdownMenuItem>
+          )}
+          {connected && (
+            <DropdownMenuItem onClick={exportOneDrive}>
+              <OneDriveIcon className="mr-2 h-4 w-4" />
+              OneDrive DOCX/PDF
             </DropdownMenuItem>
           )}
           {connected && hasActionItems && (

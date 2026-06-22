@@ -47,6 +47,40 @@ export interface ToDoListInfo {
   displayName: string;
   wellknownListName?: string | null;
 }
+
+export interface DriveDestination {
+  driveId: string;
+  itemId: string;
+  name: string;
+  webUrl?: string | null;
+  source: string;
+}
+
+export interface OneDriveExportedFile {
+  kind: "docx" | "pdf" | string;
+  driveId: string;
+  itemId: string;
+  name: string;
+  webUrl?: string | null;
+  sharingLink?: string | null;
+}
+
+export interface OneDriveExportResponse {
+  destination: DriveDestination;
+  files: OneDriveExportedFile[];
+}
+
+export interface OneDriveExportRequest {
+  meetingId: string;
+  meetingTitle: string;
+  markdown: string;
+  transcript?: string | null;
+  destination?: DriveDestination | null;
+  folderName?: string | null;
+  includePdf?: boolean;
+  createOrganizationLink?: boolean;
+}
+
 export interface CalendarAttendee {
   name: string | null;
   email: string | null;
@@ -223,6 +257,32 @@ export const microsoftExportService = {
 
   async createToDoList(displayName: string): Promise<ToDoListInfo> {
     return invoke<ToDoListInfo>("create_todo_list", { displayName });
+  },
+
+  async listOneDriveDestinations(): Promise<DriveDestination[]> {
+    return invoke<DriveDestination[]>("list_onedrive_destinations");
+  },
+
+  async resolveOneDriveDestinationUrl(sharingUrl: string): Promise<DriveDestination> {
+    return invoke<DriveDestination>("resolve_onedrive_destination_url", { sharingUrl });
+  },
+
+  async createOneDriveDestinationFolder(
+    parent: DriveDestination,
+    folderName: string,
+  ): Promise<DriveDestination> {
+    return invoke<DriveDestination>("create_onedrive_destination_folder", {
+      parent,
+      folderName,
+    });
+  },
+
+  async exportMeetingToOneDriveFiles(
+    request: OneDriveExportRequest,
+  ): Promise<OneDriveExportResponse> {
+    return invoke<OneDriveExportResponse>("export_meeting_to_onedrive_files", {
+      request,
+    });
   },
 
   async createNotebook(displayName: string): Promise<NotebookInfo> {

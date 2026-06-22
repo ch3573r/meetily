@@ -36,7 +36,11 @@ fn build_transcript_context(transcripts: &[crate::database::models::Transcript])
     // Trim the middle: keep ~two-thirds head, one-third tail on a char boundary.
     let head = MAX_TRANSCRIPT_CHARS * 2 / 3;
     let tail = MAX_TRANSCRIPT_CHARS - head;
-    let head_end = full.char_indices().nth(head).map(|(i, _)| i).unwrap_or(full.len());
+    let head_end = full
+        .char_indices()
+        .nth(head)
+        .map(|(i, _)| i)
+        .unwrap_or(full.len());
     let tail_start = full
         .char_indices()
         .nth(full.chars().count().saturating_sub(tail))
@@ -208,7 +212,11 @@ when it helps (lists, bold). Do not invent attendees, decisions, or action items
     if !recent.is_empty() {
         user.push_str("Conversation so far:\n");
         for m in recent {
-            let who = if m.role == "assistant" { "Assistant" } else { "User" };
+            let who = if m.role == "assistant" {
+                "Assistant"
+            } else {
+                "User"
+            };
             user.push_str(&format!("{who}: {}\n", m.content.trim()));
         }
         user.push('\n');

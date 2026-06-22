@@ -208,9 +208,8 @@ impl ContinuousVadProcessor {
 
         // VAD uses 30ms chunks at 16kHz (480 samples)
         let vad_chunk_size = (VAD_SAMPLE_RATE as f32 * 0.03) as usize; // 480 samples
-        let max_segment_samples = max_segment_duration_ms.map(|ms| {
-            ((ms as usize * VAD_SAMPLE_RATE as usize) / 1000).max(vad_chunk_size)
-        });
+        let max_segment_samples = max_segment_duration_ms
+            .map(|ms| ((ms as usize * VAD_SAMPLE_RATE as usize) / 1000).max(vad_chunk_size));
 
         info!(
             "VAD processor created: input={}Hz, vad={}Hz, chunk_size={} samples, max_segment_ms={:?}",
@@ -705,7 +704,12 @@ mod tests {
         }
         let expected = total / 3;
         let diff = (out.len() as i64 - expected as i64).abs();
-        assert!(diff < 1200, "got {} samples, expected ~{}", out.len(), expected);
+        assert!(
+            diff < 1200,
+            "got {} samples, expected ~{}",
+            out.len(),
+            expected
+        );
         // 1 kHz is well below the 8 kHz Nyquist → energy preserved.
         let (r_in, r_out) = (rms(&signal), rms(&out));
         assert!(

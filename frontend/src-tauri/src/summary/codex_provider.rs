@@ -1592,7 +1592,9 @@ impl AppServerSession {
             .await?;
         let thread_id = json_string_at(&thread_response, &["thread", "id"])
             .or_else(|| json_string_at(&thread_response, &["id"]))
-            .ok_or_else(|| "Codex app-server thread/start did not return a thread id".to_string())?;
+            .ok_or_else(|| {
+                "Codex app-server thread/start did not return a thread id".to_string()
+            })?;
         for attempt in 0..=CODEX_MAX_OVERLOAD_RETRIES {
             let id = self.next_id();
             self.send(&raw_turn_start_request(id, &thread_id, model, prompt))

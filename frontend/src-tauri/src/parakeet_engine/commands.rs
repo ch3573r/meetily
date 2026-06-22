@@ -638,6 +638,8 @@ pub async fn set_parakeet_use_directml(enabled: bool) -> Result<(), String> {
 
 #[command]
 pub async fn get_parakeet_use_directml() -> Result<bool, String> {
-    Ok(crate::parakeet_engine::parakeet_engine::USE_PARAKEET_DIRECTML
-        .load(std::sync::atomic::Ordering::Relaxed))
+    Ok(
+        crate::parakeet_engine::parakeet_engine::USE_PARAKEET_DIRECTML
+            .load(std::sync::atomic::Ordering::Relaxed),
+    )
 }

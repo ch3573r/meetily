@@ -626,7 +626,10 @@ fn looks_like_teams_window_context(title: &str) -> bool {
 /// active call opens a **second** Teams window alongside the main app shell:
 /// a subject window counts when another Teams-surface window is also open, or
 /// when it is the foreground window.
-fn window_looks_like_teams_meeting(window: &WindowSnapshot, has_companion_teams_window: bool) -> bool {
+fn window_looks_like_teams_meeting(
+    window: &WindowSnapshot,
+    has_companion_teams_window: bool,
+) -> bool {
     if looks_like_teams_meeting_title(&window.title) {
         return true;
     }
@@ -656,7 +659,10 @@ fn is_teams_surface(lower_title: &str) -> bool {
 
 /// The first non-empty `|`-separated segment of a (lowercased) title.
 fn leading_segment(lower_title: &str) -> Option<&str> {
-    lower_title.split('|').map(|s| s.trim()).find(|s| !s.is_empty())
+    lower_title
+        .split('|')
+        .map(|s| s.trim())
+        .find(|s| !s.is_empty())
 }
 
 fn is_teams_app_section(segment: &str) -> bool {
@@ -716,14 +722,46 @@ fn looks_like_teams_meeting_subject(lower_title: &str) -> bool {
 /// localization common in this fork's target environment.
 const TEAMS_APP_SECTIONS: &[&str] = &[
     // English
-    "activity", "chat", "teams", "calendar", "calls", "files", "help", "apps",
-    "store", "planner", "tasks", "tasks by planner and to do", "to do",
-    "onenote", "whiteboard", "settings", "home", "communities", "shifts",
-    "approvals", "viva engage", "viva insights", "lists", "bookings", "praise",
-    "wiki", "people", "search", "feed",
+    "activity",
+    "chat",
+    "teams",
+    "calendar",
+    "calls",
+    "files",
+    "help",
+    "apps",
+    "store",
+    "planner",
+    "tasks",
+    "tasks by planner and to do",
+    "to do",
+    "onenote",
+    "whiteboard",
+    "settings",
+    "home",
+    "communities",
+    "shifts",
+    "approvals",
+    "viva engage",
+    "viva insights",
+    "lists",
+    "bookings",
+    "praise",
+    "wiki",
+    "people",
+    "search",
+    "feed",
     // German
-    "aktivität", "kalender", "anrufe", "dateien", "hilfe", "einstellungen",
-    "start", "aufgaben", "communitys", "suche",
+    "aktivität",
+    "kalender",
+    "anrufe",
+    "dateien",
+    "hilfe",
+    "einstellungen",
+    "start",
+    "aufgaben",
+    "communitys",
+    "suche",
 ];
 
 /// Meeting-context keywords across the languages Teams localizes window titles
@@ -731,18 +769,49 @@ const TEAMS_APP_SECTIONS: &[&str] = &[
 /// list misses e.g. German ("Besprechung") meetings entirely.
 const MEETING_TITLE_KEYWORDS: &[&str] = &[
     // English
-    "meeting", "call", "joined", "lobby", "screen sharing", "presenting",
-    "participants", "mute", "unmute", "leave", "huddle", "waiting room",
+    "meeting",
+    "call",
+    "joined",
+    "lobby",
+    "screen sharing",
+    "presenting",
+    "participants",
+    "mute",
+    "unmute",
+    "leave",
+    "huddle",
+    "waiting room",
     // German
-    "besprechung", "anruf", "telefonkonferenz", "teilnehmer", "stummschalt",
-    "verlassen", "beitreten", "bildschirm", "präsentation", "freigeben",
-    "warteraum", "wird geteilt",
+    "besprechung",
+    "anruf",
+    "telefonkonferenz",
+    "teilnehmer",
+    "stummschalt",
+    "verlassen",
+    "beitreten",
+    "bildschirm",
+    "präsentation",
+    "freigeben",
+    "warteraum",
+    "wird geteilt",
     // French
-    "réunion", "appel", "participants", "quitter", "partage d'écran",
+    "réunion",
+    "appel",
+    "participants",
+    "quitter",
+    "partage d'écran",
     // Spanish
-    "reunión", "llamada", "participantes", "salir", "silenciar",
+    "reunión",
+    "llamada",
+    "participantes",
+    "salir",
+    "silenciar",
     // Italian / Portuguese / Dutch (common)
-    "riunione", "reunião", "vergadering", "chiamada", "chamada",
+    "riunione",
+    "reunião",
+    "vergadering",
+    "chiamada",
+    "chamada",
 ];
 
 #[cfg(target_os = "windows")]
@@ -998,10 +1067,19 @@ mod tests {
             "Test Appointment Stand Up | Rismondo | alexander.rismondo@rismondo.net | Microsoft Teams";
         // In a call there's a second Teams window (the main shell) → counts even
         // in the background. A lone background subject window (a chat) does not.
-        assert!(window_looks_like_teams_meeting(&window(Some(1), title), true));
-        assert!(!window_looks_like_teams_meeting(&window(Some(1), title), false));
+        assert!(window_looks_like_teams_meeting(
+            &window(Some(1), title),
+            true
+        ));
+        assert!(!window_looks_like_teams_meeting(
+            &window(Some(1), title),
+            false
+        ));
         // Foreground still counts on its own (active call you're looking at).
-        assert!(window_looks_like_teams_meeting(&foreground_window(Some(1), title), false));
+        assert!(window_looks_like_teams_meeting(
+            &foreground_window(Some(1), title),
+            false
+        ));
     }
 
     #[test]
@@ -1016,7 +1094,10 @@ mod tests {
                 "Test Appointment Stand Up | Rismondo | a@b.net | Microsoft Teams",
             ),
             window(Some(1), "Calendar | Rismondo | a@b.net | Microsoft Teams"),
-            window(None, "[screen 0: dev] Fix recording UI and Teams meeting detection"),
+            window(
+                None,
+                "[screen 0: dev] Fix recording UI and Teams meeting detection",
+            ),
         ];
 
         let status = evaluate_snapshots(config, DEFAULT_CONFIDENCE_THRESHOLD, &processes, &windows);
@@ -1032,7 +1113,10 @@ mod tests {
         // even foreground and even with a companion window present.
         let title = "[screen 0: dev] Fix recording UI and Teams meeting detection";
         assert!(!looks_like_teams_meeting_title(title));
-        assert!(!window_looks_like_teams_meeting(&foreground_window(Some(1), title), true));
+        assert!(!window_looks_like_teams_meeting(
+            &foreground_window(Some(1), title),
+            true
+        ));
     }
 
     #[test]
@@ -1075,7 +1159,10 @@ mod tests {
         // background must not auto-trigger.
         let config = TeamsDetectionConfig::default();
         let processes = vec![process(1, "ms-teams.exe")];
-        let windows = vec![window(Some(1), "Jane Doe | Rismondo | a@b.net | Microsoft Teams")];
+        let windows = vec![window(
+            Some(1),
+            "Jane Doe | Rismondo | a@b.net | Microsoft Teams",
+        )];
 
         let status = evaluate_snapshots(config, DEFAULT_CONFIDENCE_THRESHOLD, &processes, &windows);
 

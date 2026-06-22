@@ -71,6 +71,62 @@ impl GraphResponse {
     }
 }
 
+/// A binary Graph request. This is kept separate from [`GraphRequest`] so the
+/// existing JSON/string exporters do not need to change shape.
+#[derive(Debug, Clone)]
+pub struct GraphBinaryRequest {
+    pub method: String,
+    pub url: String,
+    pub content_type: String,
+    pub body: Vec<u8>,
+    /// Caller-generated `client-request-id` for correlation in logs.
+    pub correlation_id: String,
+    /// Extra request headers. Never used to carry the bearer token.
+    pub headers: Vec<(String, String)>,
+}
+
+/// A binary Graph response. Error metadata is parsed from JSON error bodies when
+/// Graph returns one; success bodies may be arbitrary file bytes.
+#[derive(Debug, Clone)]
+pub struct GraphBinaryResponse {
+    pub status: u16,
+    pub retry_after_secs: Option<u64>,
+    pub error_code: Option<String>,
+    pub error_message: Option<String>,
+    pub body: Vec<u8>,
+}
+
+impl GraphBinaryResponse {
+    pub fn is_success(&self) -> bool {
+        (200..300).contains(&self.status)
+    }
+
+    pub fn success(status: u16, body: impl Into<Vec<u8>>) -> Self {
+        GraphBinaryResponse {
+            status,
+            retry_after_secs: None,
+            error_code: None,
+            error_message: None,
+            body: body.into(),
+        }
+    }
+
+    pub fn failure(status: u16, error_code: Option<&str>) -> Self {
+        GraphBinaryResponse {
+            status,
+            retry_after_secs: None,
+            error_code: error_code.map(|c| c.to_string()),
+            error_message: None,
+            body: Vec::new(),
+        }
+    }
+
+    pub fn with_retry_after(mut self, secs: u64) -> Self {
+        self.retry_after_secs = Some(secs);
+        self
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum TransportError {
     /// Network/timeout failure with no HTTP status — outcome unknown.
@@ -86,6 +142,15 @@ pub trait GraphTransport: Send + Sync {
         request: &GraphRequest,
         bearer_token: &str,
     ) -> Result<GraphResponse, TransportError>;
+
+    /// Send a binary request. `bearer_token` is optional so the same path can be
+    /// used for preauthenticated upload/download URLs if a Graph workflow needs
+    /// them.
+    async fn send_binary(
+        &self,
+        request: &GraphBinaryRequest,
+        bearer_token: Option<&str>,
+    ) -> Result<GraphBinaryResponse, TransportError>;
 }
 
 /// A sanitized record of a sent request — for test assertions and audit. Holds
@@ -100,11 +165,18 @@ pub struct RecordedRequest {
     pub attempt: u32,
 }
 
-fn hash_body(body: &str) -> String {
+fn hash_bytes(body: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
-    hasher.update(body.as_bytes());
-    hasher.finalize()[..8].iter().map(|b| format!("{b:02x}")).collect()
+    hasher.update(body);
+    hasher.finalize()[..8]
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+fn hash_body(body: &str) -> String {
+    hash_bytes(body.as_bytes())
 }
 
 /// In-memory transport for tests. Responses are queued per URL (with a fallback
@@ -112,6 +184,8 @@ fn hash_body(body: &str) -> String {
 pub struct MockGraphTransport {
     per_url: Mutex<HashMap<String, VecDeque<GraphResponse>>>,
     default_queue: Mutex<VecDeque<GraphResponse>>,
+    binary_per_url: Mutex<HashMap<String, VecDeque<GraphBinaryResponse>>>,
+    binary_default_queue: Mutex<VecDeque<GraphBinaryResponse>>,
     recorded: Mutex<Vec<RecordedRequest>>,
     attempt_counts: Mutex<HashMap<String, u32>>,
 }
@@ -121,6 +195,8 @@ impl Default for MockGraphTransport {
         MockGraphTransport {
             per_url: Mutex::new(HashMap::new()),
             default_queue: Mutex::new(VecDeque::new()),
+            binary_per_url: Mutex::new(HashMap::new()),
+            binary_default_queue: Mutex::new(VecDeque::new()),
             recorded: Mutex::new(Vec::new()),
             attempt_counts: Mutex::new(HashMap::new()),
         }
@@ -140,6 +216,25 @@ impl MockGraphTransport {
     /// Queue responses returned in order for a specific URL.
     pub fn queue_for_url(&self, url: &str, responses: impl IntoIterator<Item = GraphResponse>) {
         self.per_url
+            .lock()
+            .unwrap()
+            .entry(url.to_string())
+            .or_default()
+            .extend(responses);
+    }
+
+    /// Queue binary responses returned in order regardless of URL.
+    pub fn queue_binary_default(&self, responses: impl IntoIterator<Item = GraphBinaryResponse>) {
+        self.binary_default_queue.lock().unwrap().extend(responses);
+    }
+
+    /// Queue binary responses returned in order for a specific URL.
+    pub fn queue_binary_for_url(
+        &self,
+        url: &str,
+        responses: impl IntoIterator<Item = GraphBinaryResponse>,
+    ) {
+        self.binary_per_url
             .lock()
             .unwrap()
             .entry(url.to_string())
@@ -199,6 +294,42 @@ impl GraphTransport for MockGraphTransport {
         }
         Err(TransportError::Network(
             "mock transport: no queued response".to_string(),
+        ))
+    }
+
+    async fn send_binary(
+        &self,
+        request: &GraphBinaryRequest,
+        bearer_token: Option<&str>,
+    ) -> Result<GraphBinaryResponse, TransportError> {
+        let _ = bearer_token;
+
+        let attempt = {
+            let mut counts = self.attempt_counts.lock().unwrap();
+            let n = counts.entry(request.url.clone()).or_insert(0);
+            *n += 1;
+            *n
+        };
+
+        self.recorded.lock().unwrap().push(RecordedRequest {
+            method: request.method.clone(),
+            url: request.url.clone(),
+            content_type: request.content_type.clone(),
+            body_hash: hash_bytes(&request.body),
+            correlation_id: request.correlation_id.clone(),
+            attempt,
+        });
+
+        if let Some(queue) = self.binary_per_url.lock().unwrap().get_mut(&request.url) {
+            if let Some(resp) = queue.pop_front() {
+                return Ok(resp);
+            }
+        }
+        if let Some(resp) = self.binary_default_queue.lock().unwrap().pop_front() {
+            return Ok(resp);
+        }
+        Err(TransportError::Network(
+            "mock transport: no queued binary response".to_string(),
         ))
     }
 }

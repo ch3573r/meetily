@@ -9,13 +9,15 @@
 //! - `docs/integrations/planner-export.md`
 
 pub mod auth;
+pub mod calendar;
 pub mod client;
 pub mod commands;
-pub mod calendar;
 pub mod confluence;
 pub mod discovery;
+pub mod document;
 pub mod error;
 pub mod exporter;
+pub mod files;
 pub mod interactive_auth;
 pub mod ledger;
 pub mod markdown_notes;
@@ -24,14 +26,19 @@ pub mod ms_auth_state;
 pub mod onenote;
 pub mod planner;
 pub mod reqwest_transport;
-pub mod token_store;
 pub mod todo;
+pub mod token_store;
 pub mod transport;
 
 pub use error::GraphErrorKind;
-pub use exporter::{export_onenote, export_planner, export_todo, ExportContext, ExportReport, OneNoteTarget};
+pub use exporter::{
+    export_onenote, export_planner, export_todo, ExportContext, ExportReport, OneNoteTarget,
+};
+pub use files::{DriveDestination, DriveFile, OneDriveExportRequest, OneDriveExportResponse};
 pub use ledger::ExportLedger;
-pub use model::{ExportActionItem, ExportDecision, ExportStatus, MeetingExport, MicrosoftConnectionState};
+pub use model::{
+    ExportActionItem, ExportDecision, ExportStatus, MeetingExport, MicrosoftConnectionState,
+};
 pub use planner::PlannerDestination;
 pub use todo::ToDoDestination;
 

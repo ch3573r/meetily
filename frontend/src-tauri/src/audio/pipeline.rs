@@ -943,10 +943,7 @@ impl AudioPipeline {
                     // Track whether the system-audio stream is actually carrying
                     // sound (for the silence warning below).
                     if !system_audio_seen && chunk.device_type == DeviceType::System {
-                        let peak = chunk
-                            .data
-                            .iter()
-                            .fold(0.0f32, |m, &x| m.max(x.abs()));
+                        let peak = chunk.data.iter().fold(0.0f32, |m, &x| m.max(x.abs()));
                         if peak > SILENCE_PEAK_THRESHOLD {
                             system_audio_seen = true;
                         }
@@ -1009,13 +1006,12 @@ impl AudioPipeline {
                                     // so the accumulators are compared directly.
                                     // (MIC_DOMINANCE may need on-device calibration.)
                                     const MIC_DOMINANCE: f32 = 1.5;
-                                    let segment_source = if mic_snr_acc
-                                        >= sys_snr_acc * MIC_DOMINANCE
-                                    {
-                                        DeviceType::Microphone
-                                    } else {
-                                        DeviceType::System
-                                    };
+                                    let segment_source =
+                                        if mic_snr_acc >= sys_snr_acc * MIC_DOMINANCE {
+                                            DeviceType::Microphone
+                                        } else {
+                                            DeviceType::System
+                                        };
                                     perf_debug!(
                                         "🗣️ attribution: mic_snr={:.1} sys_snr={:.1} floors(mic={:.5},sys={:.5}) -> {:?}",
                                         mic_snr_acc, sys_snr_acc, mic_floor, sys_floor, segment_source

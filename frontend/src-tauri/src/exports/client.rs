@@ -33,7 +33,11 @@ impl Default for RetryPolicy {
 /// Honors `Retry-After` (seconds) when present; otherwise bounded exponential
 /// backoff: `base * 2^(attempt-1)`, capped at `max_delay_ms`. `attempt` is the
 /// 1-based number of the attempt that just failed.
-pub fn backoff_delay(attempt: u32, retry_after_secs: Option<u64>, policy: &RetryPolicy) -> Duration {
+pub fn backoff_delay(
+    attempt: u32,
+    retry_after_secs: Option<u64>,
+    policy: &RetryPolicy,
+) -> Duration {
     if let Some(secs) = retry_after_secs {
         return Duration::from_millis((secs * 1000).min(policy.max_delay_ms));
     }
@@ -128,9 +132,15 @@ mod tests {
             base_delay_ms: 500,
             max_delay_ms: 30_000,
         };
-        assert_eq!(backoff_delay(1, Some(2), &policy), Duration::from_millis(2000));
+        assert_eq!(
+            backoff_delay(1, Some(2), &policy),
+            Duration::from_millis(2000)
+        );
         // Retry-After above the cap is clamped.
-        assert_eq!(backoff_delay(1, Some(120), &policy), Duration::from_millis(30_000));
+        assert_eq!(
+            backoff_delay(1, Some(120), &policy),
+            Duration::from_millis(30_000)
+        );
     }
 
     #[test]
@@ -144,6 +154,9 @@ mod tests {
         assert_eq!(backoff_delay(2, None, &policy), Duration::from_millis(1000));
         assert_eq!(backoff_delay(3, None, &policy), Duration::from_millis(2000));
         // Capped.
-        assert_eq!(backoff_delay(20, None, &policy), Duration::from_millis(30_000));
+        assert_eq!(
+            backoff_delay(20, None, &policy),
+            Duration::from_millis(30_000)
+        );
     }
 }

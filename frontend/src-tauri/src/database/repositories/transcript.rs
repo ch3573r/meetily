@@ -17,14 +17,13 @@ impl TranscriptsRepository {
         let mut transaction = conn.begin().await?;
         let now = Utc::now();
 
-        let result = sqlx::query(
-            "UPDATE transcripts SET speaker = ? WHERE meeting_id = ? AND id = ?",
-        )
-        .bind(speaker)
-        .bind(meeting_id)
-        .bind(transcript_id)
-        .execute(&mut *transaction)
-        .await?;
+        let result =
+            sqlx::query("UPDATE transcripts SET speaker = ? WHERE meeting_id = ? AND id = ?")
+                .bind(speaker)
+                .bind(meeting_id)
+                .bind(transcript_id)
+                .execute(&mut *transaction)
+                .await?;
 
         if result.rows_affected() > 0 {
             sqlx::query("UPDATE meetings SET updated_at = ? WHERE id = ?")

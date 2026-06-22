@@ -164,9 +164,12 @@ pub fn start_transcription_task<R: Runtime>(
                             // Gated behind a Beta toggle (default off) — the energy
                             // heuristic isn't reliable yet, so when disabled we emit
                             // no label rather than a wrong one.
-                            let source_label = if SOURCE_ATTRIBUTION_ENABLED.load(Ordering::Relaxed) {
+                            let source_label = if SOURCE_ATTRIBUTION_ENABLED.load(Ordering::Relaxed)
+                            {
                                 match &chunk.device_type {
-                                    crate::audio::recording_state::DeviceType::System => "Participants",
+                                    crate::audio::recording_state::DeviceType::System => {
+                                        "Participants"
+                                    }
                                     _ => "Me",
                                 }
                             } else {

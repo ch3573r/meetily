@@ -88,8 +88,7 @@ impl ExportLedger {
         let tmp = folder.join(format!("{LEDGER_FILENAME}.tmp"));
         let body = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
         std::fs::write(&tmp, body).map_err(|e| format!("Failed to write export ledger: {e}"))?;
-        std::fs::rename(&tmp, &path)
-            .map_err(|e| format!("Failed to commit export ledger: {e}"))?;
+        std::fs::rename(&tmp, &path).map_err(|e| format!("Failed to commit export ledger: {e}"))?;
         Ok(())
     }
 

@@ -17,6 +17,7 @@ import {
   ConfluenceIcon,
   Microsoft365Icon,
   OneNoteIcon,
+  OneDriveIcon,
   OpenClawIcon,
   OutlookCalendarIcon,
   PlannerIcon,
@@ -40,6 +41,10 @@ import {
   type ConfluenceConnectionStatus,
 } from "@/services/confluenceExportService";
 import { ONENOTE_LARGE_LIBRARY_MESSAGE } from "@/services/microsoftExportService";
+import {
+  microsoftExportService,
+  type DriveDestination,
+} from "@/services/microsoftExportService";
 import {
   getTeamsDetectionMode,
   setTeamsDetectionMode,
@@ -234,7 +239,7 @@ function MicrosoftSignInPanel() {
 
   const detail = useMemo(() => {
     if (ms.connection.state === "connected") {
-      return `Signed in as ${ms.connection.userDisplayName ?? ms.connection.userEmail ?? "Microsoft user"}. OneNote, Planner, and To Do exports are available.`;
+      return `Signed in as ${ms.connection.userDisplayName ?? ms.connection.userEmail ?? "Microsoft user"}. OneNote, OneDrive, Planner, and To Do exports are available.`;
     }
     if (ms.connection.state === "connecting" || ms.signingIn) {
       return "Waiting for Microsoft sign-in to complete…";
@@ -242,7 +247,7 @@ function MicrosoftSignInPanel() {
     if (ms.connection.state === "expired") {
       return "Microsoft session expired. Sign in again to re-enable exports.";
     }
-    return "Sign in with your Microsoft account to enable OneNote, Planner, and To Do exports.";
+    return "Sign in with your Microsoft account to enable OneNote, OneDrive, Planner, and To Do exports.";
   }, [ms.connection, ms.signingIn]);
 
   return (
@@ -295,6 +300,17 @@ function MicrosoftSignInPanel() {
                   </span>
                 </div>
               )}
+            {ms.connection.grantedScopes !== undefined &&
+              ms.connection.grantedScopes !== null &&
+              !/\bFiles\.ReadWrite\b/i.test(ms.connection.grantedScopes ?? "") && (
+                <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>
+                    This session was granted no OneDrive file permission. Sign
+                    out and sign in again to grant DOCX/PDF export access.
+                  </span>
+                </div>
+              )}
           </>
         )}
 
@@ -338,6 +354,14 @@ function sanitizeNotebookName(raw: string): string {
 
 function sanitizeToDoListName(raw: string): string {
   return raw.replace(/\s+/g, " ").trimStart().slice(0, 255);
+}
+
+function sanitizeOneDriveFolderName(raw: string): string {
+  return raw
+    .replace(/["*:<>?/\\|]/g, " ")
+    .replace(/\s+/g, " ")
+    .trimStart()
+    .slice(0, 120);
 }
 
 const NEW_OPTION = "__new__";
@@ -951,6 +975,262 @@ function ToDoPanel() {
             <div className="flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-300">
               <CheckCircle2 className="h-4 w-4" />
               <span>To Do destination ready. Export reviewed action items from a meeting summary.</span>
+            </div>
+          )}
+        </div>
+      )}
+    </AddonPanel>
+  );
+}
+
+function OneDrivePanel() {
+  const ms = useMicrosoftExport();
+  const saved = getExportDestinations();
+  const [rootDestination, setRootDestination] = useState<DriveDestination | null>(null);
+  const [selectedDestination, setSelectedDestination] = useState<DriveDestination | null>(
+    saved.oneDriveDestination ?? null,
+  );
+  const [loadingRoot, setLoadingRoot] = useState(false);
+  const [sharingUrl, setSharingUrl] = useState("");
+  const [resolvingUrl, setResolvingUrl] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [creatingFolder, setCreatingFolder] = useState(false);
+  const [includePdf, setIncludePdf] = useState(saved.oneDriveIncludePdf ?? true);
+  const [createOrgLink, setCreateOrgLink] = useState(
+    saved.oneDriveCreateOrganizationLink ?? false,
+  );
+  const [localError, setLocalError] = useState<string | null>(null);
+  const isConnected = ms.connection.state === "connected";
+  const activeDestination = selectedDestination ?? rootDestination;
+
+  const persistDestination = useCallback((destination: DriveDestination) => {
+    setSelectedDestination(destination);
+    setExportDestinations({ oneDriveDestination: destination });
+  }, []);
+
+  const loadRoot = useCallback(async () => {
+    if (!isConnected) return null;
+    setLoadingRoot(true);
+    setLocalError(null);
+    try {
+      const destinations = await microsoftExportService.listOneDriveDestinations();
+      const root = destinations[0] ?? null;
+      setRootDestination(root);
+      return root;
+    } catch (e) {
+      setLocalError(e instanceof Error ? e.message : String(e));
+      return null;
+    } finally {
+      setLoadingRoot(false);
+    }
+  }, [isConnected]);
+
+  useEffect(() => {
+    if (isConnected && !rootDestination && !loadingRoot) {
+      void loadRoot();
+    }
+  }, [isConnected, loadRoot, loadingRoot, rootDestination]);
+
+  useEffect(() => {
+    setExportDestinations({
+      oneDriveIncludePdf: includePdf,
+      oneDriveCreateOrganizationLink: createOrgLink,
+    });
+  }, [createOrgLink, includePdf]);
+
+  const useRoot = async () => {
+    const root = rootDestination ?? (await loadRoot());
+    if (root) persistDestination(root);
+  };
+
+  const resolveSharingUrl = async () => {
+    const url = sharingUrl.trim();
+    if (!url) return;
+    setResolvingUrl(true);
+    setLocalError(null);
+    try {
+      const destination = await microsoftExportService.resolveOneDriveDestinationUrl(url);
+      persistDestination(destination);
+      setSharingUrl("");
+    } catch (e) {
+      setLocalError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setResolvingUrl(false);
+    }
+  };
+
+  const createFolder = async () => {
+    const name = sanitizeOneDriveFolderName(newFolderName).trim();
+    if (!name) return;
+    const parent = activeDestination ?? (await loadRoot());
+    if (!parent) return;
+
+    setCreatingFolder(true);
+    setLocalError(null);
+    try {
+      const destination = await microsoftExportService.createOneDriveDestinationFolder(
+        parent,
+        name,
+      );
+      persistDestination(destination);
+      setNewFolderName("");
+    } catch (e) {
+      setLocalError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCreatingFolder(false);
+    }
+  };
+
+  const panelState: AddonState = isConnected ? "connected" : "signin";
+  const detail = isConnected
+    ? "Export full meeting notes as DOCX and PDF files to OneDrive or SharePoint."
+    : "Sign in with Microsoft above to enable OneDrive file export.";
+
+  return (
+    <AddonPanel
+      icon={OneDriveIcon}
+      title="OneDrive file export"
+      state={panelState}
+      detail={detail}
+      showBadge={!isConnected}
+    >
+      {isConnected && (
+        <div className="space-y-3">
+          <div className="rounded-lg border border-border bg-muted p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-muted-foreground">Destination folder</p>
+                <p className="mt-1 truncate text-sm font-medium text-foreground">
+                  {activeDestination?.name ?? "Loading OneDrive root..."}
+                </p>
+                {activeDestination?.webUrl && (
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                    {activeDestination.webUrl}
+                  </p>
+                )}
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => void useRoot()}
+                disabled={loadingRoot}
+              >
+                {loadingRoot ? <Loader2 className="h-4 w-4 animate-spin" /> : "Use root"}
+              </Button>
+            </div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+            <input
+              type="url"
+              value={sharingUrl}
+              onChange={(e) => setSharingUrl(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void resolveSharingUrl();
+              }}
+              placeholder="Paste OneDrive or SharePoint folder link"
+              className="min-w-0 rounded-lg border border-border bg-background px-3 py-2 text-sm"
+              disabled={resolvingUrl}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void resolveSharingUrl()}
+              disabled={resolvingUrl || !sharingUrl.trim()}
+            >
+              {resolvingUrl ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Resolve folder
+            </Button>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+            <input
+              type="text"
+              value={newFolderName}
+              onChange={(e) => setNewFolderName(sanitizeOneDriveFolderName(e.target.value))}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void createFolder();
+              }}
+              placeholder="Create subfolder, e.g. ClawScribe"
+              maxLength={120}
+              className="min-w-0 rounded-lg border border-border bg-background px-3 py-2 text-sm"
+              disabled={creatingFolder}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void createFolder()}
+              disabled={creatingFolder || !newFolderName.trim()}
+            >
+              {creatingFolder ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Create folder
+            </Button>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="flex cursor-pointer items-start justify-between gap-4 rounded-lg border border-border bg-muted p-3">
+              <span>
+                <span className="block text-sm font-medium text-foreground">Include PDF</span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  Upload a PDF copy beside the DOCX.
+                </span>
+              </span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={includePdf}
+                onClick={() => setIncludePdf((value) => !value)}
+                className={`relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+                  includePdf ? "bg-primary" : "bg-border"
+                }`}
+              >
+                <span
+                  className={`inline-block h-5 w-5 transform rounded-full bg-background shadow transition-transform ${
+                    includePdf ? "translate-x-5" : "translate-x-0.5"
+                  }`}
+                />
+              </button>
+            </label>
+
+            <label className="flex cursor-pointer items-start justify-between gap-4 rounded-lg border border-border bg-muted p-3">
+              <span>
+                <span className="block text-sm font-medium text-foreground">Create org links</span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  Ask Graph for view links scoped to your organization.
+                </span>
+              </span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={createOrgLink}
+                onClick={() => setCreateOrgLink((value) => !value)}
+                className={`relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+                  createOrgLink ? "bg-primary" : "bg-border"
+                }`}
+              >
+                <span
+                  className={`inline-block h-5 w-5 transform rounded-full bg-background shadow transition-transform ${
+                    createOrgLink ? "translate-x-5" : "translate-x-0.5"
+                  }`}
+                />
+              </button>
+            </label>
+          </div>
+
+          {(localError || ms.error) && (
+            <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{localError ?? ms.error}</span>
+            </div>
+          )}
+
+          {activeDestination && (
+            <div className="flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-300">
+              <CheckCircle2 className="h-4 w-4" />
+              <span>
+                File destination ready. Exports upload a DOCX{includePdf ? " and PDF" : ""}.
+              </span>
             </div>
           )}
         </div>
@@ -1964,11 +2244,12 @@ export function IntegrationsSettings() {
         <GroupHeader
           icon={<Microsoft365Icon />}
           title="Microsoft 365"
-          desc="Sign in with your work account to export meetings to OneNote, Planner, and To Do, and pull in calendar events."
+          desc="Sign in with your work account to export meetings to OneNote, OneDrive, Planner, and To Do, and pull in calendar events."
         />
         <div className="space-y-4">
           <MicrosoftSignInPanel />
           <OneNotePanel />
+          <OneDrivePanel />
           <PlannerPanel />
           <ToDoPanel />
           <CalendarPanel />

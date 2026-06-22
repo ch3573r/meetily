@@ -1,16 +1,16 @@
+use crate::database::repositories::setting::SettingsRepository;
 use crate::database::repositories::{
     meeting::MeetingsRepository, summary::SummaryProcessesRepository,
     transcript_chunk::TranscriptChunksRepository,
 };
 use crate::state::AppState;
 use crate::summary::language_detection::{detect_summary_language, SummaryLanguageDetection};
+use crate::summary::llm_client::{generate_summary, LLMProvider};
 use crate::summary::metadata::{
     read_detected_summary_language_from_metadata, read_summary_language_from_metadata,
     write_detected_summary_language_to_metadata, write_summary_language_to_metadata,
 };
 use crate::summary::service::SummaryService;
-use crate::database::repositories::setting::SettingsRepository;
-use crate::summary::llm_client::{generate_summary, LLMProvider};
 use log::{error as log_error, info as log_info, warn as log_warn};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -525,7 +525,9 @@ Action items:\n",
         // Codex runs through its app-server via a single raw-text turn.
         let codex = crate::summary::codex_provider::provider_from_app(&app)
             .map_err(|e| format!("Codex app-server unavailable: {e}"))?;
-        codex.run_text_prompt(&format!("{system}\n\n{user}")).await?
+        codex
+            .run_text_prompt(&format!("{system}\n\n{user}"))
+            .await?
     } else {
         // Everything else goes through the chat-completions client; resolve the
         // provider's key/endpoint the same way the summary does.
@@ -555,7 +557,7 @@ Action items:\n",
                     .map_err(|e| format!("Failed to load OpenClaw config: {e}"))?;
                 if !cfg.enabled || cfg.bearer_token.trim().is_empty() {
                     return Err(
-                        "OpenClaw handoff is disabled or missing a bearer token.".to_string(),
+                        "OpenClaw handoff is disabled or missing a bearer token.".to_string()
                     );
                 }
                 custom_openai_endpoint = Some(cfg.model_endpoint);

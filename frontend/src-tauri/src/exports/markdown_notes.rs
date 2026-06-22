@@ -125,7 +125,10 @@ pub fn markdown_to_xhtml(markdown: &str) -> String {
                 2 => "h3",
                 _ => "h4",
             };
-            out.push_str(&format!("<{tag}>{}</{tag}>", inline_xhtml(&escape_xml(text))));
+            out.push_str(&format!(
+                "<{tag}>{}</{tag}>",
+                inline_xhtml(&escape_xml(text))
+            ));
             continue;
         }
 
@@ -184,9 +187,7 @@ pub fn parse_action_items(markdown: &str) -> Vec<ExportActionItem> {
             continue;
         };
 
-        let due_date = ISO_DATE
-            .captures(&item_text)
-            .map(|c| c[1].to_string());
+        let due_date = ISO_DATE.captures(&item_text).map(|c| c[1].to_string());
 
         let owner = MENTION
             .captures(&item_text)
@@ -213,7 +214,9 @@ pub fn parse_action_items(markdown: &str) -> Vec<ExportActionItem> {
 
 fn extract_labeled_owner(text: &str) -> Option<String> {
     let lower = text.to_lowercase();
-    let idx = lower.find("owner:").or_else(|| lower.find("assigned to:"))?;
+    let idx = lower
+        .find("owner:")
+        .or_else(|| lower.find("assigned to:"))?;
     let after = &text[idx..];
     let value = after.split(':').nth(1)?.trim();
     // Stop at common separators.
@@ -235,7 +238,10 @@ fn clean_task_text(text: &str) -> String {
     // so they don't end up in the Planner task title.
     let without_checkbox = CHECKBOX.replace(text, "");
     let without_clock = CLOCK.replace_all(&without_checkbox, " ");
-    let mut t = without_clock.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut t = without_clock
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
     // Drop a trailing "(...)" or "[...]" annotation if it looks like metadata.
     // Besides owner/due hints we also strip transcript provenance like
     // "(timestamp: …; confidence: low)" that can leak into the summary text,
@@ -252,7 +258,10 @@ fn clean_task_text(text: &str) -> String {
             t.truncate(pos);
         }
     }
-    t.trim().trim_end_matches(['-', '—', ':']).trim().to_string()
+    t.trim()
+        .trim_end_matches(['-', '—', ':'])
+        .trim()
+        .to_string()
 }
 
 /// Whether the summary contains at least one parsed action item.

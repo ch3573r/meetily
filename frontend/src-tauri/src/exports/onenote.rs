@@ -102,7 +102,10 @@ fn build_notes_xhtml(meeting: &MeetingExport) -> String {
     match &meeting.summary_html {
         // Pre-rendered, already-sanitized XHTML (e.g. a full markdown summary).
         Some(html) if !html.trim().is_empty() => body.push_str(html),
-        _ => body.push_str(&format!("<p>{}</p>", escape_xml(&meeting.executive_summary))),
+        _ => body.push_str(&format!(
+            "<p>{}</p>",
+            escape_xml(&meeting.executive_summary)
+        )),
     }
 
     if !meeting.decisions.is_empty() {
@@ -186,7 +189,10 @@ fn wrap_page(escaped_title: &str, created: &str, body: &str) -> String {
     let meta = if created.is_empty() {
         String::new()
     } else {
-        format!("<meta name=\"created\" content=\"{}\" />", escape_xml(created))
+        format!(
+            "<meta name=\"created\" content=\"{}\" />",
+            escape_xml(created)
+        )
     };
     format!(
         "<!DOCTYPE html><html><head><title>{escaped_title}</title>{meta}</head><body>{body}</body></html>"
@@ -202,9 +208,11 @@ fn wrap_page(escaped_title: &str, created: &str, body: &str) -> String {
 /// it is sent to Graph.
 pub fn contains_active_content(xhtml: &str) -> bool {
     let lower = xhtml.to_ascii_lowercase();
-    ["<script", "<form", "<iframe", "<object", "<embed", "<applet", "<base", "<link"]
-        .iter()
-        .any(|needle| lower.contains(needle))
+    [
+        "<script", "<form", "<iframe", "<object", "<embed", "<applet", "<base", "<link",
+    ]
+    .iter()
+    .any(|needle| lower.contains(needle))
 }
 
 #[cfg(test)]
@@ -268,15 +276,19 @@ mod tests {
     #[test]
     fn transcript_splits_under_budget() {
         // Build a transcript far larger than a tiny budget to force splitting.
-        let lines: Vec<String> = (0..2000).map(|i| format!("speaker{i}: hello there")).collect();
+        let lines: Vec<String> = (0..2000)
+            .map(|i| format!("speaker{i}: hello there"))
+            .collect();
         let transcript = lines.join("\n");
         let budget = 8 * 1024; // small budget to force multiple pages
         let pages = build_pages(&sample(Some(transcript)), budget);
 
         // 1 notes page + N transcript pages.
         assert!(pages.len() >= 3, "expected splitting, got {}", pages.len());
-        let transcript_pages: Vec<_> =
-            pages.iter().filter(|p| p.kind == OneNotePageKind::Transcript).collect();
+        let transcript_pages: Vec<_> = pages
+            .iter()
+            .filter(|p| p.kind == OneNotePageKind::Transcript)
+            .collect();
         assert!(transcript_pages.len() >= 2);
         for (i, p) in transcript_pages.iter().enumerate() {
             assert_eq!(p.index, i);
@@ -288,8 +300,10 @@ mod tests {
     #[test]
     fn single_transcript_page_when_small() {
         let pages = build_pages(&sample(Some("one line".into())), DEFAULT_PAGE_BUDGET_BYTES);
-        let transcript_pages: Vec<_> =
-            pages.iter().filter(|p| p.kind == OneNotePageKind::Transcript).collect();
+        let transcript_pages: Vec<_> = pages
+            .iter()
+            .filter(|p| p.kind == OneNotePageKind::Transcript)
+            .collect();
         assert_eq!(transcript_pages.len(), 1);
     }
 
@@ -307,7 +321,11 @@ mod tests {
         assert!(contains_active_content("<object data=...>"));
         // Plain text and escaped markup are inert.
         assert!(!contains_active_content("<p>plain text</p>"));
-        assert!(!contains_active_content("the speaker said onload=now and javascript:void"));
-        assert!(!contains_active_content("&lt;script&gt;alert(1)&lt;/script&gt;"));
+        assert!(!contains_active_content(
+            "the speaker said onload=now and javascript:void"
+        ));
+        assert!(!contains_active_content(
+            "&lt;script&gt;alert(1)&lt;/script&gt;"
+        ));
     }
 }

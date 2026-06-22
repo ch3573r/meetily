@@ -102,10 +102,18 @@ fn to_due_date_time(date: &str) -> Option<String> {
 
 /// Build the description (task notes) carrying context the single-line title
 /// can't: the source meeting, the owner hint, and a short meeting summary.
-pub fn build_task_details_description(meeting: &MeetingExport, action: &ExportActionItem) -> String {
+pub fn build_task_details_description(
+    meeting: &MeetingExport,
+    action: &ExportActionItem,
+) -> String {
     let mut lines: Vec<String> = Vec::new();
     // Reviewed/AI-polished notes take the place of the default "Action item: …".
-    match action.details.as_deref().map(str::trim).filter(|d| !d.is_empty()) {
+    match action
+        .details
+        .as_deref()
+        .map(str::trim)
+        .filter(|d| !d.is_empty())
+    {
         Some(details) => lines.push(details.to_string()),
         None => lines.push(format!("Action item: {}", normalize_title(&action.task))),
     }
@@ -116,7 +124,9 @@ pub fn build_task_details_description(meeting: &MeetingExport, action: &ExportAc
         lines.push(format!("Due: {due}"));
     }
     let meeting_line = match meeting.created_at.as_deref() {
-        Some(when) if !when.trim().is_empty() => format!("From meeting: {} ({})", meeting.title, when),
+        Some(when) if !when.trim().is_empty() => {
+            format!("From meeting: {} ({})", meeting.title, when)
+        }
         _ => format!("From meeting: {}", meeting.title),
     };
     lines.push(meeting_line);
