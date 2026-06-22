@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.5.13
+
+- Added local speaker diarization for saved transcripts using `sherpa-onnx`
+  pyannote segmentation, 3D-Speaker embeddings, and fast clustering.
+- Added a Speakers workflow for reviewing and applying speaker labels across
+  transcript rows before copying transcripts or regenerating summaries.
+- Downloaded diarization models on first use instead of bundling them in the
+  installer, keeping the Windows package size controlled.
+- Bundled the required `sherpa-onnx` Windows runtime DLLs during release builds
+  so installed clients can run diarization outside the development environment.
+- Preserved speaker labels through import, retranscription, reload, recovery,
+  copied transcripts, and OpenClaw handoff artifacts.
+- Kept the Windows release artifact on the Vulkan + DirectML build path while
+  using CPU execution for the current `sherpa-onnx` diarization backend.
+- `latest.json` advertises runtime version `0.5.13`, so installed `0.5.12`
+  clients can discover this update.
+
 ## 0.5.12
 
 - Added Microsoft To Do export for reviewed personal action items, including
