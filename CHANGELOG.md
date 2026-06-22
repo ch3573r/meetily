@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.15
+
+- Improved speaker diarization mapping so a single transcript row can be split
+  when speaker turns change inside it, instead of assigning the whole row to the
+  dominant speaker.
+- Preserved transcript text while splitting speaker turns by slicing contiguous
+  word ranges and keeping recording-relative timing on the generated rows.
+- Made the Source attribution (Me / Participants) beta switch control the saved
+  meeting screen as well as live recording: when disabled, speaker labels,
+  label-edit controls, and the Speakers action are hidden.
+- Kept stored speaker labels intact when Source attribution is off, so
+  re-enabling the switch restores the review state without losing metadata.
+- Matched transcript copy and summary-generation input to the Source attribution
+  setting so hidden labels are not still injected into exported or regenerated
+  text.
+- `latest.json` advertises runtime version `0.5.15`, so installed `0.5.14`
+  clients can discover this update.
+
 ## 0.5.14
 
 - Fixed Meeting details toolbar wrapping at narrower desktop widths so action
