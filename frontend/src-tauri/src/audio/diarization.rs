@@ -26,8 +26,11 @@ use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 
 const FLOAT_TIE_EPSILON: f64 = 1e-9;
-const MIN_SPLIT_SPEAKER_OVERLAP_SECONDS: f64 = 0.25;
+const MIN_SPLIT_SPEAKER_OVERLAP_SECONDS: f64 = 1.0;
+const MIN_SPLIT_PART_SECONDS: f64 = 1.25;
 const SAME_SPEAKER_MERGE_GAP_SECONDS: f64 = 0.25;
+const SAME_SPEAKER_TRANSCRIPT_MERGE_GAP_SECONDS: f64 = 1.0;
+const SHORT_TURN_SMOOTHING_SECONDS: f64 = 0.9;
 const SPLIT_BOUNDARY_SEARCH_WORDS: usize = 8;
 const DIARIZATION_SAMPLE_RATE: i32 = 16_000;
 const DEFAULT_CLUSTERING_THRESHOLD: f32 = 0.5;
@@ -294,7 +297,7 @@ pub fn map_diarization_to_transcript_segments(
     diarization_turns: &[DiarizationTurn],
     options: DiarizationMappingOptions,
 ) -> Vec<TranscriptSegment> {
-    transcript_segments
+    let mapped_segments: Vec<TranscriptSegment> = transcript_segments
         .iter()
         .flat_map(|segment| {
             if should_preserve_existing_speaker(segment, options.existing_speaker_policy) {
@@ -303,7 +306,9 @@ pub fn map_diarization_to_transcript_segments(
 
             split_or_label_transcript_segment(segment, diarization_turns, options.mode)
         })
-        .collect()
+        .collect();
+
+    merge_adjacent_transcript_segments_by_speaker(mapped_segments)
 }
 
 fn split_or_label_transcript_segment(
@@ -470,6 +475,12 @@ fn split_transcript_segment_by_speaker_spans(
     if spans.len() <= 1 || !is_valid_interval(segment_start, segment_end) {
         return vec![segment.clone()];
     }
+    if spans.iter().any(|span| {
+        span.end_time - span.start_time < MIN_SPLIT_PART_SECONDS
+            || !is_valid_interval(span.start_time, span.end_time)
+    }) {
+        return vec![segment.clone()];
+    }
 
     let boundaries: Vec<f64> = spans
         .iter()
@@ -512,6 +523,67 @@ fn split_transcript_segment_by_speaker_spans(
             }
         })
         .collect()
+}
+
+fn merge_adjacent_transcript_segments_by_speaker(
+    segments: Vec<TranscriptSegment>,
+) -> Vec<TranscriptSegment> {
+    let mut merged: Vec<TranscriptSegment> = Vec::with_capacity(segments.len());
+
+    for segment in segments {
+        if let Some(previous) = merged.last_mut() {
+            if can_merge_transcript_segments(previous, &segment) {
+                previous.text = join_transcript_text(&previous.text, &segment.text);
+                if let Some(end_time) = segment.audio_end_time {
+                    previous.audio_end_time = Some(end_time);
+                }
+                if let (Some(start), Some(end)) =
+                    (previous.audio_start_time, previous.audio_end_time)
+                {
+                    previous.duration = Some((end - start).max(0.0));
+                }
+                continue;
+            }
+        }
+
+        merged.push(segment);
+    }
+
+    merged
+}
+
+fn can_merge_transcript_segments(left: &TranscriptSegment, right: &TranscriptSegment) -> bool {
+    let Some(left_speaker) = normalized_speaker_label(left.speaker.as_deref()) else {
+        return false;
+    };
+    if Some(left_speaker) != normalized_speaker_label(right.speaker.as_deref()) {
+        return false;
+    }
+
+    let (Some(left_end), Some(right_start)) = (left.audio_end_time, right.audio_start_time) else {
+        return false;
+    };
+
+    let gap = right_start - left_end;
+    gap >= -FLOAT_TIE_EPSILON && gap <= SAME_SPEAKER_TRANSCRIPT_MERGE_GAP_SECONDS
+}
+
+fn normalized_speaker_label(speaker: Option<&str>) -> Option<String> {
+    let label = speaker?.split_whitespace().collect::<Vec<_>>().join(" ");
+    (!label.is_empty()).then_some(label)
+}
+
+fn join_transcript_text(left: &str, right: &str) -> String {
+    let left = left.trim();
+    let right = right.trim();
+    if left.is_empty() {
+        return right.to_string();
+    }
+    if right.is_empty() {
+        return left.to_string();
+    }
+
+    format!("{left} {right}")
 }
 
 fn split_text_by_time_boundaries(
@@ -767,6 +839,226 @@ fn compact_diarization_speakers(turns: Vec<DiarizationTurn>) -> Vec<DiarizationT
         .collect()
 }
 
+fn prepare_diarization_turns_for_mapping(
+    sample_count: usize,
+    turns: &[DiarizationTurn],
+    explicit_num_speakers: Option<i32>,
+) -> Vec<DiarizationTurn> {
+    let mut prepared = turns
+        .iter()
+        .filter(|turn| is_valid_interval(turn.start_time, turn.end_time))
+        .cloned()
+        .collect::<Vec<_>>();
+    prepared.sort_by(|a, b| {
+        a.start_time
+            .partial_cmp(&b.start_time)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| {
+                a.end_time
+                    .partial_cmp(&b.end_time)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .then_with(|| a.speaker.cmp(&b.speaker))
+    });
+
+    if explicit_num_speakers.is_none() {
+        if let Some(stable_speakers) = stable_auto_speakers_for_mapping(sample_count, &prepared) {
+            prepared = reassign_unstable_speakers(prepared, &stable_speakers);
+        }
+    }
+
+    prepared = smooth_short_diarization_turns(prepared);
+    compact_diarization_speakers(collapse_adjacent_diarization_turns(prepared))
+}
+
+fn stable_auto_speakers_for_mapping(
+    sample_count: usize,
+    turns: &[DiarizationTurn],
+) -> Option<BTreeSet<usize>> {
+    let detected_speakers = speaker_count_from_turns(turns);
+    if detected_speakers <= 1 {
+        return None;
+    }
+
+    let durations = speaker_durations(turns);
+    let longest_speaker = durations.values().copied().fold(0.0, f64::max);
+    if longest_speaker <= 0.0 {
+        return None;
+    }
+
+    let is_short_clip =
+        audio_duration_minutes(sample_count) <= SHORT_CLIP_OVERCLUSTER_RETRY_MAX_MINUTES;
+    let duration_threshold =
+        if is_short_clip && detected_speakers > SHORT_CLIP_OVERCLUSTERED_SPEAKERS {
+            (longest_speaker * SHORT_CLIP_RETRY_DOMINANT_SHARE).max(SHORT_CLIP_RETRY_MIN_SECONDS)
+        } else {
+            (longest_speaker * 0.02).max(2.0)
+        };
+
+    let mut stable: Vec<(usize, f64)> = durations
+        .iter()
+        .filter_map(|(speaker, duration)| {
+            (*duration >= duration_threshold).then_some((*speaker, *duration))
+        })
+        .collect();
+
+    if stable.is_empty() {
+        stable = durations
+            .iter()
+            .map(|(speaker, duration)| (*speaker, *duration))
+            .collect();
+        stable.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.0.cmp(&b.0))
+        });
+        stable.truncate(1);
+    } else if is_short_clip && stable.len() > SHORT_CLIP_OVERCLUSTERED_SPEAKERS {
+        stable.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.0.cmp(&b.0))
+        });
+        stable.truncate(SHORT_CLIP_OVERCLUSTERED_SPEAKERS);
+    }
+
+    let stable_speakers = stable
+        .into_iter()
+        .map(|(speaker, _)| speaker)
+        .collect::<BTreeSet<_>>();
+
+    (stable_speakers.len() < detected_speakers).then_some(stable_speakers)
+}
+
+fn speaker_durations(turns: &[DiarizationTurn]) -> BTreeMap<usize, f64> {
+    let mut durations = BTreeMap::<usize, f64>::new();
+    for turn in turns {
+        let duration = (turn.end_time - turn.start_time).max(0.0);
+        if duration > 0.0 {
+            *durations.entry(turn.speaker).or_default() += duration;
+        }
+    }
+    durations
+}
+
+fn reassign_unstable_speakers(
+    mut turns: Vec<DiarizationTurn>,
+    stable_speakers: &BTreeSet<usize>,
+) -> Vec<DiarizationTurn> {
+    if stable_speakers.is_empty() {
+        return turns;
+    }
+
+    let fallback_speaker = dominant_stable_speaker(&turns, stable_speakers);
+    for index in 0..turns.len() {
+        if stable_speakers.contains(&turns[index].speaker) {
+            continue;
+        }
+
+        turns[index].speaker = nearest_stable_speaker(&turns, stable_speakers, index)
+            .or(fallback_speaker)
+            .unwrap_or(turns[index].speaker);
+    }
+
+    turns
+}
+
+fn dominant_stable_speaker(
+    turns: &[DiarizationTurn],
+    stable_speakers: &BTreeSet<usize>,
+) -> Option<usize> {
+    speaker_durations(turns)
+        .into_iter()
+        .filter(|(speaker, _)| stable_speakers.contains(speaker))
+        .max_by(|left, right| {
+            left.1
+                .partial_cmp(&right.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| right.0.cmp(&left.0))
+        })
+        .map(|(speaker, _)| speaker)
+}
+
+fn nearest_stable_speaker(
+    turns: &[DiarizationTurn],
+    stable_speakers: &BTreeSet<usize>,
+    index: usize,
+) -> Option<usize> {
+    let previous = turns[..index]
+        .iter()
+        .rev()
+        .find(|turn| stable_speakers.contains(&turn.speaker));
+    let next = turns[index + 1..]
+        .iter()
+        .find(|turn| stable_speakers.contains(&turn.speaker));
+
+    match (previous, next) {
+        (Some(previous), Some(next)) if previous.speaker == next.speaker => Some(previous.speaker),
+        (Some(previous), Some(next)) => {
+            let previous_gap = (turns[index].start_time - previous.end_time).max(0.0);
+            let next_gap = (next.start_time - turns[index].end_time).max(0.0);
+            if previous_gap <= next_gap {
+                Some(previous.speaker)
+            } else {
+                Some(next.speaker)
+            }
+        }
+        (Some(previous), None) => Some(previous.speaker),
+        (None, Some(next)) => Some(next.speaker),
+        (None, None) => None,
+    }
+}
+
+fn smooth_short_diarization_turns(mut turns: Vec<DiarizationTurn>) -> Vec<DiarizationTurn> {
+    if turns.len() < 3 {
+        return turns;
+    }
+
+    for index in 1..turns.len() - 1 {
+        let duration = turns[index].end_time - turns[index].start_time;
+        if duration >= SHORT_TURN_SMOOTHING_SECONDS {
+            continue;
+        }
+
+        let previous = turns[index - 1].speaker;
+        let next = turns[index + 1].speaker;
+        if previous == next {
+            turns[index].speaker = previous;
+            continue;
+        }
+
+        let previous_duration = turns[index - 1].end_time - turns[index - 1].start_time;
+        let next_duration = turns[index + 1].end_time - turns[index + 1].start_time;
+        turns[index].speaker = if previous_duration >= next_duration {
+            previous
+        } else {
+            next
+        };
+    }
+
+    turns
+}
+
+fn collapse_adjacent_diarization_turns(turns: Vec<DiarizationTurn>) -> Vec<DiarizationTurn> {
+    let mut collapsed: Vec<DiarizationTurn> = Vec::new();
+    for turn in turns {
+        let Some(last) = collapsed.last_mut() else {
+            collapsed.push(turn);
+            continue;
+        };
+
+        if last.speaker == turn.speaker
+            && turn.start_time <= last.end_time + SAME_SPEAKER_MERGE_GAP_SECONDS
+        {
+            last.end_time = last.end_time.max(turn.end_time);
+        } else {
+            collapsed.push(turn);
+        }
+    }
+
+    collapsed
+}
+
 fn audio_duration_minutes(sample_count: usize) -> f64 {
     sample_count as f64 / f64::from(DIARIZATION_SAMPLE_RATE) / 60.0
 }
@@ -795,13 +1087,7 @@ fn short_clip_retry_speaker_count(
         return None;
     }
 
-    let mut durations = BTreeMap::<usize, f64>::new();
-    for turn in turns {
-        let duration = (turn.end_time - turn.start_time).max(0.0);
-        if duration > 0.0 {
-            *durations.entry(turn.speaker).or_default() += duration;
-        }
-    }
+    let durations = speaker_durations(turns);
 
     let longest_speaker = durations.values().copied().fold(0.0, f64::max);
     if longest_speaker <= 0.0 {
@@ -1280,6 +1566,17 @@ async fn run_speaker_diarization_for_meeting<R: Runtime>(
         return Err(anyhow!(
             "No speaker turns were detected in this meeting audio"
         ));
+    }
+    let detected_speaker_count = speaker_count_from_turns(&turns);
+    turns = prepare_diarization_turns_for_mapping(sample_count, &turns, explicit_num_speakers);
+    let mapped_speaker_count = speaker_count_from_turns(&turns);
+    if mapped_speaker_count < detected_speaker_count {
+        log::info!(
+            "speaker_diarization_smoothed detected_speakers={} mapped_speakers={} turns={}",
+            detected_speaker_count,
+            mapped_speaker_count,
+            turns.len()
+        );
     }
 
     emit_progress(
@@ -2978,6 +3275,40 @@ mod tests {
     }
 
     #[test]
+    fn mapping_preparation_folds_noisy_short_clip_speakers_into_stable_speakers() {
+        let turns = vec![
+            turn(0.0, 13.0, 0),
+            turn(13.0, 30.0, 1),
+            turn(30.0, 35.0, 2),
+            turn(35.0, 36.0, 1),
+            turn(36.0, 41.0, 2),
+            turn(41.0, 42.0, 3),
+            turn(42.0, 48.0, 1),
+            turn(48.0, 55.0, 4),
+            turn(55.0, 57.0, 5),
+            turn(57.0, 61.0, 6),
+        ];
+
+        let prepared =
+            prepare_diarization_turns_for_mapping(sample_count_for_minutes(8), &turns, None);
+
+        assert!(speaker_count_from_turns(&prepared) <= SHORT_CLIP_OVERCLUSTERED_SPEAKERS);
+        assert!(prepared
+            .iter()
+            .all(|turn| turn.speaker < SHORT_CLIP_OVERCLUSTERED_SPEAKERS));
+    }
+
+    #[test]
+    fn smoothing_removes_subsecond_turn_between_same_speaker() {
+        let turns = vec![turn(0.0, 4.0, 0), turn(4.0, 4.5, 1), turn(4.5, 8.0, 0)];
+
+        let prepared =
+            prepare_diarization_turns_for_mapping(sample_count_for_minutes(2), &turns, Some(2));
+
+        assert_eq!(prepared, vec![turn(0.0, 8.0, 0)]);
+    }
+
+    #[test]
     fn directml_probe_uses_short_audio_slice() {
         let samples = vec![0.0; DIARIZATION_SAMPLE_RATE as usize * (DIRECTML_PROBE_SECONDS + 3)];
         let probe = diarization_probe_samples(&samples);
@@ -3103,6 +3434,83 @@ mod tests {
             "Just like the Patriot Act until you listen to people who explain how nonprofits become a fucking scam."
         );
         assert_eq!(mapped[0].speaker.as_deref(), Some("Speaker 1"));
+    }
+
+    #[test]
+    fn does_not_split_for_tiny_speaker_span() {
+        let transcripts = vec![transcript_with_text(
+            "a",
+            "The nonprofit mostly supports the nonprofit itself. It pays for overhead and staff.",
+            Some(0.0),
+            Some(8.0),
+        )];
+        let turns = vec![turn(0.0, 3.8, 0), turn(3.8, 4.3, 1), turn(4.3, 8.0, 0)];
+
+        let mapped = map_diarization_to_transcript_segments(
+            &transcripts,
+            &turns,
+            DiarizationMappingOptions {
+                existing_speaker_policy: ExistingSpeakerPolicy::Overwrite,
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(mapped.len(), 1);
+        assert_eq!(
+            mapped[0].text,
+            "The nonprofit mostly supports the nonprofit itself. It pays for overhead and staff."
+        );
+        assert_eq!(mapped[0].speaker.as_deref(), Some("Speaker 1"));
+    }
+
+    #[test]
+    fn merges_adjacent_rows_with_same_speaker() {
+        let transcripts = vec![
+            transcript_with_text("a", "It is such an incentive to", Some(0.0), Some(13.0)),
+            transcript_with_text(
+                "b",
+                "do things that people do not want.",
+                Some(13.0),
+                Some(15.0),
+            ),
+        ];
+        let turns = vec![turn(0.0, 15.0, 0)];
+
+        let mapped = map_diarization_to_transcript_segments(
+            &transcripts,
+            &turns,
+            DiarizationMappingOptions {
+                existing_speaker_policy: ExistingSpeakerPolicy::Overwrite,
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(mapped.len(), 1);
+        assert_eq!(
+            mapped[0].text,
+            "It is such an incentive to do things that people do not want."
+        );
+        assert_eq!(mapped[0].audio_start_time, Some(0.0));
+        assert_eq!(mapped[0].audio_end_time, Some(15.0));
+        assert_eq!(mapped[0].duration, Some(15.0));
+    }
+
+    #[test]
+    fn does_not_merge_adjacent_unlabeled_rows() {
+        let transcripts = vec![
+            transcript_with_text("a", "First unlabeled row.", Some(0.0), Some(1.0)),
+            transcript_with_text("b", "Second unlabeled row.", Some(1.0), Some(2.0)),
+        ];
+
+        let mapped = map_diarization_to_transcript_segments(
+            &transcripts,
+            &[],
+            DiarizationMappingOptions::default(),
+        );
+
+        assert_eq!(mapped.len(), 2);
+        assert_eq!(mapped[0].speaker, None);
+        assert_eq!(mapped[1].speaker, None);
     }
 
     #[test]
