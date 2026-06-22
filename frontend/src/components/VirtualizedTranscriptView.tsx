@@ -40,6 +40,10 @@ export interface VirtualizedTranscriptViewProps {
     disableAutoScroll?: boolean;
     /** Show saved speaker/source labels and editing controls. */
     showSpeakerLabels?: boolean;
+    /** Current playback position, in recording-relative seconds. */
+    activeTime?: number;
+    /** Seek recording playback to a transcript timestamp. */
+    onSeekToTime?: (seconds: number) => void;
 
     // Pagination props (infinite scroll)
     hasMore?: boolean;
@@ -105,6 +109,7 @@ function collectSpeakerOptions(segments: TranscriptSegmentData[]): string[] {
 const TranscriptSegment = memo(function TranscriptSegment({
     id,
     timestamp,
+    endTime,
     text,
     confidence,
     speaker,
@@ -114,9 +119,12 @@ const TranscriptSegment = memo(function TranscriptSegment({
     onSpeakerChange,
     onApplySpeakerToMatching,
     speakerOptions,
+    activeTime,
+    onSeekToTime,
 }: {
     id: string;
     timestamp: number;
+    endTime?: number;
     text: string;
     confidence?: number;
     speaker?: string;
@@ -126,6 +134,8 @@ const TranscriptSegment = memo(function TranscriptSegment({
     onSpeakerChange?: (segmentId: string, speaker: string | null) => Promise<void> | void;
     onApplySpeakerToMatching?: (fromSpeaker: string | null | undefined, speaker: string | null) => Promise<number> | number | void;
     speakerOptions: string[];
+    activeTime?: number;
+    onSeekToTime?: (seconds: number) => void;
 }) {
     const displayText = cleanStopWords(text) || (text.trim() === '' ? '[Silence]' : text);
     // "Me" = your microphone, "Participants" = system audio. Color-code so the
@@ -140,6 +150,17 @@ const TranscriptSegment = memo(function TranscriptSegment({
         (label) => label !== currentSpeaker && !SPEAKER_PRESET_LABELS.includes(label)
     );
     const replacementVerb = canReplaceMatching ? "Replace" : "Set";
+    const canSeek = Boolean(onSeekToTime && Number.isFinite(timestamp));
+    const isActive =
+        activeTime !== undefined &&
+        activeTime >= timestamp &&
+        activeTime < (endTime ?? timestamp + 0.75);
+
+    const seekToSegment = () => {
+        if (canSeek) {
+            onSeekToTime?.(timestamp);
+        }
+    };
 
     const saveSpeaker = async (nextSpeaker: string | null) => {
         if (!onSpeakerChange) return;
@@ -187,7 +208,21 @@ const TranscriptSegment = memo(function TranscriptSegment({
             : "border border-dashed border-border bg-transparent text-muted-foreground hover:bg-muted";
 
     return (
-        <div id={`segment-${id}`} className="mb-4">
+        <div
+            id={`segment-${id}`}
+            role={canSeek ? "button" : undefined}
+            tabIndex={canSeek ? 0 : undefined}
+            onClick={seekToSegment}
+            onKeyDown={(event) => {
+                if (!canSeek) return;
+                if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    seekToSegment();
+                }
+            }}
+            className={`mb-4 rounded-[4px] px-1 py-0.5 outline-none transition ${canSeek ? "cursor-pointer hover:bg-muted/35 focus:ring-2 focus:ring-ring" : ""} ${isActive ? "bg-accent/10 ring-1 ring-accent/30" : ""}`}
+            aria-label={canSeek ? `Seek transcript to ${formatRecordingTime(timestamp)}` : undefined}
+        >
             <div className="flex items-start gap-3">
                 <Tooltip>
                     <TooltipTrigger>
@@ -208,6 +243,8 @@ const TranscriptSegment = memo(function TranscriptSegment({
                                 <button
                                     type="button"
                                     disabled={isSaving}
+                                    onClick={(event) => event.stopPropagation()}
+                                    onKeyDown={(event) => event.stopPropagation()}
                                     className={`mb-0.5 inline-flex max-w-[11rem] items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide transition disabled:opacity-60 ${speakerClass}`}
                                 >
                                     <span className="truncate">{currentSpeaker ?? "Label"}</span>
@@ -346,6 +383,8 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
     showConfidence = true,
     disableAutoScroll = false,
     showSpeakerLabels = true,
+    activeTime,
+    onSeekToTime,
     hasMore = false,
     isLoadingMore = false,
     totalCount = 0,
@@ -522,6 +561,7 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
                                     <TranscriptSegment
                                         id={segment.id}
                                         timestamp={segment.timestamp}
+                                        endTime={segment.endTime}
                                         text={getDisplayText(segment)}
                                         confidence={segment.confidence}
                                         speaker={segment.speaker}
@@ -531,6 +571,8 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
                                         onSpeakerChange={showSpeakerLabels ? onSpeakerChange : undefined}
                                         onApplySpeakerToMatching={showSpeakerLabels ? onApplySpeakerToMatching : undefined}
                                         speakerOptions={speakerOptions}
+                                        activeTime={activeTime}
+                                        onSeekToTime={onSeekToTime}
                                     />
                                 </div>
                             );
@@ -583,6 +625,7 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
                                     <TranscriptSegment
                                         id={segment.id}
                                         timestamp={segment.timestamp}
+                                        endTime={segment.endTime}
                                         text={getDisplayText(segment)}
                                         confidence={segment.confidence}
                                         speaker={segment.speaker}
@@ -592,6 +635,8 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
                                         onSpeakerChange={showSpeakerLabels ? onSpeakerChange : undefined}
                                         onApplySpeakerToMatching={showSpeakerLabels ? onApplySpeakerToMatching : undefined}
                                         speakerOptions={speakerOptions}
+                                        activeTime={activeTime}
+                                        onSeekToTime={onSeekToTime}
                                     />
                                 </motion.div>
                             );

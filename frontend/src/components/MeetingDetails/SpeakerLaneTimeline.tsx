@@ -1,13 +1,19 @@
 "use client";
 
 import { useMemo } from "react";
-import { Activity } from "lucide-react";
+import { Activity, Pause, Play } from "lucide-react";
 import { TranscriptSegmentData } from "@/types";
 
 interface SpeakerLaneTimelineProps {
   segments: TranscriptSegmentData[];
   totalCount?: number;
   loadedCount?: number;
+  currentTime?: number;
+  durationSeconds?: number;
+  isPlaying?: boolean;
+  isAudioReady?: boolean;
+  onPlayPause?: () => void;
+  onSeek?: (seconds: number) => void;
 }
 
 interface TimelineSegment {
@@ -86,6 +92,12 @@ export function SpeakerLaneTimeline({
   segments,
   totalCount,
   loadedCount,
+  currentTime = 0,
+  durationSeconds,
+  isPlaying = false,
+  isAudioReady = false,
+  onPlayPause,
+  onSeek,
 }: SpeakerLaneTimelineProps) {
   const { items, speakers, duration } = useMemo(() => buildTimeline(segments), [segments]);
 
@@ -93,6 +105,9 @@ export function SpeakerLaneTimeline({
     return null;
   }
 
+  const timelineDuration = Math.max(duration, durationSeconds ?? 0);
+  const canSeek = Boolean(onSeek && timelineDuration > 0);
+  const playheadLeft = Math.max(0, Math.min(100, (currentTime / timelineDuration) * 100));
   const visibleCount = loadedCount ?? segments.length;
   const countLabel = totalCount && totalCount > visibleCount
     ? `${visibleCount}/${totalCount}`
@@ -105,9 +120,25 @@ export function SpeakerLaneTimeline({
           <Activity className="h-4 w-4 shrink-0 text-accent" aria-hidden="true" />
           <h2 className="truncate text-sm font-semibold text-foreground">Speaker timeline</h2>
         </div>
-        <div className="flex shrink-0 items-center gap-3 font-mono text-[11px] text-muted-foreground">
-          <span>{formatDuration(duration)}</span>
-          <span>{countLabel} segments</span>
+        <div className="flex shrink-0 items-center gap-3">
+          {isAudioReady && onPlayPause && (
+            <button
+              type="button"
+              onClick={onPlayPause}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-[4px] border border-border bg-background text-foreground hover:bg-muted focus:outline-none focus:ring-2 focus:ring-ring"
+              aria-label={isPlaying ? "Pause recording playback" : "Play recording"}
+            >
+              {isPlaying ? (
+                <Pause className="h-3.5 w-3.5" aria-hidden="true" />
+              ) : (
+                <Play className="h-3.5 w-3.5" aria-hidden="true" />
+              )}
+            </button>
+          )}
+          <div className="flex items-center gap-3 font-mono text-[11px] text-muted-foreground">
+            <span>{formatDuration(timelineDuration)}</span>
+            <span>{countLabel} segments</span>
+          </div>
         </div>
       </div>
 
@@ -121,10 +152,21 @@ export function SpeakerLaneTimeline({
               <div className="min-w-0 truncate font-mono text-[11px] font-medium uppercase tracking-normal text-muted-foreground">
                 {speaker}
               </div>
-              <div className="relative h-5 overflow-hidden rounded-[3px] bg-muted/45">
+              <button
+                type="button"
+                disabled={!canSeek}
+                className={`relative h-5 w-full overflow-hidden rounded-[3px] bg-muted/45 text-left focus:outline-none focus:ring-2 focus:ring-ring ${canSeek ? "cursor-pointer hover:bg-muted/70" : "cursor-default"}`}
+                onClick={(event) => {
+                  if (!onSeek) return;
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  const ratio = (event.clientX - rect.left) / rect.width;
+                  onSeek(Math.max(0, Math.min(timelineDuration, ratio * timelineDuration)));
+                }}
+                aria-label={`Seek ${speaker} timeline`}
+              >
                 {speakerItems.map((item) => {
-                  const left = Math.max(0, Math.min(100, (item.start / duration) * 100));
-                  const width = Math.max(0.3, Math.min(100 - left, ((item.end - item.start) / duration) * 100));
+                  const left = Math.max(0, Math.min(100, (item.start / timelineDuration) * 100));
+                  const width = Math.max(0.3, Math.min(100 - left, ((item.end - item.start) / timelineDuration) * 100));
                   const wordCount = Math.max(1, item.text.trim().split(/\s+/).filter(Boolean).length);
                   const opacity = Math.min(0.95, 0.48 + wordCount / 80);
 
@@ -151,7 +193,14 @@ export function SpeakerLaneTimeline({
                     </div>
                   );
                 })}
-              </div>
+                {canSeek && (
+                  <span
+                    className="pointer-events-none absolute top-0 h-full w-px bg-foreground/80 shadow-[0_0_0_1px_rgba(255,255,255,0.22)]"
+                    style={{ left: `${playheadLeft}%` }}
+                    aria-hidden="true"
+                  />
+                )}
+              </button>
             </div>
           );
         })}

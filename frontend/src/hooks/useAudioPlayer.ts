@@ -12,6 +12,7 @@ export const useAudioPlayer = (audioPath: string | null) => {
   const audioBufferRef = useRef<AudioBuffer | null>(null);
   const rafRef = useRef<number>();
   const seekTimeRef = useRef<number>(0);
+  const manualStopRef = useRef(false);
 
   const initAudioContext = async () => {
     try {
@@ -142,6 +143,7 @@ export const useAudioPlayer = (audioPath: string | null) => {
     }
     if (sourceRef.current) {
       try {
+        manualStopRef.current = true;
         sourceRef.current.stop();
         sourceRef.current.disconnect();
       } catch (e) {
@@ -190,9 +192,14 @@ export const useAudioPlayer = (audioPath: string | null) => {
       
       // Setup ended callback
       sourceRef.current.onended = () => {
+        if (manualStopRef.current) {
+          manualStopRef.current = false;
+          return;
+        }
         console.log('Playback ended naturally');
         stopPlayback();
         setCurrentTime(0);
+        seekTimeRef.current = 0;
       };
       
       // Start playback from the seek time

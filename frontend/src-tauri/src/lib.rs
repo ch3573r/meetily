@@ -234,6 +234,55 @@ fn read_audio_file(file_path: String) -> Result<Vec<u8>, String> {
 }
 
 #[tauri::command]
+fn resolve_meeting_audio_file(meeting_folder: String) -> Result<Option<String>, String> {
+    let folder = std::path::PathBuf::from(meeting_folder);
+    if !folder.is_dir() {
+        return Ok(None);
+    }
+
+    let candidates = [
+        "audio.mp4",
+        "audio.m4a",
+        "audio.wav",
+        "audio.mp3",
+        "audio.flac",
+        "audio.ogg",
+        "recording.mp4",
+        "audio.mkv",
+        "audio.webm",
+        "audio.wma",
+    ];
+
+    for candidate in candidates {
+        let path = folder.join(candidate);
+        if path.is_file() {
+            return Ok(Some(path.to_string_lossy().to_string()));
+        }
+    }
+
+    for entry in std::fs::read_dir(&folder)
+        .map_err(|e| format!("Failed to scan meeting folder {}: {}", folder.display(), e))?
+    {
+        let path = entry
+            .map_err(|e| format!("Failed to read meeting folder entry: {}", e))?
+            .path();
+        if !path.is_file() {
+            continue;
+        }
+
+        let Some(extension) = path.extension().and_then(|value| value.to_str()) else {
+            continue;
+        };
+
+        if audio::constants::AUDIO_EXTENSIONS.contains(&extension.to_lowercase().as_str()) {
+            return Ok(Some(path.to_string_lossy().to_string()));
+        }
+    }
+
+    Ok(None)
+}
+
+#[tauri::command]
 async fn save_transcript(file_path: String, content: String) -> Result<(), String> {
     log_info!("Saving transcript to: {}", file_path);
 
@@ -602,6 +651,7 @@ pub fn run() {
             set_native_theme,
             get_transcription_status,
             read_audio_file,
+            resolve_meeting_audio_file,
             save_transcript,
             analytics::commands::init_analytics,
             analytics::commands::disable_analytics,

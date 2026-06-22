@@ -28,6 +28,8 @@ interface TranscriptPanelProps {
   meetingId?: string;
   meetingFolderPath?: string | null;
   showSpeakerAttribution?: boolean;
+  activeTime?: number;
+  onSeekToTime?: (seconds: number) => void;
   onRefetchTranscripts?: () => Promise<void>;
   onUpdateTranscriptSpeaker?: (transcriptId: string, speaker: string | null) => Promise<void>;
   onApplySpeakerToMatching?: (fromSpeaker: string | null | undefined, speaker: string | null) => Promise<number>;
@@ -51,6 +53,8 @@ export function TranscriptPanel({
   meetingId,
   meetingFolderPath,
   showSpeakerAttribution = true,
+  activeTime,
+  onSeekToTime,
   onRefetchTranscripts,
   onUpdateTranscriptSpeaker,
   onApplySpeakerToMatching,
@@ -111,6 +115,8 @@ export function TranscriptPanel({
           loadedCount={loadedCount}
           onLoadMore={onLoadMore}
           showSpeakerLabels={showSpeakerAttribution}
+          activeTime={activeTime}
+          onSeekToTime={onSeekToTime}
           onSpeakerChange={showSpeakerAttribution ? onUpdateTranscriptSpeaker : undefined}
           onApplySpeakerToMatching={showSpeakerAttribution ? onApplySpeakerToMatching : undefined}
         />

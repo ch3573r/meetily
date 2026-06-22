@@ -21,6 +21,7 @@ import { useCopyOperations } from '@/hooks/meeting-details/useCopyOperations';
 import { useMeetingOperations } from '@/hooks/meeting-details/useMeetingOperations';
 import { useConfig } from '@/contexts/ConfigContext';
 import { useSourceAttribution } from '@/hooks/useSourceAttribution';
+import { useAudioPlayer } from '@/hooks/useAudioPlayer';
 
 export default function PageContent({
   meeting,
@@ -81,6 +82,9 @@ export default function PageContent({
   );
   const [isRecording] = useState(false);
   const [summaryResponse] = useState<SummaryResponse | null>(null);
+  const [audioPath, setAudioPath] = useState<string | null>(null);
+  const audioPlayer = useAudioPlayer(audioPath);
+  const isAudioReady = Boolean(audioPath && audioPlayer.duration > 0 && !audioPlayer.error);
 
   // Ref to store the modal open function from SummaryGeneratorButtonGroup
   const openModelSettingsRef = useRef<(() => void) | null>(null);
@@ -161,6 +165,45 @@ export default function PageContent({
     meeting,
   });
 
+  useEffect(() => {
+    let cancelled = false;
+    const folderPath = meeting.folder_path;
+
+    if (!folderPath) {
+      setAudioPath(null);
+      return;
+    }
+
+    invoke<string | null>('resolve_meeting_audio_file', { meetingFolder: folderPath })
+      .then((path) => {
+        if (!cancelled) {
+          setAudioPath(path);
+        }
+      })
+      .catch((error) => {
+        console.warn('Could not resolve meeting audio file:', error);
+        if (!cancelled) {
+          setAudioPath(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [meeting.folder_path]);
+
+  const handleTimelineSeek = useCallback((seconds: number) => {
+    void audioPlayer.seek(seconds);
+  }, [audioPlayer]);
+
+  const handleTimelinePlayPause = useCallback(() => {
+    if (audioPlayer.isPlaying) {
+      audioPlayer.pause();
+    } else {
+      void audioPlayer.play();
+    }
+  }, [audioPlayer]);
+
   // Track page view
   useEffect(() => {
     Analytics.trackPageView('meeting_details');
@@ -212,6 +255,12 @@ export default function PageContent({
         segments={segments ?? []}
         totalCount={totalCount}
         loadedCount={loadedCount}
+        currentTime={audioPlayer.currentTime}
+        durationSeconds={audioPlayer.duration || undefined}
+        isPlaying={audioPlayer.isPlaying}
+        isAudioReady={isAudioReady}
+        onPlayPause={handleTimelinePlayPause}
+        onSeek={isAudioReady ? handleTimelineSeek : undefined}
       />
       <div className="flex flex-1 overflow-hidden">
         <TranscriptPanel
@@ -234,6 +283,8 @@ export default function PageContent({
           meetingId={meeting.id}
           meetingFolderPath={meeting.folder_path}
           showSpeakerAttribution={sourceAttributionEnabled}
+          activeTime={isAudioReady ? audioPlayer.currentTime : undefined}
+          onSeekToTime={isAudioReady ? handleTimelineSeek : undefined}
           onRefetchTranscripts={onRefetchTranscripts}
           onUpdateTranscriptSpeaker={onUpdateTranscriptSpeaker}
           onApplySpeakerToMatching={onApplySpeakerToMatching}
