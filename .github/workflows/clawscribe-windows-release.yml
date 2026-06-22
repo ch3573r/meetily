@@ -152,6 +152,12 @@ jobs:
           "LIBCLANG_PATH=$llvmBin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "PATH=$llvmBin;$env:PATH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
+      - name: Install Vulkan SDK prerequisites
+        if: ${{ inputs.feature == 'windows-gpu' || inputs.feature == 'vulkan' }}
+        shell: pwsh
+        run: |
+          choco install 7zip -y --no-progress
+
       - name: Install Vulkan SDK
         if: ${{ inputs.feature == 'windows-gpu' || inputs.feature == 'vulkan' }}
         uses: humbletim/install-vulkan-sdk@v1.2

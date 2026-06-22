@@ -506,6 +506,11 @@ jobs:
           workspaces: ". -> target"
           key: windows-x64-windows-gpu-v1
 
+      - name: Install Vulkan SDK prerequisites
+        shell: pwsh
+        run: |
+          choco install 7zip -y --no-progress
+
       - name: Install Vulkan SDK
         uses: humbletim/install-vulkan-sdk@v1.2
         with:

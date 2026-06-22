@@ -137,6 +137,12 @@ jobs:
           sudo apt install vulkan-sdk -y
           sudo apt-get install -y mesa-vulkan-drivers
 
+      - name: Install Vulkan SDK prerequisites (Windows)
+        if: contains(matrix.platform, 'windows')
+        shell: pwsh
+        run: |
+          choco install 7zip -y --no-progress
+
       - name: Install Vulkan SDK (Windows)
         if: contains(matrix.platform, 'windows')
         uses: humbletim/install-vulkan-sdk@v1.2
