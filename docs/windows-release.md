@@ -13,6 +13,13 @@ Build Windows artifacts on a Windows host with Visual Studio Build Tools,
 Windows SDK, Rust, Node.js, pnpm, and LLVM installed. The release script must
 be run from `frontend`.
 
+## Release Commit Hygiene
+
+Release commits are metadata-only. They may include the version change,
+`CHANGELOG.md` / release-note updates, and updater metadata for the build being
+published. Do not include feature code, bug fixes, refactors, dependency churn,
+or unrelated docs in a release commit; land those before release prep.
+
 ## Prerequisites
 
 Install these on the Windows build host:
@@ -89,7 +96,8 @@ The workflow builds on the self-hosted Windows ClawScribe runner, stages the
 app-server runtime, runs `frontend\scripts\build-windows-release.ps1`, and
 uploads or publishes the generated MSI and NSIS installers. Non-publish runs
 use 7-day GitHub Actions artifacts. Publish runs upload installer assets,
-`latest.json`, `SHA256SUMS.txt`, and `BUILD-METADATA.txt` to the GitHub Release.
+`latest.json`, `SHA256SUMS.txt`, `BUILD-METADATA.txt`, and
+`BUILD-METRICS.json` to the GitHub Release.
 
 The default build uses the `vulkan` feature for the Windows meeting recorder
 target. Override when needed:
@@ -107,6 +115,7 @@ frontend\src-tauri\target\release\bundle\msi\*.msi
 frontend\src-tauri\target\release\bundle\nsis\*.exe
 frontend\src-tauri\target\release\bundle\SHA256SUMS.txt
 frontend\src-tauri\target\release\bundle\BUILD-METADATA.txt
+frontend\src-tauri\target\release\bundle\BUILD-METRICS.json
 ```
 
 Expected artifact names currently look like:
@@ -116,11 +125,16 @@ ClawScribe_0.5.13_x64_en-US.msi
 ClawScribe_0.5.13_x64-setup.exe
 SHA256SUMS.txt
 BUILD-METADATA.txt
+BUILD-METRICS.json
 ```
 
 `BUILD-METADATA.txt` records the ClawScribe version, build commit,
 `upstream_base_version`, Codex runtime version, Codex runtime SHA256, source
 package, source URL, and license.
+
+`BUILD-METRICS.json` records release-run diagnostics such as the selected
+feature set, sherpa runtime, sherpa staging cache hit/miss, sherpa staging
+elapsed seconds, and release build elapsed seconds.
 
 The release script generates `SHA256SUMS.txt` after a successful installer
 build. Checksum entries are relative to the bundle root, for example

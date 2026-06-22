@@ -8,6 +8,27 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+$stageStartedAt = Get-Date
+$cacheResult = "miss"
+
+function Write-GitHubOutput {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$Name,
+
+        [AllowNull()]
+        [object]$Value
+    )
+
+    if (-not $env:GITHUB_OUTPUT) {
+        return
+    }
+
+    $safeValue = if ($null -eq $Value) { "" } else { [string]$Value }
+    $safeValue = $safeValue -replace "`r", " " -replace "`n", " "
+    "$Name=$safeValue" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+}
+
 function Assert-Command {
     param([Parameter(Mandatory=$true)][string]$Name)
 
@@ -184,7 +205,10 @@ function Build-DirectMlSherpaRuntime {
     $installLibDir = Join-Path $installRoot "lib"
 
     if (Test-RequiredDlls -Directory $installLibDir -Runtime "directml") {
-        return $installLibDir
+        return [pscustomobject]@{
+            LibDir = $installLibDir
+            CacheResult = "hit"
+        }
     }
 
     Ensure-SherpaSource -SourceRoot $sourceRoot -Version $Version
@@ -213,7 +237,10 @@ function Build-DirectMlSherpaRuntime {
         throw "DirectML sherpa runtime DLLs are incomplete in $installLibDir"
     }
 
-    return $installLibDir
+    return [pscustomobject]@{
+        LibDir = $installLibDir
+        CacheResult = "miss"
+    }
 }
 
 $tauriRootPath = (Resolve-Path -LiteralPath $TauriRoot).Path
@@ -229,12 +256,17 @@ $destDir = Join-Path $tauriRootPath "binaries\sherpa-onnx"
 $libDir = $null
 
 if ($Runtime -eq "directml") {
-    $libDir = Build-DirectMlSherpaRuntime -RepoRoot $repoRoot -Version $Version
+    $directMlRuntime = Build-DirectMlSherpaRuntime -RepoRoot $repoRoot -Version $Version
+    $libDir = $directMlRuntime.LibDir
+    $cacheResult = $directMlRuntime.CacheResult
 } else {
     $archiveStem = "sherpa-onnx-v$Version-win-x64-shared-MT-Release-lib"
     $libDir = Join-Path $cacheRoot "$archiveStem\lib"
 
-    if (-not (Test-RequiredDlls -Directory $libDir -Runtime "cpu")) {
+    if (Test-RequiredDlls -Directory $libDir -Runtime "cpu") {
+        $cacheResult = "hit"
+    } else {
+        $cacheResult = "miss"
         New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
 
         $archiveName = "$archiveStem.tar.bz2"
@@ -280,6 +312,15 @@ if (-not (Test-RequiredDlls -Directory $destDir -Runtime $Runtime)) {
     throw "Failed to stage complete sherpa runtime DLL set in $destDir"
 }
 
+$elapsedSeconds = [Math]::Round(((Get-Date) - $stageStartedAt).TotalSeconds, 3)
+$elapsedSecondsText = $elapsedSeconds.ToString("0.###", [System.Globalization.CultureInfo]::InvariantCulture)
+
+Write-GitHubOutput -Name "sherpa_runtime" -Value $Runtime
+Write-GitHubOutput -Name "sherpa_version" -Value $Version
+Write-GitHubOutput -Name "sherpa_cache" -Value $cacheResult
+Write-GitHubOutput -Name "sherpa_elapsed_seconds" -Value $elapsedSecondsText
+
+Write-Host "Sherpa runtime staging metrics: cache=$cacheResult elapsed_seconds=$elapsedSecondsText"
 Write-Host "Staged sherpa-onnx $Runtime runtime DLLs:"
 Get-ChildItem -LiteralPath $destDir -Filter "*.dll" | ForEach-Object {
     Write-Host "  $($_.Name) ($($_.Length) bytes)"

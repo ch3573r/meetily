@@ -267,6 +267,14 @@ pub async fn list_todo_lists<T: GraphTransport, S: Sleeper>(
     map_outcome(client.execute(&request, token).await)
 }
 
+fn normalized_todo_list_name(value: &str) -> String {
+    value
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_ascii_lowercase()
+}
+
 /// Create a Microsoft To Do list and return it. Requires `Tasks.ReadWrite`,
 /// which this app already requests for Planner and To Do task export.
 pub async fn create_todo_list<T: GraphTransport, S: Sleeper>(
@@ -274,6 +282,17 @@ pub async fn create_todo_list<T: GraphTransport, S: Sleeper>(
     token: &str,
     display_name: &str,
 ) -> Result<ToDoListInfo, String> {
+    let normalized_name = normalized_todo_list_name(display_name);
+    if !normalized_name.is_empty() {
+        if let Some(existing) = list_todo_lists(client, token)
+            .await?
+            .into_iter()
+            .find(|list| normalized_todo_list_name(&list.display_name) == normalized_name)
+        {
+            return Ok(existing);
+        }
+    }
+
     let request = GraphRequest {
         method: "POST".into(),
         url: format!("{GRAPH_BASE}/me/todo/lists"),
@@ -405,10 +424,13 @@ mod tests {
     #[tokio::test]
     async fn create_todo_list_parses_created_list() {
         let transport = MockGraphTransport::new();
-        transport.queue_default([GraphResponse::success(
-            201,
-            r#"{"id":"td-9","displayName":"Meeting actions","wellknownListName":"none"}"#,
-        )]);
+        transport.queue_default([
+            GraphResponse::success(200, r#"{"value":[]}"#),
+            GraphResponse::success(
+                201,
+                r#"{"id":"td-9","displayName":"Meeting actions","wellknownListName":"none"}"#,
+            ),
+        ]);
         let c = client(transport);
         let list = create_todo_list(&c, "token", "Meeting actions")
             .await
@@ -416,6 +438,31 @@ mod tests {
         assert_eq!(list.id, "td-9");
         assert_eq!(list.display_name, "Meeting actions");
         assert_eq!(list.wellknown_list_name.as_deref(), Some("none"));
+        assert_eq!(
+            c.transport()
+                .calls_for(&format!("{GRAPH_BASE}/me/todo/lists")),
+            2
+        );
+    }
+
+    #[tokio::test]
+    async fn create_todo_list_reuses_existing_normalized_name() {
+        let transport = MockGraphTransport::new();
+        transport.queue_default([GraphResponse::success(
+            200,
+            r#"{"value":[{"id":"td-1","displayName":"Meeting actions","wellknownListName":"none"}]}"#,
+        )]);
+        let c = client(transport);
+        let list = create_todo_list(&c, "token", "  meeting   ACTIONS ")
+            .await
+            .unwrap();
+        assert_eq!(list.id, "td-1");
+        assert_eq!(list.display_name, "Meeting actions");
+        assert_eq!(
+            c.transport()
+                .calls_for(&format!("{GRAPH_BASE}/me/todo/lists")),
+            1
+        );
     }
 
     #[tokio::test]

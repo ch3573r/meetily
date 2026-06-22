@@ -111,10 +111,10 @@ export function About() {
                 </div>
             </div>
 
-            {/* Coming Soon - Compact */}
+            {/* Current workflow - Compact */}
             <div className="bg-primary/10 rounded p-3">
                 <p className="text-s text-primary">
-                    <span className="font-bold">Coming soon:</span> Meeting workflows for follow-ups, action tracking, and structured handoff.
+                    <span className="font-bold">Current workflow:</span> Review action items before exporting to Planner or Microsoft To Do, send meeting notes to OneNote or Confluence, and optionally hand completed recordings to OpenClaw when configured.
                 </p>
             </div>
 

@@ -154,6 +154,14 @@ Release notes should cover:
 
 Keep updater-facing notes and release notes aligned.
 
+## Release Commit Hygiene
+
+Release commits must be metadata-only: version changes, `CHANGELOG.md` or
+release-note updates, and updater metadata for the released build. Do not mix
+feature code, bug fixes, refactors, dependency churn, or unrelated docs into a
+release commit. Land those changes before release prep, then keep the release
+commit reviewable as packaging and communication metadata only.
+
 ## Security And Secrets
 
 Never commit:

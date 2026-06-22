@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ElementType, ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
@@ -785,18 +785,25 @@ function ToDoPanel() {
   const [creatingList, setCreatingList] = useState(false);
   const [newListName, setNewListName] = useState("");
   const [savingList, setSavingList] = useState(false);
+  const savingListRef = useRef(false);
   const isConnected = ms.connection.state === "connected";
 
   const submitNewList = async () => {
+    if (savingListRef.current) return;
     const name = sanitizeToDoListName(newListName).trim();
     if (!name) return;
+    savingListRef.current = true;
     setSavingList(true);
-    const list = await ms.createToDoList(name);
-    setSavingList(false);
-    if (list) {
-      setSelectedList(list.id);
-      setCreatingList(false);
-      setNewListName("");
+    try {
+      const list = await ms.createToDoList(name);
+      if (list) {
+        setSelectedList(list.id);
+        setCreatingList(false);
+        setNewListName("");
+      }
+    } finally {
+      savingListRef.current = false;
+      setSavingList(false);
     }
   };
 
