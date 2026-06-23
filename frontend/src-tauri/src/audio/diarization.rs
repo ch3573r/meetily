@@ -1672,6 +1672,53 @@ async fn run_speaker_diarization_for_meeting<R: Runtime>(
                 &attempt.quality,
             )));
         }
+    } else if let Some(recovery) = auto_diarization_recovery_target(&attempt) {
+        log::warn!(
+            "speaker_diarization_auto_overfragmented_retry meeting_id={} reason=\"{}\" retry_speakers={} prepared_speakers={} mapped_speakers={}",
+            meeting_id,
+            recovery.reason,
+            recovery.speaker_count,
+            attempt.prepared_speaker_count,
+            attempt.quality.speaker_count
+        );
+        emit_progress(
+            &app,
+            &meeting_id,
+            "diarizing_retry",
+            65,
+            &format!(
+                "Auto speaker detection found {} meaningful speakers after {} lanes; retrying with {} speakers...",
+                recovery.speaker_count,
+                attempt.prepared_speaker_count,
+                recovery.speaker_count
+            ),
+        );
+
+        let recovered_attempt = run_diarization_mapping_attempt(
+            &app,
+            &meeting_id,
+            attempt.model_paths.clone(),
+            sample_count,
+            Some(recovery.speaker_count),
+            Arc::clone(&samples),
+            &transcript_segments,
+            preserve_existing_labels,
+            65,
+            None,
+        )
+        .await?;
+
+        let expected_speakers = usize::try_from(recovery.speaker_count).unwrap_or(0);
+        if explicit_speaker_mapping_is_collapsed(expected_speakers, &recovered_attempt.quality) {
+            write_diarization_profile(&app, &recovered_attempt.profile);
+            return Err(anyhow!(explicit_mapping_failure_message(
+                expected_speakers,
+                recovered_attempt.prepared_speaker_count,
+                &recovered_attempt.quality,
+            )));
+        }
+
+        attempt = recovered_attempt;
     } else if let Some(reason) = auto_diarization_low_confidence_reason(&attempt) {
         write_diarization_profile(&app, &attempt.profile);
         return Err(anyhow!(auto_mapping_failure_message(
@@ -2235,6 +2282,29 @@ fn auto_diarization_low_confidence_reason(attempt: &DiarizationMappingAttempt) -
     }
 
     None
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AutoDiarizationRecovery {
+    speaker_count: i32,
+    reason: String,
+}
+
+fn auto_diarization_recovery_target(
+    attempt: &DiarizationMappingAttempt,
+) -> Option<AutoDiarizationRecovery> {
+    let reason = auto_diarization_low_confidence_reason(attempt)?;
+    let turn_quality = turn_speaker_quality(&attempt.turns)?;
+    let meaningful_speakers = turn_quality.significant_speakers;
+    if !(2..=AUTO_MAX_CONFIDENT_SPEAKER_LANES).contains(&meaningful_speakers) {
+        return None;
+    }
+
+    let speaker_count = i32::try_from(meaningful_speakers).ok()?;
+    Some(AutoDiarizationRecovery {
+        speaker_count,
+        reason,
+    })
 }
 
 #[derive(Debug, Clone)]
@@ -4239,6 +4309,9 @@ mod tests {
         let reason = auto_diarization_low_confidence_reason(&attempt).unwrap();
 
         assert!(reason.contains("micro-lanes"));
+        let recovery = auto_diarization_recovery_target(&attempt).unwrap();
+        assert_eq!(recovery.speaker_count, 3);
+        assert_eq!(recovery.reason, reason);
     }
 
     #[test]
@@ -4257,6 +4330,38 @@ mod tests {
 
         assert!(attempt.quality.dominant_share > MAX_DOMINANT_SPEAKER_SHARE_FOR_EXPLICIT_COUNT);
         assert_eq!(auto_diarization_low_confidence_reason(&attempt), None);
+    }
+
+    #[test]
+    fn auto_diarization_recovery_does_not_snap_to_single_speaker() {
+        let mut mapped_segments = (0..7)
+            .map(|index| {
+                transcript(
+                    &format!("s{index}"),
+                    Some(index as f64),
+                    Some(index as f64 + 1.0),
+                )
+            })
+            .collect::<Vec<_>>();
+        for (index, segment) in mapped_segments.iter_mut().enumerate() {
+            segment.speaker = Some(format!("Speaker {}", index + 1));
+        }
+        let attempt = test_mapping_attempt(
+            vec![
+                turn(0.0, 420.0, 0),
+                turn(420.0, 421.0, 1),
+                turn(421.0, 422.0, 2),
+                turn(422.0, 423.0, 3),
+                turn(423.0, 424.0, 4),
+                turn(424.0, 425.0, 5),
+                turn(425.0, 426.0, 6),
+            ],
+            mapped_segments,
+            7,
+        );
+
+        assert!(auto_diarization_low_confidence_reason(&attempt).is_some());
+        assert_eq!(auto_diarization_recovery_target(&attempt), None);
     }
 
     #[test]
