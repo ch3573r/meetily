@@ -85,32 +85,9 @@ export function SpeakerDiarizationDialog({
     ? result.duration_seconds / result.processing_seconds
     : null;
 
-  const handleOpenChange = (newOpen: boolean) => {
-    if (!newOpen && isProcessing) {
-      return;
-    }
-    onOpenChange(newOpen);
-  };
-
-  const handleEscapeKeyDown = (event: KeyboardEvent) => {
-    if (isProcessing) {
-      event.preventDefault();
-    }
-  };
-
-  const handleInteractOutside = (event: Event) => {
-    if (isProcessing) {
-      event.preventDefault();
-    }
-  };
-
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent
-        className="sm:max-w-[500px]"
-        onEscapeKeyDown={handleEscapeKeyDown}
-        onInteractOutside={handleInteractOutside}
-      >
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {isProcessing ? (
@@ -163,6 +140,9 @@ export function SpeakerDiarizationDialog({
               </div>
               <p className="text-center text-sm text-muted-foreground">
                 {progress?.message || `Starting ${speakerMode?.toLowerCase() || 'speaker detection'}...`}
+              </p>
+              <p className="rounded-lg border border-border bg-muted p-3 text-xs text-muted-foreground">
+                You can close this window while speaker detection continues in the background.
               </p>
             </div>
           )}
@@ -241,9 +221,8 @@ export function SpeakerDiarizationDialog({
 
         <DialogFooter>
           {isProcessing && (
-            <Button variant="outline" disabled>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Processing...
+            <Button variant="outline" onClick={() => onOpenChange(false)}>
+              Continue in background
             </Button>
           )}
           {error && !isProcessing && (
@@ -252,7 +231,7 @@ export function SpeakerDiarizationDialog({
                 Close
               </Button>
               <Button onClick={onClearError} variant="outline">
-                Choose Again
+                Dismiss
               </Button>
             </>
           )}

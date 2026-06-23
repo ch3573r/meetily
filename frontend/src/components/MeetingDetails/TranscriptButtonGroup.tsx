@@ -76,11 +76,11 @@ export function TranscriptButtonGroup({
 
     void listen<SpeakerDiarizationProgress>('speaker-diarization-progress', (event) => {
       if (event.payload.meeting_id !== meetingId) return;
-      const running = event.payload.stage !== 'complete';
-      setIsDiarizing(running);
+      if (event.payload.stage !== 'complete') {
+        setIsDiarizing(true);
+      }
       setDiarizationMessage(event.payload.message);
       setDiarizationProgress(event.payload);
-      setShowDiarizationDialog(true);
     }).then((unlisten) => unlistenCallbacks.push(unlisten));
 
     void listen<SpeakerDiarizationComplete>('speaker-diarization-complete', async (event) => {
