@@ -32,10 +32,13 @@ use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 
 const FLOAT_TIE_EPSILON: f64 = 1e-9;
-const MIN_SPLIT_SPEAKER_OVERLAP_SECONDS: f64 = 0.35;
+const MIN_SPLIT_SPEAKER_OVERLAP_SECONDS: f64 = 0.2;
 const MIN_SPLIT_PART_SECONDS: f64 = 1.25;
 const SAME_SPEAKER_MERGE_GAP_SECONDS: f64 = 0.25;
 const SAME_SPEAKER_TRANSCRIPT_MERGE_GAP_SECONDS: f64 = 1.0;
+const SHORT_UTTERANCE_HINT_MAX_SECONDS: f64 = 0.75;
+const SHORT_UTTERANCE_EXPANSION_MAX_SECONDS: f64 = 2.5;
+const SHORT_UTTERANCE_EXPANSION_MAX_WORDS: usize = 8;
 const SHORT_SPEAKER_ISLAND_MAX_SECONDS: f64 = 0.8;
 const SHORT_SPEAKER_ISLAND_MIN_CONTEXT_SECONDS: f64 = 2.0;
 const SPLIT_BOUNDARY_SEARCH_WORDS: usize = 8;
@@ -678,6 +681,11 @@ fn split_transcript_segment_by_speaker_spans(
         return vec![segment.clone()];
     }
 
+    let spans = expand_short_utterance_speaker_hints(segment, spans);
+    if spans.len() <= 1 {
+        return vec![segment.clone()];
+    }
+
     let has_real_aligned_word_timestamps = has_real_aligned_word_timestamps(segment);
     if !has_real_aligned_word_timestamps
         && spans
@@ -744,6 +752,158 @@ fn split_transcript_segment_by_speaker_spans(
             }
         })
         .collect()
+}
+
+fn expand_short_utterance_speaker_hints(
+    segment: &TranscriptSegment,
+    spans: &[TranscriptSpeakerSpan],
+) -> Vec<TranscriptSpeakerSpan> {
+    if spans.len() <= 1 || !has_real_aligned_word_timestamps(segment) {
+        return spans.to_vec();
+    }
+
+    let Some(words) = segment.word_timestamps.as_ref() else {
+        return spans.to_vec();
+    };
+    if words.is_empty() {
+        return spans.to_vec();
+    }
+
+    let mut expanded = spans.to_vec();
+    for index in 0..expanded.len() {
+        let span = expanded[index];
+        if span.end_time - span.start_time > SHORT_UTTERANCE_HINT_MAX_SECONDS {
+            continue;
+        }
+
+        let Some((utterance_start, utterance_end)) = compact_utterance_bounds_for_span(words, span)
+        else {
+            continue;
+        };
+        let start_time = words[utterance_start].start;
+        let end_time = words[utterance_end].end;
+        if !is_valid_interval(start_time, end_time)
+            || end_time - start_time > SHORT_UTTERANCE_EXPANSION_MAX_SECONDS
+        {
+            continue;
+        }
+
+        let text = words[utterance_start..=utterance_end]
+            .iter()
+            .map(|word| word.text.trim())
+            .filter(|word| !word.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ");
+        if !is_short_standalone_utterance(&text, utterance_end - utterance_start + 1) {
+            continue;
+        }
+
+        expanded[index].start_time = start_time.max(segment.audio_start_time.unwrap_or(start_time));
+        expanded[index].end_time = end_time.min(segment.audio_end_time.unwrap_or(end_time));
+        if index > 0
+            && expanded[index - 1].speaker != expanded[index].speaker
+            && expanded[index - 1].end_time > expanded[index].start_time
+        {
+            let expanded_start = expanded[index].start_time;
+            expanded[index - 1].end_time = expanded_start;
+        }
+        if index + 1 < expanded.len()
+            && expanded[index + 1].speaker != expanded[index].speaker
+            && expanded[index + 1].start_time < expanded[index].end_time
+        {
+            let expanded_end = expanded[index].end_time;
+            expanded[index + 1].start_time = expanded_end;
+        }
+    }
+
+    trim_overlapping_expanded_spans(expanded)
+}
+
+fn compact_utterance_bounds_for_span(
+    words: &[TranscriptWord],
+    span: TranscriptSpeakerSpan,
+) -> Option<(usize, usize)> {
+    let first = words.iter().position(|word| {
+        word_midpoint(word) >= span.start_time && word_midpoint(word) < span.end_time
+    })?;
+    let last = words.iter().rposition(|word| {
+        word_midpoint(word) >= span.start_time && word_midpoint(word) < span.end_time
+    })?;
+
+    let mut start = first;
+    while start > 0 && !word_ends_sentence(&words[start - 1].text) {
+        start -= 1;
+    }
+
+    let mut end = last;
+    while end + 1 < words.len() && !word_ends_sentence(&words[end].text) {
+        end += 1;
+    }
+
+    if end < start || end - start + 1 > SHORT_UTTERANCE_EXPANSION_MAX_WORDS {
+        return None;
+    }
+
+    Some((start, end))
+}
+
+fn is_short_standalone_utterance(text: &str, word_count: usize) -> bool {
+    if word_count == 0 || word_count > SHORT_UTTERANCE_EXPANSION_MAX_WORDS {
+        return false;
+    }
+
+    let trimmed = text.trim();
+    is_standalone_backchannel(trimmed)
+        || trimmed.ends_with('?')
+        || (word_count <= 4 && trimmed.ends_with(['.', '!', '?']))
+}
+
+fn trim_overlapping_expanded_spans(
+    mut spans: Vec<TranscriptSpeakerSpan>,
+) -> Vec<TranscriptSpeakerSpan> {
+    spans.sort_by(|a, b| {
+        a.start_time
+            .partial_cmp(&b.start_time)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| {
+                a.end_time
+                    .partial_cmp(&b.end_time)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .then_with(|| a.speaker.cmp(&b.speaker))
+    });
+
+    for index in 0..spans.len() {
+        if index > 0 && spans[index - 1].end_time > spans[index].start_time {
+            if spans[index - 1].speaker == spans[index].speaker {
+                let merged_end = spans[index - 1].end_time.max(spans[index].end_time);
+                spans[index - 1].end_time = merged_end;
+                let current_end = spans[index].end_time;
+                spans[index].start_time = current_end;
+            } else {
+                let current_start = spans[index].start_time;
+                spans[index - 1].end_time = current_start;
+            }
+        }
+        if index + 1 < spans.len() && spans[index].end_time > spans[index + 1].start_time {
+            if spans[index].speaker == spans[index + 1].speaker {
+                let merged_end = spans[index].end_time.max(spans[index + 1].end_time);
+                spans[index].end_time = merged_end;
+                let next_end = spans[index + 1].end_time;
+                spans[index + 1].start_time = next_end;
+            } else {
+                let current_end = spans[index].end_time;
+                spans[index + 1].start_time = current_end;
+            }
+        }
+    }
+
+    collapse_adjacent_same_speaker_spans(
+        spans
+            .into_iter()
+            .filter(|span| is_valid_interval(span.start_time, span.end_time))
+            .collect(),
+    )
 }
 
 fn has_real_aligned_word_timestamps(segment: &TranscriptSegment) -> bool {
@@ -5111,6 +5271,98 @@ mod tests {
         assert_eq!(count, 0);
         assert_eq!(smoothed.len(), 3);
         assert_eq!(smoothed[1].speaker.as_deref(), Some("Speaker 2"));
+    }
+
+    #[test]
+    fn expands_tiny_question_hint_to_full_utterance() {
+        let transcripts = vec![transcript_with_word_timestamps(
+            "a",
+            &[
+                ("You", 20.50, 20.66),
+                ("can", 20.66, 20.82),
+                ("look", 20.82, 21.06),
+                ("into", 21.06, 21.30),
+                ("who", 21.30, 21.62),
+                ("who", 21.62, 21.78),
+                ("made", 21.78, 22.02),
+                ("money", 22.02, 22.18),
+                ("on", 22.18, 22.34),
+                ("that", 22.34, 22.50),
+                ("one.", 22.50, 22.90),
+                ("Who", 22.90, 23.14),
+                ("made", 23.14, 23.30),
+                ("money", 23.30, 23.54),
+                ("on", 23.54, 23.62),
+                ("that", 23.62, 23.78),
+                ("one?", 23.78, 24.28),
+            ],
+            20.50,
+            24.28,
+        )];
+        let turns = vec![turn(20.50, 23.00, 1), turn(23.00, 23.24, 0)];
+
+        let mapped = map_diarization_to_transcript_segments(
+            &transcripts,
+            &turns,
+            DiarizationMappingOptions {
+                existing_speaker_policy: ExistingSpeakerPolicy::Overwrite,
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(mapped.len(), 2);
+        assert_eq!(mapped[0].speaker.as_deref(), Some("Speaker 2"));
+        assert_eq!(
+            mapped[0].text,
+            "You can look into who who made money on that one."
+        );
+        assert_eq!(mapped[1].speaker.as_deref(), Some("Speaker 1"));
+        assert_eq!(mapped[1].text, "Who made money on that one?");
+    }
+
+    #[test]
+    fn expands_tiny_backchannel_hint_to_full_utterance() {
+        let transcripts = vec![transcript_with_word_timestamps(
+            "a",
+            &[
+                ("It", 40.41, 40.57),
+                ("makes", 40.57, 40.73),
+                ("a", 40.73, 40.81),
+                ("lot", 40.81, 40.97),
+                ("of", 40.97, 41.05),
+                ("sense.", 41.05, 41.53),
+                ("Of", 41.53, 41.61),
+                ("course.", 42.27, 42.94),
+                ("When", 43.13, 43.21),
+                ("you", 43.21, 43.29),
+                ("follow", 43.29, 43.53),
+                ("APAC,", 43.53, 44.17),
+            ],
+            40.41,
+            44.17,
+        )];
+        let turns = vec![
+            turn(40.41, 41.75, 1),
+            turn(41.75, 42.00, 0),
+            turn(42.00, 44.17, 1),
+        ];
+
+        let mapped = map_diarization_to_transcript_segments(
+            &transcripts,
+            &turns,
+            DiarizationMappingOptions {
+                existing_speaker_policy: ExistingSpeakerPolicy::Overwrite,
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(mapped.len(), 3);
+        assert_eq!(mapped[0].speaker.as_deref(), Some("Speaker 2"));
+        assert_eq!(mapped[0].text, "It makes a lot of sense.");
+        assert_eq!(mapped[1].speaker.as_deref(), Some("Speaker 1"));
+        assert_eq!(mapped[1].text, "Of course.");
+        assert_eq!(mapped[2].speaker.as_deref(), Some("Speaker 2"));
+        assert_eq!(mapped[2].text, "When you follow APAC,");
     }
 
     #[test]
