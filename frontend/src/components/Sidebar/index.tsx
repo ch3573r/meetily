@@ -324,12 +324,6 @@ const Sidebar: React.FC = () => {
         active: isMeetingsPage || isMeetingPage,
         onClick: goToMeetings,
       },
-      {
-        label: "Settings",
-        icon: Settings,
-        active: isSettingsPage,
-        onClick: () => openSettingsTab("general"),
-      },
     ];
     const statusDot = isRecording
       ? isPaused
@@ -419,6 +413,25 @@ const Sidebar: React.FC = () => {
               </TooltipTrigger>
               <TooltipContent side="right">
                 <p>Import Audio</p>
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => openSettingsTab("general")}
+                  className={`flex h-10 w-10 items-center justify-center rounded-md transition ${
+                    isSettingsPage
+                      ? "bg-primary/10 text-primary ring-1 ring-primary/20"
+                      : "text-muted-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
+                  }`}
+                  aria-label="Settings"
+                >
+                  <Settings className="h-5 w-5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right">
+                <p>Settings</p>
               </TooltipContent>
             </Tooltip>
           </div>
@@ -557,12 +570,6 @@ const Sidebar: React.FC = () => {
       active: pathname === "/meetings" || pathname?.includes("/meeting-details"),
       onClick: goToMeetings,
     },
-    {
-      label: "Settings",
-      icon: Settings,
-      active: onSettings,
-      onClick: () => openSettingsTab("general"),
-    },
   ];
 
   return (
@@ -700,13 +707,25 @@ const Sidebar: React.FC = () => {
                 </span>
               </button>
 
-              <div className="grid gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 <button
                   onClick={() => openImportDialog()}
                   className="flex min-w-0 items-center justify-center gap-2 rounded-lg border border-sidebar-border bg-transparent px-2.5 py-2.5 text-sm font-medium text-sidebar-foreground transition hover:bg-sidebar-hover"
                 >
                   <Upload className="h-4 w-4 shrink-0" />
                   <span className="truncate">Import</span>
+                </button>
+
+                <button
+                  onClick={() => openSettingsTab("general")}
+                  className={`flex min-w-0 items-center justify-center gap-2 rounded-lg border px-2.5 py-2.5 text-sm font-medium transition ${
+                    onSettings
+                      ? "border-primary/20 bg-primary/10 text-primary"
+                      : "border-sidebar-border bg-transparent text-sidebar-foreground hover:bg-sidebar-hover"
+                  }`}
+                >
+                  <Settings className="h-4 w-4 shrink-0" />
+                  <span className="truncate">Settings</span>
                 </button>
               </div>
 
