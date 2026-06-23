@@ -157,7 +157,10 @@ fn stitch_transcript_fragments(transcripts: &[TranscribedSegment]) -> Vec<Transc
 
     let mut stitched: Vec<TranscribedSegment> = Vec::new();
 
-    for segment in transcripts.iter().map(clean_transcribed_segment) {
+    for segment in transcripts
+        .iter()
+        .map(normalise_transcribed_segment_spacing)
+    {
         if segment.text.trim().is_empty() {
             continue;
         }
@@ -193,50 +196,14 @@ fn stitch_transcript_fragments(transcripts: &[TranscribedSegment]) -> Vec<Transc
     stitched
 }
 
-fn clean_transcribed_segment(segment: &TranscribedSegment) -> TranscribedSegment {
+fn normalise_transcribed_segment_spacing(segment: &TranscribedSegment) -> TranscribedSegment {
     let mut cleaned = segment.clone();
     cleaned.text = collapse_whitespace(&cleaned.text);
-
-    if cleaned
-        .text
-        .get(..6)
-        .map(|prefix| prefix.eq_ignore_ascii_case("th it "))
-        .unwrap_or(false)
-    {
-        let can_fix_words = match cleaned.word_timestamps.as_mut() {
-            Some(words) if words.len() >= 2 => {
-                let first = words[0].text.trim_matches(is_word_edge_punctuation);
-                let second = words[1].text.trim_matches(is_word_edge_punctuation);
-                if first.eq_ignore_ascii_case("th") && second.eq_ignore_ascii_case("it") {
-                    words[1].text = "It".to_string();
-                    words[1].start = words[0].start.min(words[1].start);
-                    words.remove(0);
-                    true
-                } else {
-                    false
-                }
-            }
-            Some(_) => false,
-            None => true,
-        };
-
-        if can_fix_words {
-            cleaned.text = format!("It {}", cleaned.text[6..].trim_start());
-        }
-    }
-
     cleaned
 }
 
-fn stitch_segment_into(previous: &mut TranscribedSegment, mut next: TranscribedSegment) {
-    let previous_is_incomplete = is_incomplete_fragment(&previous.text);
-    let next_text = if previous_is_incomplete {
-        lowercase_continuation_start(&next.text, next.word_timestamps.as_mut())
-    } else {
-        next.text.clone()
-    };
-
-    previous.text = join_transcript_text(&previous.text, &next_text);
+fn stitch_segment_into(previous: &mut TranscribedSegment, next: TranscribedSegment) {
+    previous.text = join_transcript_text(&previous.text, &next.text);
     previous.end_ms = previous.end_ms.max(next.end_ms);
 
     match (&mut previous.word_timestamps, next.word_timestamps) {
@@ -322,47 +289,6 @@ fn ends_with_terminal_punctuation(text: &str) -> bool {
         .find(|ch| !matches!(ch, '"' | '\'' | ')' | ']' | '}'))
         .map(|ch| matches!(ch, '.' | '!' | '?' | ':' | ';'))
         .unwrap_or(false)
-}
-
-fn lowercase_continuation_start(text: &str, words: Option<&mut Vec<TranscriptWord>>) -> String {
-    let trimmed = text.trim_start();
-    let Some(first_word) = trimmed.split_whitespace().next() else {
-        return text.to_string();
-    };
-
-    let bare_word = first_word.trim_matches(is_word_edge_punctuation);
-    if bare_word.len() <= 1 || bare_word.chars().all(|ch| !ch.is_lowercase()) {
-        return text.to_string();
-    }
-    if matches!(bare_word, "I" | "I'm" | "I've" | "I'd" | "I'll") {
-        return text.to_string();
-    }
-
-    let Some(first_char) = bare_word.chars().next() else {
-        return text.to_string();
-    };
-    if !first_char.is_uppercase() {
-        return text.to_string();
-    }
-
-    let lower_first = first_char.to_lowercase().collect::<String>();
-    let replacement = format!("{}{}", lower_first, &bare_word[first_char.len_utf8()..]);
-    let updated = trimmed.replacen(bare_word, &replacement, 1);
-
-    if let Some(words) = words {
-        if let Some(word) = words.first_mut() {
-            let word_bare = word.text.trim_matches(is_word_edge_punctuation);
-            if word_bare == bare_word {
-                word.text = word.text.replacen(bare_word, &replacement, 1);
-            }
-        }
-    }
-
-    if text.len() == trimmed.len() {
-        updated
-    } else {
-        format!("{}{}", &text[..text.len() - trimmed.len()], updated)
-    }
 }
 
 fn is_word_edge_punctuation(ch: char) -> bool {
@@ -809,7 +735,7 @@ mod tests {
     }
 
     #[test]
-    fn readable_segments_stitch_vad_fragments_without_losing_word_anchors() {
+    fn readable_segments_stitch_vad_fragments_without_mutating_word_anchors() {
         let transcripts = vec![
             test_transcribed_segment(
                 "Th it seems like there is a pretty clear point.",
@@ -845,11 +771,11 @@ mod tests {
         assert_eq!(segments.len(), 2);
         assert_eq!(
             segments[0].text,
-            "It seems like there is a pretty clear point."
+            "Th it seems like there is a pretty clear point."
         );
         assert_eq!(
             segments[1].text,
-            "What about the military drones? Those contracts when this war started that's you can look into who made money."
+            "What about the military drones? Those contracts when this war started That's You can look into who made money."
         );
         assert_eq!(segments[0].audio_start_time, Some(0.0));
         assert_eq!(segments[0].audio_end_time, Some(13.0));
@@ -857,14 +783,15 @@ mod tests {
         assert_eq!(segments[1].audio_end_time, Some(24.0));
 
         let first_words = segments[0].word_timestamps.as_ref().unwrap();
-        assert_eq!(first_words[0].text, "It");
-        assert_eq!(first_words.len(), 9);
+        assert_eq!(first_words[0].text, "Th");
+        assert_eq!(first_words[1].text, "it");
+        assert_eq!(first_words.len(), 10);
 
         let second_words = segments[1].word_timestamps.as_ref().unwrap();
         assert_eq!(second_words.len(), 19);
         assert_eq!(second_words[0].text, "What");
-        assert_eq!(second_words[11].text, "that's");
-        assert_eq!(second_words[12].text, "you");
+        assert_eq!(second_words[11].text, "That's");
+        assert_eq!(second_words[12].text, "You");
         assert!(second_words
             .iter()
             .all(|word| word.timestamp_source == Some(TranscriptWordTimestampSource::Real)));
