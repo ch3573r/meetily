@@ -345,8 +345,16 @@ function MeetingDetailsContent() {
     );
   }
 
-  // Show loading spinner while initial data loads
-  if ((isLoading || isLoadingTranscripts) || !meetingDetails) {
+  // Show the full-page spinner only for the initial load. Post-processing
+  // refetches must keep PageContent mounted so completion benchmark dialogs
+  // are not destroyed as soon as retranscription/diarization finishes.
+  if (!meetingDetails && (isLoading || isLoadingTranscripts)) {
+    return <div className="flex h-full items-center justify-center">
+      <LoaderIcon className="animate-spin size-6 " />
+    </div>;
+  }
+
+  if (!meetingDetails) {
     return <div className="flex h-full items-center justify-center">
       <LoaderIcon className="animate-spin size-6 " />
     </div>;

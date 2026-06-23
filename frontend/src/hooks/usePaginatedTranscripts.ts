@@ -165,15 +165,16 @@ export function usePaginatedTranscripts({
     const refetch = useCallback(async () => {
         if (!meetingId) return;
 
-        reset();
+        offsetRef.current = 0;
         setIsLoading(true);
+        setError(null);
         try {
             await loadMetadata();
             await loadTranscriptsAtOffset(0, false);
         } finally {
             setIsLoading(false);
         }
-    }, [meetingId, reset, loadMetadata, loadTranscriptsAtOffset]);
+    }, [meetingId, loadMetadata, loadTranscriptsAtOffset]);
 
     const updateSpeaker = useCallback(async (transcriptId: string, speaker: string | null) => {
         if (!meetingId) return;
