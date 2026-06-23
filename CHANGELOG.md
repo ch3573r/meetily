@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.5.20
+
+- Improved speaker diarization accuracy by preserving sherpa speaker turns
+  instead of forcing short clips into a fixed speaker count or smoothing away
+  short speaker changes.
+- Added an explicit speaker-count control for meeting diarization so two-, three-,
+  and larger-speaker recordings can be rerun without relying only on clustering
+  auto-detection.
+- Switched the default diarization embedding to the English WeSpeaker/CAM++
+  model while keeping the legacy Chinese 3D-Speaker model available when the
+  meeting language calls for it.
+- Split transcript rows at diarization speaker changes using persisted word
+  timestamps when available, so one long ASR segment can be assigned across
+  multiple speakers.
+- Made diarization model selection source-language aware for Whisper, Parakeet,
+  and Nemotron by persisting the transcription source-language hint in recording,
+  import, and retranscription metadata.
+- `latest.json` advertises runtime version `0.5.20`, so installed `0.5.19`
+  clients can discover this update.
+
 ## 0.5.19
 
 - Added crash-safe recording checkpoints that flush every 10 seconds, write via
