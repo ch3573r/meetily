@@ -115,7 +115,7 @@ impl DiarizationModelKind {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct DiarizationModelDescriptor {
     kind: DiarizationModelKind,
     id: &'static str,
@@ -761,7 +761,7 @@ fn split_text_by_token_indices(
     {
         let start_byte = tokens[start_token_index].start_byte;
         let end_byte = tokens[end_token_index - 1].end_byte;
-        parts.push(trimmed[start_byte..end_byte].trim().to_string());
+        parts.push(text[start_byte..end_byte].trim().to_string());
         start_token_index = end_token_index;
     }
 
