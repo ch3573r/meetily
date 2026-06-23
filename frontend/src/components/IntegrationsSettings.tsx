@@ -81,12 +81,12 @@ function stateBadge(state: AddonState) {
     case "prompt":
       return "Prompt only";
     case "provider":
-      return "Provider";
+      return "Setup elsewhere";
     case "advanced":
-      return "Advanced";
+      return "Setup needed";
     case "planned":
     default:
-      return "Not implemented";
+      return "Unavailable";
   }
 }
 
@@ -106,7 +106,7 @@ function stateClasses(state: AddonState) {
     case "provider":
       return "border-primary/30 bg-primary/15 text-primary";
     case "advanced":
-      return "border-transparent bg-amber-600 text-white";
+      return "border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-200";
     case "planned":
     default:
       return "border-border bg-muted text-foreground";
@@ -1810,7 +1810,7 @@ function TeamsAutoStartPanel() {
   return (
     <AddonPanel
       icon={TeamsIcon}
-      title="Teams meeting detection"
+      title="Teams auto-record"
       state={mode === "off" ? "planned" : "ready"}
       badgeLabel={modeBadge.label}
       badgeClasses={modeBadge.classes}
@@ -1854,8 +1854,7 @@ function TeamsDetectionPanel() {
     return teamsStatus.recordingSafety.automaticRecordingAllowed ? "ready" : "advanced";
   }, [teamsStatus]);
 
-  // Detection-status wording (kept distinct from the Add-ons mode dropdown so
-  // the two "Teams meeting detection" panels don't look like they should match).
+  // Detection-status wording is distinct from the Add-ons auto-record dropdown.
   const teamsBadgeLabel = !teamsStatus
     ? "Checking…"
     : !teamsStatus.supported
@@ -1902,7 +1901,7 @@ function TeamsDetectionPanel() {
   return (
     <AddonPanel
       icon={TeamsIcon}
-      title="Teams meeting detection"
+      title="Teams detection status"
       state={teamsState}
       badgeLabel={teamsBadgeLabel}
       detail="Live signals used to detect an active Teams meeting."
@@ -2784,12 +2783,12 @@ export function IntegrationsSettings() {
         <ConfluencePanel />
       </section>
 
-      {/* Meeting detection — a recording trigger, not an export destination. */}
+      {/* Meeting automation — a recording trigger, not an export destination. */}
       <section className="space-y-4">
         <GroupHeader
           icon={<TeamsIcon />}
-          title="Meeting detection"
-          desc="Auto-start recording when a Teams meeting is detected. Live status is under Diagnostics."
+          title="Meeting automation"
+          desc="Choose what ClawScribe does when a Teams meeting is detected. Live status is under Diagnostics."
         />
         <TeamsAutoStartPanel />
       </section>

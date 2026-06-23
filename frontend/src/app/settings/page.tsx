@@ -57,7 +57,7 @@ const GROUPS: { label: string; items: SectionItem[] }[] = [
   {
     label: "Connections",
     items: [
-      { value: "integrations", label: "Add-ons", icon: Plug, desc: "Export to Microsoft 365 and auto-detect Teams meetings." },
+      { value: "integrations", label: "Add-ons", icon: Plug, desc: "Export destinations, calendar context, and meeting automation." },
     ],
   },
   {
