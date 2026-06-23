@@ -36,6 +36,8 @@ const MIN_SPLIT_SPEAKER_OVERLAP_SECONDS: f64 = 0.35;
 const MIN_SPLIT_PART_SECONDS: f64 = 1.25;
 const SAME_SPEAKER_MERGE_GAP_SECONDS: f64 = 0.25;
 const SAME_SPEAKER_TRANSCRIPT_MERGE_GAP_SECONDS: f64 = 1.0;
+const SHORT_SPEAKER_ISLAND_MAX_SECONDS: f64 = 0.8;
+const SHORT_SPEAKER_ISLAND_MIN_CONTEXT_SECONDS: f64 = 2.0;
 const SPLIT_BOUNDARY_SEARCH_WORDS: usize = 8;
 const LEGACY_ESTIMATED_WORD_TIMESTAMP_TOLERANCE_SECONDS: f64 = 0.05;
 const MIN_EXPLICIT_RETRY_SPEAKER_SECONDS: f64 = 2.0;
@@ -44,8 +46,8 @@ const AUTO_SIGNIFICANT_SPEAKER_MIN_SECONDS: f64 = 6.0;
 const AUTO_SIGNIFICANT_SPEAKER_DOMINANT_SHARE: f64 = 0.06;
 const DEFAULT_MIN_DURATION_ON_SECONDS: f32 = 0.3;
 const DEFAULT_MIN_DURATION_OFF_SECONDS: f32 = 0.5;
-const FIXED_COUNT_MIN_DURATION_ON_SECONDS: f32 = 0.12;
-const FIXED_COUNT_MIN_DURATION_OFF_SECONDS: f32 = 0.12;
+const FIXED_COUNT_MIN_DURATION_ON_SECONDS: f32 = 0.25;
+const FIXED_COUNT_MIN_DURATION_OFF_SECONDS: f32 = 0.25;
 const DIARIZATION_SAMPLE_RATE: i32 = 16_000;
 const DEFAULT_CLUSTERING_THRESHOLD: f32 = 0.5;
 const DEFAULT_SEGMENTATION_MODEL_ID: &str = "pyannote-segmentation-3-0-int8";
@@ -138,6 +140,7 @@ struct DiarizationMappingDiagnostics {
     rows_split_by_speaker_spans: usize,
     rows_blocked_by_short_part_gate: usize,
     rows_blocked_by_word_timestamp_alignment: usize,
+    short_speaker_islands_smoothed: usize,
     short_speaker_spans: usize,
 }
 
@@ -490,6 +493,9 @@ fn map_diarization_to_transcript_segments_with_diagnostics(
             )
         })
         .collect();
+    let (mapped_segments, smoothed_islands) =
+        smooth_short_transcript_speaker_islands(mapped_segments);
+    diagnostics.short_speaker_islands_smoothed = smoothed_islands;
 
     (
         merge_adjacent_transcript_segments_by_speaker(mapped_segments),
@@ -744,6 +750,108 @@ fn has_real_aligned_word_timestamps(segment: &TranscriptSegment) -> bool {
     matches!(
         word_timestamp_eligibility(segment),
         WordTimestampEligibility::Real | WordTimestampEligibility::LegacyPrecise
+    )
+}
+
+fn smooth_short_transcript_speaker_islands(
+    mut segments: Vec<TranscriptSegment>,
+) -> (Vec<TranscriptSegment>, usize) {
+    if segments.len() < 3 {
+        return (segments, 0);
+    }
+
+    let mut smoothed = 0usize;
+    for index in 1..segments.len() - 1 {
+        let Some(previous_speaker) =
+            normalized_speaker_label(segments[index - 1].speaker.as_deref())
+        else {
+            continue;
+        };
+        let Some(current_speaker) = normalized_speaker_label(segments[index].speaker.as_deref())
+        else {
+            continue;
+        };
+        let Some(next_speaker) = normalized_speaker_label(segments[index + 1].speaker.as_deref())
+        else {
+            continue;
+        };
+        if previous_speaker != next_speaker || current_speaker == previous_speaker {
+            continue;
+        }
+
+        let Some(current_duration) = transcript_segment_duration(&segments[index]) else {
+            continue;
+        };
+        if current_duration > SHORT_SPEAKER_ISLAND_MAX_SECONDS {
+            continue;
+        }
+
+        let context_seconds = transcript_segment_duration(&segments[index - 1]).unwrap_or(0.0)
+            + transcript_segment_duration(&segments[index + 1]).unwrap_or(0.0);
+        if context_seconds < SHORT_SPEAKER_ISLAND_MIN_CONTEXT_SECONDS {
+            continue;
+        }
+
+        if is_standalone_backchannel(&segments[index].text) {
+            continue;
+        }
+
+        set_transcript_segment_speaker(&mut segments[index], &previous_speaker);
+        smoothed += 1;
+    }
+
+    (segments, smoothed)
+}
+
+fn transcript_segment_duration(segment: &TranscriptSegment) -> Option<f64> {
+    segment
+        .duration
+        .or_else(|| Some((segment.audio_end_time? - segment.audio_start_time?).max(0.0)))
+        .filter(|seconds| seconds.is_finite() && *seconds >= 0.0)
+}
+
+fn set_transcript_segment_speaker(segment: &mut TranscriptSegment, speaker: &str) {
+    let speaker = speaker.to_string();
+    segment.speaker = Some(speaker.clone());
+    if let Some(words) = segment.word_timestamps.as_mut() {
+        for word in words {
+            word.speaker = Some(speaker.clone());
+        }
+    }
+}
+
+fn is_standalone_backchannel(text: &str) -> bool {
+    let normalized = text
+        .trim()
+        .trim_matches(|character: char| {
+            matches!(
+                character,
+                '.' | ',' | '?' | '!' | ':' | ';' | '"' | '\'' | '(' | ')' | '[' | ']'
+            )
+        })
+        .to_ascii_lowercase();
+    if normalized.is_empty() {
+        return false;
+    }
+
+    matches!(
+        normalized.as_str(),
+        "yeah"
+            | "yep"
+            | "yes"
+            | "no"
+            | "nah"
+            | "right"
+            | "ok"
+            | "okay"
+            | "exactly"
+            | "definitely"
+            | "sure"
+            | "mm-hmm"
+            | "mhm"
+            | "uh-huh"
+            | "of course"
+            | "for sure"
     )
 }
 
@@ -4960,6 +5068,49 @@ mod tests {
 
         assert_eq!(mapped[0].speaker.as_deref(), Some("Speaker 1"));
         assert_eq!(mapped[1].speaker.as_deref(), Some("Speaker 2"));
+    }
+
+    #[test]
+    fn smooths_short_mid_phrase_speaker_island() {
+        let mut segments = vec![
+            transcript_with_text("a", "Citizens", Some(0.0), Some(2.0)),
+            transcript_with_text("b", "united. This", Some(2.0), Some(2.5)),
+            transcript_with_text("c", "is good, right?", Some(2.5), Some(5.0)),
+        ];
+        segments[0].speaker = Some("Speaker 1".to_string());
+        segments[1].speaker = Some("Speaker 2".to_string());
+        segments[2].speaker = Some("Speaker 1".to_string());
+
+        let (smoothed, count) = smooth_short_transcript_speaker_islands(segments);
+        let merged = merge_adjacent_transcript_segments_by_speaker(smoothed);
+
+        assert_eq!(count, 1);
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].speaker.as_deref(), Some("Speaker 1"));
+        assert_eq!(merged[0].text, "Citizens united. This is good, right?");
+    }
+
+    #[test]
+    fn preserves_short_standalone_backchannel_island() {
+        let mut segments = vec![
+            transcript_with_text("a", "The ruling changed elections.", Some(0.0), Some(2.0)),
+            transcript_with_text("b", "Yeah.", Some(2.0), Some(2.5)),
+            transcript_with_text(
+                "c",
+                "Fifteen years later it defined the campaign.",
+                Some(2.5),
+                Some(6.0),
+            ),
+        ];
+        segments[0].speaker = Some("Speaker 1".to_string());
+        segments[1].speaker = Some("Speaker 2".to_string());
+        segments[2].speaker = Some("Speaker 1".to_string());
+
+        let (smoothed, count) = smooth_short_transcript_speaker_islands(segments);
+
+        assert_eq!(count, 0);
+        assert_eq!(smoothed.len(), 3);
+        assert_eq!(smoothed[1].speaker.as_deref(), Some("Speaker 2"));
     }
 
     #[test]
