@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.22
+
+- Stopped explicit multi-speaker diarization from silently saving collapsed
+  labels when most transcript time maps back to one speaker.
+- Added a mapping-quality gate for explicit speaker counts, including dominant
+  speaker share diagnostics in diarization profiles.
+- Added automatic fallback across alternate speaker embedding models when the
+  requested speaker count collapses with the default embedding.
+- Return a clear error instead of writing bad labels if every embedding still
+  collapses, so users can retry with different speaker settings without
+  corrupting the transcript.
+- `latest.json` advertises runtime version `0.5.22`, so installed `0.5.21`
+  clients can discover this update.
+
 ## 0.5.21
 
 - Prevented a diarization mapping collapse where sherpa found multiple speaker
