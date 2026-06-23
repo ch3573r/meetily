@@ -1263,11 +1263,6 @@ pub struct SpeakerDiarizationProgress {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct SpeakerDiarizationStartResponse {
-    pub started: bool,
-}
-
-#[derive(Debug, Clone, Serialize)]
 pub struct SpeakerDiarizationComplete {
     pub meeting_id: String,
     pub speaker_count: usize,
@@ -1412,41 +1407,40 @@ pub async fn start_speaker_diarization_command<R: Runtime>(
     embedding_model_id: Option<String>,
     num_speakers: Option<i32>,
     preserve_existing_labels: Option<bool>,
-) -> std::result::Result<SpeakerDiarizationStartResponse, String> {
+) -> std::result::Result<SpeakerDiarizationComplete, String> {
     let guard = DiarizationRunGuard::acquire()?;
     let meeting_id_for_task = meeting_id.clone();
 
-    tauri::async_runtime::spawn(async move {
-        let _guard = guard;
-        let result = run_speaker_diarization_for_meeting(
-            app.clone(),
-            meeting_id_for_task.clone(),
-            meeting_folder_path,
-            segmentation_model_path,
-            embedding_model_path,
-            embedding_model_id,
-            num_speakers,
-            preserve_existing_labels.unwrap_or(true),
-        )
-        .await;
+    let _guard = guard;
+    let result = run_speaker_diarization_for_meeting(
+        app.clone(),
+        meeting_id_for_task.clone(),
+        meeting_folder_path,
+        segmentation_model_path,
+        embedding_model_path,
+        embedding_model_id,
+        num_speakers,
+        preserve_existing_labels.unwrap_or(true),
+    )
+    .await;
 
-        match result {
-            Ok(complete) => {
-                let _ = app.emit("speaker-diarization-complete", complete);
-            }
-            Err(error) => {
-                let _ = app.emit(
-                    "speaker-diarization-error",
-                    SpeakerDiarizationError {
-                        meeting_id: meeting_id_for_task,
-                        error: error.to_string(),
-                    },
-                );
-            }
+    match result {
+        Ok(complete) => {
+            let _ = app.emit("speaker-diarization-complete", complete.clone());
+            Ok(complete)
         }
-    });
-
-    Ok(SpeakerDiarizationStartResponse { started: true })
+        Err(error) => {
+            let message = error.to_string();
+            let _ = app.emit(
+                "speaker-diarization-error",
+                SpeakerDiarizationError {
+                    meeting_id: meeting_id_for_task,
+                    error: message.clone(),
+                },
+            );
+            Err(message)
+        }
+    }
 }
 
 #[tauri::command]

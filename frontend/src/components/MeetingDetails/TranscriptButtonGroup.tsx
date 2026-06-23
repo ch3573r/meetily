@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
 import {
@@ -61,6 +61,18 @@ export function TranscriptButtonGroup({
   const [diarizationResult, setDiarizationResult] = useState<SpeakerDiarizationComplete | null>(null);
   const [diarizationError, setDiarizationError] = useState<string | null>(null);
   const [diarizationMode, setDiarizationMode] = useState<string | null>(null);
+  const meetingIdRef = useRef(meetingId);
+  const onRefetchTranscriptsRef = useRef(onRefetchTranscripts);
+  const lastCompletionKeyRef = useRef<string | null>(null);
+  const handledErrorRef = useRef(false);
+
+  useEffect(() => {
+    meetingIdRef.current = meetingId;
+  }, [meetingId]);
+
+  useEffect(() => {
+    onRefetchTranscriptsRef.current = onRefetchTranscripts;
+  }, [onRefetchTranscripts]);
 
   const handleRetranscribeComplete = useCallback(async () => {
     // Refetch transcripts to show the updated data
@@ -69,55 +81,96 @@ export function TranscriptButtonGroup({
     }
   }, [onRefetchTranscripts]);
 
-  useEffect(() => {
-    if (!meetingId) return;
+  const completionKey = useCallback((payload: SpeakerDiarizationComplete) => {
+    return [
+      payload.meeting_id,
+      payload.speaker_count,
+      payload.updated_segments,
+      payload.duration_seconds,
+      payload.processing_seconds,
+      payload.provider,
+      payload.embedding_model,
+      payload.turn_count,
+    ].join(':');
+  }, []);
 
+  const showDiarizationComplete = useCallback((payload: SpeakerDiarizationComplete) => {
+    const key = completionKey(payload);
+    if (lastCompletionKeyRef.current === key) {
+      return;
+    }
+    lastCompletionKeyRef.current = key;
+    handledErrorRef.current = false;
+    setIsDiarizing(false);
+    setDiarizationMessage(null);
+    setDiarizationProgress(null);
+    setDiarizationResult(payload);
+    setDiarizationError(null);
+    setShowDiarizationDialog(true);
+    toast.success('Speaker labels applied', {
+      description: `${payload.updated_segments} transcript segments updated across ${payload.speaker_count} speaker${payload.speaker_count === 1 ? '' : 's'}.`,
+    });
+    void onRefetchTranscriptsRef.current?.();
+  }, [completionKey]);
+
+  const showDiarizationError = useCallback((message: string) => {
+    if (handledErrorRef.current) {
+      return;
+    }
+    handledErrorRef.current = true;
+    setIsDiarizing(false);
+    setDiarizationMessage(null);
+    setDiarizationProgress(null);
+    setDiarizationResult(null);
+    setDiarizationError(message);
+    setShowDiarizationDialog(true);
+    toast.error('Speaker diarization failed', {
+      description: message,
+    });
+    void onRefetchTranscriptsRef.current?.();
+  }, []);
+
+  useEffect(() => {
+    let cleanedUp = false;
     const unlistenCallbacks: Array<() => void> = [];
 
+    const trackUnlistener = (unlisten: () => void) => {
+      if (cleanedUp) {
+        unlisten();
+      } else {
+        unlistenCallbacks.push(unlisten);
+      }
+    };
+
     void listen<SpeakerDiarizationProgress>('speaker-diarization-progress', (event) => {
-      if (event.payload.meeting_id !== meetingId) return;
+      if (event.payload.meeting_id !== meetingIdRef.current) return;
       if (event.payload.stage !== 'complete') {
         setIsDiarizing(true);
       }
       setDiarizationMessage(event.payload.message);
       setDiarizationProgress(event.payload);
-    }).then((unlisten) => unlistenCallbacks.push(unlisten));
+    }).then(trackUnlistener);
 
-    void listen<SpeakerDiarizationComplete>('speaker-diarization-complete', async (event) => {
-      if (event.payload.meeting_id !== meetingId) return;
-      setIsDiarizing(false);
-      setDiarizationMessage(null);
-      setDiarizationProgress(null);
-      setDiarizationResult(event.payload);
-      setDiarizationError(null);
-      setShowDiarizationDialog(true);
-      toast.success('Speaker labels applied', {
-        description: `${event.payload.updated_segments} transcript segments updated across ${event.payload.speaker_count} speaker${event.payload.speaker_count === 1 ? '' : 's'}.`,
-      });
-      await onRefetchTranscripts?.();
-    }).then((unlisten) => unlistenCallbacks.push(unlisten));
+    void listen<SpeakerDiarizationComplete>('speaker-diarization-complete', (event) => {
+      if (event.payload.meeting_id !== meetingIdRef.current) return;
+      showDiarizationComplete(event.payload);
+    }).then(trackUnlistener);
 
-    void listen<SpeakerDiarizationError>('speaker-diarization-error', async (event) => {
-      if (event.payload.meeting_id !== meetingId) return;
-      setIsDiarizing(false);
-      setDiarizationMessage(null);
-      setDiarizationProgress(null);
-      setDiarizationResult(null);
-      setDiarizationError(event.payload.error);
-      setShowDiarizationDialog(true);
-      toast.error('Speaker diarization failed', {
-        description: event.payload.error,
-      });
-      await onRefetchTranscripts?.();
-    }).then((unlisten) => unlistenCallbacks.push(unlisten));
+    void listen<SpeakerDiarizationError>('speaker-diarization-error', (event) => {
+      if (event.payload.meeting_id !== meetingIdRef.current) return;
+      showDiarizationError(event.payload.error);
+    }).then(trackUnlistener);
 
     return () => {
+      cleanedUp = true;
       unlistenCallbacks.forEach((unlisten) => unlisten());
     };
-  }, [meetingId, onRefetchTranscripts]);
+  }, [showDiarizationComplete, showDiarizationError]);
 
   const handleRunSpeakerDiarization = useCallback(async (numSpeakers: number | null = null) => {
     if (!meetingId || !meetingFolderPath) return;
+    lastCompletionKeyRef.current = null;
+    handledErrorRef.current = false;
     const speakerMode = numSpeakers ? `${numSpeakers} speakers` : 'Auto speaker detection';
     setIsDiarizing(true);
     setDiarizationMessage(`Starting ${speakerMode.toLowerCase()}...`);
@@ -133,7 +186,7 @@ export function TranscriptButtonGroup({
     setShowDiarizationDialog(true);
     try {
       Analytics.trackButtonClick(numSpeakers ? `speaker_diarization_${numSpeakers}` : 'speaker_diarization_auto', 'meeting_details');
-      await invoke('start_speaker_diarization_command', {
+      const complete = await invoke<SpeakerDiarizationComplete>('start_speaker_diarization_command', {
         meetingId,
         meetingFolderPath,
         segmentationModelPath: null,
@@ -142,17 +195,11 @@ export function TranscriptButtonGroup({
         numSpeakers,
         preserveExistingLabels: false,
       });
+      showDiarizationComplete(complete);
     } catch (error) {
-      setIsDiarizing(false);
-      setDiarizationMessage(null);
-      setDiarizationProgress(null);
-      setDiarizationError(String(error));
-      setShowDiarizationDialog(true);
-      toast.error('Could not start speaker diarization', {
-        description: String(error),
-      });
+      showDiarizationError(String(error));
     }
-  }, [meetingFolderPath, meetingId]);
+  }, [meetingFolderPath, meetingId, showDiarizationComplete, showDiarizationError]);
 
   const speakerDetectionDisabled = transcriptCount === 0 || isDiarizing;
 
