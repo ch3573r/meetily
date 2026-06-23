@@ -29,7 +29,6 @@ function MeetingDetailsContent() {
   const [meetingDetails, setMeetingDetails] = useState<MeetingDetailsResponse | null>(null);
   const [meetingSummary, setMeetingSummary] = useState<Summary | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [shouldAutoGenerate, setShouldAutoGenerate] = useState<boolean>(false);
   const [hasCheckedAutoGen, setHasCheckedAutoGen] = useState<boolean>(false);
 
@@ -38,7 +37,6 @@ function MeetingDetailsContent() {
     metadata,
     segments,
     transcripts,
-    isLoading: isLoadingTranscripts,
     isLoadingMore,
     hasMore,
     totalCount,
@@ -159,7 +157,6 @@ function MeetingDetailsContent() {
     setMeetingDetails(null);
     setMeetingSummary(null);
     setError(null);
-    setIsLoading(true);
     // Reset auto-generation state to allow new meeting to be checked
     setHasCheckedAutoGen(false);
     setShouldAutoGenerate(false);
@@ -181,7 +178,6 @@ function MeetingDetailsContent() {
     if (!meetingId || meetingId === 'intro-call') {
       console.warn('No valid meeting ID in URL - meetingId:', meetingId);
       setError("No meeting selected");
-      setIsLoading(false);
       Analytics.trackPageView('meeting_details');
       return;
     }
@@ -191,7 +187,6 @@ function MeetingDetailsContent() {
     setMeetingDetails(null);
     setMeetingSummary(null);
     setError(null);
-    setIsLoading(true);
 
     const fetchMeetingSummary = async () => {
       try {
@@ -295,15 +290,7 @@ function MeetingDetailsContent() {
       }
     };
 
-    const loadData = async () => {
-      try {
-        await fetchMeetingSummary();
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    loadData();
+    fetchMeetingSummary();
   }, [meetingId]);
 
   // Auto-generation check: runs when meeting is loaded with no summary
@@ -348,12 +335,6 @@ function MeetingDetailsContent() {
   // Show the full-page spinner only for the initial load. Post-processing
   // refetches must keep PageContent mounted so completion benchmark dialogs
   // are not destroyed as soon as retranscription/diarization finishes.
-  if (!meetingDetails && (isLoading || isLoadingTranscripts)) {
-    return <div className="flex h-full items-center justify-center">
-      <LoaderIcon className="animate-spin size-6 " />
-    </div>;
-  }
-
   if (!meetingDetails) {
     return <div className="flex h-full items-center justify-center">
       <LoaderIcon className="animate-spin size-6 " />
