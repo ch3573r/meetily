@@ -30,7 +30,7 @@ use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 
 const FLOAT_TIE_EPSILON: f64 = 1e-9;
-const MIN_SPLIT_SPEAKER_OVERLAP_SECONDS: f64 = 1.0;
+const MIN_SPLIT_SPEAKER_OVERLAP_SECONDS: f64 = 0.35;
 const MIN_SPLIT_PART_SECONDS: f64 = 1.25;
 const SAME_SPEAKER_MERGE_GAP_SECONDS: f64 = 0.25;
 const SAME_SPEAKER_TRANSCRIPT_MERGE_GAP_SECONDS: f64 = 1.0;
@@ -510,10 +510,19 @@ fn split_transcript_segment_by_speaker_spans(
     if spans.len() <= 1 || !is_valid_interval(segment_start, segment_end) {
         return vec![segment.clone()];
     }
-    if spans.iter().any(|span| {
-        span.end_time - span.start_time < MIN_SPLIT_PART_SECONDS
-            || !is_valid_interval(span.start_time, span.end_time)
-    }) {
+    if spans
+        .iter()
+        .any(|span| !is_valid_interval(span.start_time, span.end_time))
+    {
+        return vec![segment.clone()];
+    }
+
+    let has_aligned_word_timestamps = has_aligned_word_timestamps(segment);
+    if !has_aligned_word_timestamps
+        && spans
+            .iter()
+            .any(|span| span.end_time - span.start_time < MIN_SPLIT_PART_SECONDS)
+    {
         return vec![segment.clone()];
     }
 
@@ -523,15 +532,16 @@ fn split_transcript_segment_by_speaker_spans(
         .map(|span| span.end_time.clamp(segment_start, segment_end))
         .collect();
     let text_parts =
-        split_text_by_word_timestamps(&segment.text, &segment.word_timestamps, &boundaries)
-            .unwrap_or_else(|| {
-                split_text_by_time_boundaries(
-                    &segment.text,
-                    segment_start,
-                    segment_end,
-                    &boundaries,
-                )
-            });
+        match split_text_by_word_timestamps(&segment.text, &segment.word_timestamps, &boundaries) {
+            Some(parts) => parts,
+            None if has_aligned_word_timestamps => return vec![segment.clone()],
+            None => split_text_by_time_boundaries(
+                &segment.text,
+                segment_start,
+                segment_end,
+                &boundaries,
+            ),
+        };
     if text_parts.len() != spans.len() || text_parts.iter().any(|part| part.trim().is_empty()) {
         return vec![segment.clone()];
     }
@@ -573,6 +583,18 @@ fn split_transcript_segment_by_speaker_spans(
             }
         })
         .collect()
+}
+
+fn has_aligned_word_timestamps(segment: &TranscriptSegment) -> bool {
+    let Some(words) = segment.word_timestamps.as_ref() else {
+        return false;
+    };
+    let tokens = word_tokens(segment.text.trim());
+    !tokens.is_empty()
+        && tokens.len() == words.len()
+        && words
+            .iter()
+            .all(|word| is_valid_interval(word.start, word.end))
 }
 
 fn merge_adjacent_transcript_segments_by_speaker(
@@ -4537,6 +4559,51 @@ mod tests {
             .all(|word| word.speaker.as_deref() == Some("Speaker 2")));
         assert_eq!(mapped[2].speaker.as_deref(), Some("Speaker 1"));
         assert_eq!(mapped[2].text, "hear scam explained");
+    }
+
+    #[test]
+    fn splits_short_interjection_when_word_timestamps_are_available() {
+        let transcripts = vec![transcript_with_word_timestamps(
+            "a",
+            &[
+                ("What", 0.0, 0.4),
+                ("about", 0.4, 0.8),
+                ("drones?", 0.8, 4.0),
+                ("Who", 4.0, 4.15),
+                ("made", 4.15, 4.3),
+                ("money", 4.3, 4.45),
+                ("on", 4.45, 4.6),
+                ("that", 4.6, 4.8),
+                ("one?", 4.8, 5.0),
+                ("Should", 5.0, 5.3),
+                ("we", 5.3, 5.6),
+                ("look", 5.6, 5.9),
+                ("it", 5.9, 6.1),
+                ("up?", 6.1, 8.0),
+            ],
+            0.0,
+            8.0,
+        )];
+        let turns = vec![turn(0.0, 4.0, 1), turn(4.0, 5.0, 0), turn(5.0, 8.0, 1)];
+
+        let mapped = map_diarization_to_transcript_segments(
+            &transcripts,
+            &turns,
+            DiarizationMappingOptions {
+                existing_speaker_policy: ExistingSpeakerPolicy::Overwrite,
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(mapped.len(), 3);
+        assert_eq!(mapped[0].speaker.as_deref(), Some("Speaker 2"));
+        assert_eq!(mapped[0].text, "What about drones?");
+        assert_eq!(mapped[1].speaker.as_deref(), Some("Speaker 1"));
+        assert_eq!(mapped[1].text, "Who made money on that one?");
+        assert_eq!(mapped[1].audio_start_time, Some(4.0));
+        assert_eq!(mapped[1].audio_end_time, Some(5.0));
+        assert_eq!(mapped[2].speaker.as_deref(), Some("Speaker 2"));
+        assert_eq!(mapped[2].text, "Should we look it up?");
     }
 
     #[test]
