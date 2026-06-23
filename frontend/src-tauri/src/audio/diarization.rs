@@ -38,7 +38,6 @@ const SAME_SPEAKER_MERGE_GAP_SECONDS: f64 = 0.25;
 const SAME_SPEAKER_TRANSCRIPT_MERGE_GAP_SECONDS: f64 = 1.0;
 const SPLIT_BOUNDARY_SEARCH_WORDS: usize = 8;
 const LEGACY_ESTIMATED_WORD_TIMESTAMP_TOLERANCE_SECONDS: f64 = 0.05;
-const MAX_DOMINANT_SPEAKER_SHARE_FOR_EXPLICIT_COUNT: f64 = 0.92;
 const AUTO_MAX_CONFIDENT_SPEAKER_LANES: usize = 4;
 const AUTO_SIGNIFICANT_SPEAKER_MIN_SECONDS: f64 = 6.0;
 const AUTO_SIGNIFICANT_SPEAKER_DOMINANT_SHARE: f64 = 0.06;
@@ -2677,9 +2676,7 @@ fn explicit_speaker_mapping_is_collapsed(
     expected_speakers: usize,
     quality: &MappedDiarizationQuality,
 ) -> bool {
-    expected_speakers > 1
-        && (quality.speaker_count < expected_speakers
-            || quality.dominant_share > MAX_DOMINANT_SPEAKER_SHARE_FOR_EXPLICIT_COUNT)
+    expected_speakers > 1 && quality.speaker_count < expected_speakers
 }
 
 fn explicit_mapping_failure_message(
@@ -4578,7 +4575,24 @@ mod tests {
         let quality = mapped_diarization_quality(&segments);
 
         assert_eq!(quality.speaker_count, 3);
-        assert!(quality.dominant_share < MAX_DOMINANT_SPEAKER_SHARE_FOR_EXPLICIT_COUNT);
+        assert!(!explicit_speaker_mapping_is_collapsed(3, &quality));
+    }
+
+    #[test]
+    fn explicit_speaker_quality_accepts_valid_dominant_requested_speakers() {
+        let mut segments = vec![
+            transcript("host", Some(0.0), Some(426.9)),
+            transcript("guest", Some(426.9), Some(436.3)),
+            transcript("jamie", Some(436.3), Some(445.6)),
+        ];
+        segments[0].speaker = Some("Speaker 1".to_string());
+        segments[1].speaker = Some("Speaker 2".to_string());
+        segments[2].speaker = Some("Speaker 3".to_string());
+
+        let quality = mapped_diarization_quality(&segments);
+
+        assert_eq!(quality.speaker_count, 3);
+        assert!(quality.dominant_share > 0.95);
         assert!(!explicit_speaker_mapping_is_collapsed(3, &quality));
     }
 
@@ -4703,7 +4717,7 @@ mod tests {
             2,
         );
 
-        assert!(attempt.quality.dominant_share > MAX_DOMINANT_SPEAKER_SHARE_FOR_EXPLICIT_COUNT);
+        assert!(attempt.quality.dominant_share > 0.92);
         assert_eq!(auto_diarization_low_confidence_reason(&attempt), None);
     }
 
