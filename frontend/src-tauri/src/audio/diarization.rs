@@ -102,9 +102,129 @@ struct TranscriptSpeakerSpan {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WordTimestampEligibility {
+    None,
+    Real,
+    Estimated,
+    LegacyPrecise,
+    LegacyEstimated,
+    Invalid,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct WordToken {
     start_byte: usize,
     end_byte: usize,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DiarizationMappingDiagnostics {
+    transcript_rows: usize,
+    rows_with_word_timestamps: usize,
+    rows_with_real_word_timestamps: usize,
+    rows_with_estimated_word_timestamps: usize,
+    rows_with_legacy_precise_word_timestamps: usize,
+    rows_with_legacy_estimated_word_timestamps: usize,
+    rows_with_invalid_word_timestamps: usize,
+    prepared_turns: usize,
+    short_prepared_turns: usize,
+    shortest_turn_seconds: Option<f64>,
+    rows_with_multiple_speaker_spans: usize,
+    rows_split_by_speaker_spans: usize,
+    rows_blocked_by_short_part_gate: usize,
+    rows_blocked_by_word_timestamp_alignment: usize,
+    short_speaker_spans: usize,
+}
+
+impl DiarizationMappingDiagnostics {
+    fn from_inputs(
+        transcript_segments: &[TranscriptSegment],
+        diarization_turns: &[DiarizationTurn],
+    ) -> Self {
+        let shortest_turn_seconds = diarization_turns
+            .iter()
+            .filter_map(|turn| {
+                is_valid_interval(turn.start_time, turn.end_time)
+                    .then_some(turn.end_time - turn.start_time)
+            })
+            .min_by(|left, right| left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal));
+
+        let mut diagnostics = Self {
+            transcript_rows: transcript_segments.len(),
+            prepared_turns: diarization_turns.len(),
+            short_prepared_turns: diarization_turns
+                .iter()
+                .filter(|turn| {
+                    is_valid_interval(turn.start_time, turn.end_time)
+                        && turn.end_time - turn.start_time < MIN_SPLIT_PART_SECONDS
+                })
+                .count(),
+            shortest_turn_seconds,
+            ..Default::default()
+        };
+
+        for segment in transcript_segments {
+            diagnostics.record_word_timestamp_eligibility(word_timestamp_eligibility(segment));
+        }
+
+        diagnostics
+    }
+
+    fn record_word_timestamp_eligibility(&mut self, eligibility: WordTimestampEligibility) {
+        match eligibility {
+            WordTimestampEligibility::None => {}
+            WordTimestampEligibility::Real => {
+                self.rows_with_word_timestamps += 1;
+                self.rows_with_real_word_timestamps += 1;
+            }
+            WordTimestampEligibility::Estimated => {
+                self.rows_with_word_timestamps += 1;
+                self.rows_with_estimated_word_timestamps += 1;
+            }
+            WordTimestampEligibility::LegacyPrecise => {
+                self.rows_with_word_timestamps += 1;
+                self.rows_with_legacy_precise_word_timestamps += 1;
+            }
+            WordTimestampEligibility::LegacyEstimated => {
+                self.rows_with_word_timestamps += 1;
+                self.rows_with_legacy_estimated_word_timestamps += 1;
+            }
+            WordTimestampEligibility::Invalid => {
+                self.rows_with_word_timestamps += 1;
+                self.rows_with_invalid_word_timestamps += 1;
+            }
+        }
+    }
+
+    fn record_split_candidate(
+        &mut self,
+        segment: &TranscriptSegment,
+        spans: &[TranscriptSpeakerSpan],
+        split_segment_count: usize,
+    ) {
+        self.rows_with_multiple_speaker_spans += 1;
+        let short_span_count = spans
+            .iter()
+            .filter(|span| span.end_time - span.start_time < MIN_SPLIT_PART_SECONDS)
+            .count();
+        self.short_speaker_spans += short_span_count;
+
+        if split_segment_count > 1 {
+            self.rows_split_by_speaker_spans += 1;
+            return;
+        }
+
+        match word_timestamp_eligibility(segment) {
+            WordTimestampEligibility::Real | WordTimestampEligibility::LegacyPrecise => {
+                self.rows_blocked_by_word_timestamp_alignment += 1;
+            }
+            _ if short_span_count > 0 => {
+                self.rows_blocked_by_short_part_gate += 1;
+            }
+            _ => {}
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -335,6 +455,21 @@ pub fn map_diarization_to_transcript_segments(
     diarization_turns: &[DiarizationTurn],
     options: DiarizationMappingOptions,
 ) -> Vec<TranscriptSegment> {
+    map_diarization_to_transcript_segments_with_diagnostics(
+        transcript_segments,
+        diarization_turns,
+        options,
+    )
+    .0
+}
+
+fn map_diarization_to_transcript_segments_with_diagnostics(
+    transcript_segments: &[TranscriptSegment],
+    diarization_turns: &[DiarizationTurn],
+    options: DiarizationMappingOptions,
+) -> (Vec<TranscriptSegment>, DiarizationMappingDiagnostics) {
+    let mut diagnostics =
+        DiarizationMappingDiagnostics::from_inputs(transcript_segments, diarization_turns);
     let mapped_segments: Vec<TranscriptSegment> = transcript_segments
         .iter()
         .flat_map(|segment| {
@@ -342,21 +477,33 @@ pub fn map_diarization_to_transcript_segments(
                 return vec![segment.clone()];
             }
 
-            split_or_label_transcript_segment(segment, diarization_turns, options.mode)
+            split_or_label_transcript_segment(
+                segment,
+                diarization_turns,
+                options.mode,
+                Some(&mut diagnostics),
+            )
         })
         .collect();
 
-    merge_adjacent_transcript_segments_by_speaker(mapped_segments)
+    (
+        merge_adjacent_transcript_segments_by_speaker(mapped_segments),
+        diagnostics,
+    )
 }
 
 fn split_or_label_transcript_segment(
     segment: &TranscriptSegment,
     diarization_turns: &[DiarizationTurn],
     mode: DiarizationMappingMode,
+    diagnostics: Option<&mut DiarizationMappingDiagnostics>,
 ) -> Vec<TranscriptSegment> {
     let spans = speaker_spans_for_segment(segment, diarization_turns);
     if spans.len() > 1 {
         let split_segments = split_transcript_segment_by_speaker_spans(segment, &spans);
+        if let Some(diagnostics) = diagnostics {
+            diagnostics.record_split_candidate(segment, &spans, split_segments.len());
+        }
         if split_segments.len() > 1 {
             return split_segments;
         }
@@ -589,8 +736,15 @@ fn split_transcript_segment_by_speaker_spans(
 }
 
 fn has_real_aligned_word_timestamps(segment: &TranscriptSegment) -> bool {
+    matches!(
+        word_timestamp_eligibility(segment),
+        WordTimestampEligibility::Real | WordTimestampEligibility::LegacyPrecise
+    )
+}
+
+fn word_timestamp_eligibility(segment: &TranscriptSegment) -> WordTimestampEligibility {
     let Some(words) = segment.word_timestamps.as_ref() else {
-        return false;
+        return WordTimestampEligibility::None;
     };
     let text = segment.text.trim();
     let tokens = word_tokens(text);
@@ -600,28 +754,32 @@ fn has_real_aligned_word_timestamps(segment: &TranscriptSegment) -> bool {
             .iter()
             .any(|word| !is_valid_interval(word.start, word.end))
     {
-        return false;
+        return WordTimestampEligibility::Invalid;
     }
 
     if words
         .iter()
         .any(|word| word.timestamp_source == Some(TranscriptWordTimestampSource::Estimated))
     {
-        return false;
+        return WordTimestampEligibility::Estimated;
     }
 
     if words
         .iter()
         .all(|word| word.timestamp_source == Some(TranscriptWordTimestampSource::Real))
     {
-        return true;
+        return WordTimestampEligibility::Real;
     }
 
     if words.iter().any(|word| word.timestamp_source.is_none()) {
-        return !matches_weighted_estimated_word_timestamps(segment, text, &tokens, words);
+        return if matches_weighted_estimated_word_timestamps(segment, text, &tokens, words) {
+            WordTimestampEligibility::LegacyEstimated
+        } else {
+            WordTimestampEligibility::LegacyPrecise
+        };
     }
 
-    false
+    WordTimestampEligibility::Invalid
 }
 
 fn matches_weighted_estimated_word_timestamps(
@@ -643,6 +801,9 @@ fn matches_weighted_estimated_word_timestamps(
         return false;
     }
 
+    // Keep this in lockstep with crate::audio::common::estimate_word_timestamps.
+    // It distinguishes legacy estimated anchors from legacy precise Parakeet anchors
+    // that were saved before timestamp_source existed.
     let total_weight = tokens
         .iter()
         .map(|token| word_token_weight(text, token))
@@ -1444,6 +1605,8 @@ struct DiarizationProfile {
     selected_provider: Option<String>,
     decision: Option<String>,
     runtime_dlls: Vec<DiarizationRuntimeDll>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mapping_diagnostics: Option<DiarizationMappingDiagnostics>,
     events: Vec<DiarizationProfileEvent>,
 }
 
@@ -2031,25 +2194,12 @@ async fn run_diarization_mapping_attempt<R: Runtime>(
     }
     turns = prepare_diarization_turns_for_mapping(sample_count, &turns, explicit_num_speakers);
     let prepared_speaker_count = speaker_count_from_turns(&turns);
-    let mut mapped_segments = map_diarization_to_transcript_segments(
-        transcript_segments,
-        &turns,
-        DiarizationMappingOptions {
-            mode: DiarizationMappingMode::Overlap,
-            existing_speaker_policy: if preserve_existing_labels {
-                ExistingSpeakerPolicy::PreserveNonEmpty
-            } else {
-                ExistingSpeakerPolicy::Overwrite
-            },
-        },
-    );
-    let mut mapped_speaker_count = transcript_speaker_count(&mapped_segments);
-    if prepared_speaker_count > 1 && mapped_speaker_count <= 1 {
-        let midpoint_segments = map_diarization_to_transcript_segments(
+    let (mut mapped_segments, mut mapping_diagnostics) =
+        map_diarization_to_transcript_segments_with_diagnostics(
             transcript_segments,
             &turns,
             DiarizationMappingOptions {
-                mode: DiarizationMappingMode::Midpoint,
+                mode: DiarizationMappingMode::Overlap,
                 existing_speaker_policy: if preserve_existing_labels {
                     ExistingSpeakerPolicy::PreserveNonEmpty
                 } else {
@@ -2057,6 +2207,21 @@ async fn run_diarization_mapping_attempt<R: Runtime>(
                 },
             },
         );
+    let mut mapped_speaker_count = transcript_speaker_count(&mapped_segments);
+    if prepared_speaker_count > 1 && mapped_speaker_count <= 1 {
+        let (midpoint_segments, midpoint_diagnostics) =
+            map_diarization_to_transcript_segments_with_diagnostics(
+                transcript_segments,
+                &turns,
+                DiarizationMappingOptions {
+                    mode: DiarizationMappingMode::Midpoint,
+                    existing_speaker_policy: if preserve_existing_labels {
+                        ExistingSpeakerPolicy::PreserveNonEmpty
+                    } else {
+                        ExistingSpeakerPolicy::Overwrite
+                    },
+                },
+            );
         let midpoint_speaker_count = transcript_speaker_count(&midpoint_segments);
         if midpoint_speaker_count > mapped_speaker_count {
             log::info!(
@@ -2067,6 +2232,7 @@ async fn run_diarization_mapping_attempt<R: Runtime>(
                 prepared_speaker_count
             );
             mapped_segments = midpoint_segments;
+            mapping_diagnostics = midpoint_diagnostics;
             mapped_speaker_count = midpoint_speaker_count;
         }
     }
@@ -2089,6 +2255,7 @@ async fn run_diarization_mapping_attempt<R: Runtime>(
         quality.dominant_seconds,
         quality.dominant_share,
     );
+    profile.set_mapping_diagnostics(mapping_diagnostics);
 
     Ok(DiarizationMappingAttempt {
         model_paths,
@@ -2604,6 +2771,7 @@ impl DiarizationProfile {
             selected_provider: None,
             decision: None,
             runtime_dlls: collect_sherpa_runtime_dlls(),
+            mapping_diagnostics: None,
             events: Vec::new(),
         };
         log_profile_snapshot("start", &profile);
@@ -2614,6 +2782,11 @@ impl DiarizationProfile {
         self.selected_provider = Some(selected_provider.to_string());
         self.decision = Some(decision.into());
         log_profile_snapshot("decision", self);
+    }
+
+    fn set_mapping_diagnostics(&mut self, diagnostics: DiarizationMappingDiagnostics) {
+        self.mapping_diagnostics = Some(diagnostics);
+        log_profile_snapshot("mapping", self);
     }
 
     fn record_success(
@@ -4802,6 +4975,79 @@ mod tests {
 
         assert_eq!(mapped.len(), 1);
         assert_eq!(mapped[0].speaker.as_deref(), Some("Speaker 2"));
+    }
+
+    #[test]
+    fn mapping_diagnostics_report_split_eligibility() {
+        let mut legacy_precise = transcript_with_word_timestamps(
+            "a",
+            &[
+                ("What", 0.0, 0.4),
+                ("about", 0.4, 0.8),
+                ("drones?", 0.8, 4.0),
+                ("Who", 4.0, 4.15),
+                ("made", 4.15, 4.3),
+                ("money", 4.3, 4.45),
+                ("on", 4.45, 4.6),
+                ("that", 4.6, 4.8),
+                ("one?", 4.8, 5.0),
+                ("Should", 5.0, 5.3),
+                ("we", 5.3, 5.6),
+                ("look", 5.6, 5.9),
+                ("it", 5.9, 6.1),
+                ("up?", 6.1, 8.0),
+            ],
+            0.0,
+            8.0,
+        );
+        for word in legacy_precise.word_timestamps.as_mut().unwrap() {
+            word.timestamp_source = None;
+        }
+
+        let mut legacy_estimated = transcript_with_text(
+            "b",
+            "What about drones? Who made money on that one? Should we look it up?",
+            Some(10.0),
+            Some(18.0),
+        );
+        legacy_estimated.word_timestamps = crate::audio::common::estimate_word_timestamps(
+            &legacy_estimated.text,
+            10.0,
+            18.0,
+            None,
+            None,
+        );
+        for word in legacy_estimated.word_timestamps.as_mut().unwrap() {
+            word.timestamp_source = None;
+        }
+
+        let turns = vec![
+            turn(0.0, 4.0, 1),
+            turn(4.0, 5.0, 0),
+            turn(5.0, 8.0, 1),
+            turn(10.0, 14.0, 1),
+            turn(14.0, 15.0, 0),
+            turn(15.0, 18.0, 1),
+        ];
+
+        let (mapped, diagnostics) = map_diarization_to_transcript_segments_with_diagnostics(
+            &[legacy_precise, legacy_estimated],
+            &turns,
+            DiarizationMappingOptions {
+                existing_speaker_policy: ExistingSpeakerPolicy::Overwrite,
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(mapped.len(), 4);
+        assert_eq!(diagnostics.transcript_rows, 2);
+        assert_eq!(diagnostics.rows_with_word_timestamps, 2);
+        assert_eq!(diagnostics.rows_with_legacy_precise_word_timestamps, 1);
+        assert_eq!(diagnostics.rows_with_legacy_estimated_word_timestamps, 1);
+        assert_eq!(diagnostics.rows_with_multiple_speaker_spans, 2);
+        assert_eq!(diagnostics.rows_split_by_speaker_spans, 1);
+        assert_eq!(diagnostics.rows_blocked_by_short_part_gate, 1);
+        assert_eq!(diagnostics.short_speaker_spans, 2);
     }
 
     #[test]
