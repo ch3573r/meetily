@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.5.27
+
+- Kept retranscription and speaker-diarization benchmark dialogs mounted while
+  transcripts refresh after processing, so completion stats stay visible instead
+  of disappearing behind a full-page reload.
+- Preserved existing transcript rows during post-processing refreshes to avoid
+  blank flashes while the updated transcript is reloaded.
+- Restored readable contrast for the retranscribe warning callout in dark mode.
+- Stitched short batch-transcription fragments back into readable transcript
+  rows while keeping word timestamps non-mutating for speaker-diarization
+  splitting.
+- Added the final local diarization recovery attempts for compact interjections,
+  short speaker islands, weak mappings, and dominant-host explicit counts.
+- `latest.json` advertises runtime version `0.5.27`, so installed `0.5.26`
+  clients can discover this update.
+
 ## 0.5.26
 
 - Added diarization mapping diagnostics to speaker-detection profiles so support
