@@ -38,6 +38,7 @@ const SAME_SPEAKER_MERGE_GAP_SECONDS: f64 = 0.25;
 const SAME_SPEAKER_TRANSCRIPT_MERGE_GAP_SECONDS: f64 = 1.0;
 const SPLIT_BOUNDARY_SEARCH_WORDS: usize = 8;
 const LEGACY_ESTIMATED_WORD_TIMESTAMP_TOLERANCE_SECONDS: f64 = 0.05;
+const MIN_EXPLICIT_RETRY_SPEAKER_SECONDS: f64 = 2.0;
 const AUTO_MAX_CONFIDENT_SPEAKER_LANES: usize = 4;
 const AUTO_SIGNIFICANT_SPEAKER_MIN_SECONDS: f64 = 6.0;
 const AUTO_SIGNIFICANT_SPEAKER_DOMINANT_SHARE: f64 = 0.06;
@@ -237,6 +238,7 @@ struct MappedDiarizationQuality {
     dominant_speaker: Option<String>,
     dominant_seconds: f64,
     dominant_share: f64,
+    min_speaker_seconds: Option<f64>,
 }
 
 #[derive(Debug, Clone)]
@@ -1853,10 +1855,10 @@ async fn run_speaker_diarization_for_meeting<R: Runtime>(
         .and_then(|value| usize::try_from(value).ok())
         .filter(|value| *value > 1)
     {
-        if explicit_speaker_mapping_is_collapsed(expected_speakers, &attempt.quality)
+        if explicit_speaker_mapping_needs_embedding_retry(expected_speakers, &attempt.quality)
             && !custom_embedding_requested
         {
-            attempt = retry_collapsed_mapping_with_fallback_embeddings(
+            attempt = retry_unreliable_mapping_with_fallback_embeddings(
                 &app,
                 &meeting_id,
                 attempt,
@@ -1920,10 +1922,13 @@ async fn run_speaker_diarization_for_meeting<R: Runtime>(
 
         let expected_speakers = usize::try_from(recovery.speaker_count).unwrap_or(0);
         if expected_speakers > 1
-            && explicit_speaker_mapping_is_collapsed(expected_speakers, &recovered_attempt.quality)
+            && explicit_speaker_mapping_needs_embedding_retry(
+                expected_speakers,
+                &recovered_attempt.quality,
+            )
             && !custom_embedding_requested
         {
-            recovered_attempt = retry_collapsed_mapping_with_fallback_embeddings(
+            recovered_attempt = retry_unreliable_mapping_with_fallback_embeddings(
                 &app,
                 &meeting_id,
                 recovered_attempt,
@@ -2203,7 +2208,7 @@ async fn run_diarization_mapping_attempt<R: Runtime>(
     }
     let quality = mapped_diarization_quality(&mapped_segments);
     log::info!(
-        "speaker_diarization_mapping_quality meeting_id={} embedding_model={} provider={} prepared_speakers={} mapped_speakers={} labelled_seconds={:.1} dominant_speaker={} dominant_seconds={:.1} dominant_share={:.3}",
+        "speaker_diarization_mapping_quality meeting_id={} embedding_model={} provider={} prepared_speakers={} mapped_speakers={} labelled_seconds={:.1} dominant_speaker={} dominant_seconds={:.1} dominant_share={:.3} min_speaker_seconds={:.1}",
         meeting_id,
         model_paths
             .embedding_descriptor
@@ -2219,6 +2224,7 @@ async fn run_diarization_mapping_attempt<R: Runtime>(
             .unwrap_or("<none>"),
         quality.dominant_seconds,
         quality.dominant_share,
+        quality.min_speaker_seconds.unwrap_or(0.0),
     );
     profile.set_mapping_diagnostics(mapping_diagnostics);
 
@@ -2234,7 +2240,7 @@ async fn run_diarization_mapping_attempt<R: Runtime>(
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn retry_collapsed_mapping_with_fallback_embeddings<R: Runtime>(
+async fn retry_unreliable_mapping_with_fallback_embeddings<R: Runtime>(
     app: &AppHandle<R>,
     meeting_id: &str,
     mut attempt: DiarizationMappingAttempt,
@@ -2249,7 +2255,7 @@ async fn retry_collapsed_mapping_with_fallback_embeddings<R: Runtime>(
     allow_zh_cn_fallback: bool,
     progress_percentage: u32,
 ) -> Result<DiarizationMappingAttempt> {
-    if !explicit_speaker_mapping_is_collapsed(expected_speakers, &attempt.quality) {
+    if !explicit_speaker_mapping_needs_embedding_retry(expected_speakers, &attempt.quality) {
         return Ok(attempt);
     }
 
@@ -2257,7 +2263,7 @@ async fn retry_collapsed_mapping_with_fallback_embeddings<R: Runtime>(
         .model_paths
         .embedding_descriptor
         .map(|descriptor| descriptor.id);
-    let mut best_failed_attempt = attempt.clone();
+    let mut best_attempt = attempt.clone();
 
     for embedding_model_id in
         fallback_embedding_model_ids(current_embedding_id, allow_zh_cn_fallback)
@@ -2277,7 +2283,7 @@ async fn retry_collapsed_mapping_with_fallback_embeddings<R: Runtime>(
             meeting_id,
             "diarizing_retry",
             progress_percentage,
-            &format!("Speaker labels look collapsed; retrying with {embedding_name}..."),
+            &format!("Speaker labels look unreliable; retrying with {embedding_name}..."),
         );
 
         let candidate = match run_diarization_mapping_attempt(
@@ -2306,20 +2312,20 @@ async fn retry_collapsed_mapping_with_fallback_embeddings<R: Runtime>(
             }
         };
 
-        if is_better_explicit_mapping_attempt(expected_speakers, &candidate, &best_failed_attempt) {
-            best_failed_attempt = candidate.clone();
+        if is_better_explicit_mapping_attempt(expected_speakers, &candidate, &best_attempt) {
+            best_attempt = candidate.clone();
         }
 
-        if !explicit_speaker_mapping_is_collapsed(expected_speakers, &candidate.quality) {
+        if !explicit_speaker_mapping_needs_embedding_retry(expected_speakers, &candidate.quality) {
             attempt = candidate;
             break;
         }
     }
 
-    if explicit_speaker_mapping_is_collapsed(expected_speakers, &attempt.quality)
-        && is_better_explicit_mapping_attempt(expected_speakers, &best_failed_attempt, &attempt)
+    if explicit_speaker_mapping_needs_embedding_retry(expected_speakers, &attempt.quality)
+        && is_better_explicit_mapping_attempt(expected_speakers, &best_attempt, &attempt)
     {
-        attempt = best_failed_attempt;
+        attempt = best_attempt;
     }
 
     Ok(attempt)
@@ -2338,6 +2344,22 @@ fn is_better_explicit_mapping_attempt(
 
     if candidate.quality.speaker_count != current.quality.speaker_count {
         return candidate.quality.speaker_count > current.quality.speaker_count;
+    }
+
+    let candidate_has_weak_speaker =
+        explicit_speaker_mapping_has_weak_requested_speaker(expected_speakers, &candidate.quality);
+    let current_has_weak_speaker =
+        explicit_speaker_mapping_has_weak_requested_speaker(expected_speakers, &current.quality);
+    if candidate_has_weak_speaker != current_has_weak_speaker {
+        return !candidate_has_weak_speaker;
+    }
+
+    if candidate_has_weak_speaker && current_has_weak_speaker {
+        let candidate_min = candidate.quality.min_speaker_seconds.unwrap_or(0.0);
+        let current_min = current.quality.min_speaker_seconds.unwrap_or(0.0);
+        if (candidate_min - current_min).abs() > FLOAT_TIE_EPSILON {
+            return candidate_min > current_min;
+        }
     }
 
     candidate.quality.dominant_share + FLOAT_TIE_EPSILON < current.quality.dominant_share
@@ -2551,6 +2573,10 @@ fn mapped_diarization_quality(segments: &[TranscriptSegment]) -> MappedDiarizati
     }
 
     let labelled_seconds = seconds_by_speaker.values().sum::<f64>();
+    let min_speaker_seconds = seconds_by_speaker
+        .values()
+        .copied()
+        .min_by(|left, right| left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal));
     let (dominant_speaker, dominant_seconds) = seconds_by_speaker
         .iter()
         .max_by(|left, right| {
@@ -2573,6 +2599,7 @@ fn mapped_diarization_quality(segments: &[TranscriptSegment]) -> MappedDiarizati
         dominant_speaker,
         dominant_seconds,
         dominant_share,
+        min_speaker_seconds,
     }
 }
 
@@ -2677,6 +2704,26 @@ fn explicit_speaker_mapping_is_collapsed(
     quality: &MappedDiarizationQuality,
 ) -> bool {
     expected_speakers > 1 && quality.speaker_count < expected_speakers
+}
+
+fn explicit_speaker_mapping_has_weak_requested_speaker(
+    expected_speakers: usize,
+    quality: &MappedDiarizationQuality,
+) -> bool {
+    expected_speakers > 1
+        && quality.speaker_count >= expected_speakers
+        && quality
+            .min_speaker_seconds
+            .map(|seconds| seconds < MIN_EXPLICIT_RETRY_SPEAKER_SECONDS)
+            .unwrap_or(true)
+}
+
+fn explicit_speaker_mapping_needs_embedding_retry(
+    expected_speakers: usize,
+    quality: &MappedDiarizationQuality,
+) -> bool {
+    explicit_speaker_mapping_is_collapsed(expected_speakers, quality)
+        || explicit_speaker_mapping_has_weak_requested_speaker(expected_speakers, quality)
 }
 
 fn explicit_mapping_failure_message(
@@ -4559,6 +4606,7 @@ mod tests {
         assert_eq!(quality.speaker_count, 2);
         assert!(quality.dominant_share > 0.98);
         assert!(explicit_speaker_mapping_is_collapsed(3, &quality));
+        assert!(explicit_speaker_mapping_needs_embedding_retry(3, &quality));
     }
 
     #[test]
@@ -4576,6 +4624,10 @@ mod tests {
 
         assert_eq!(quality.speaker_count, 3);
         assert!(!explicit_speaker_mapping_is_collapsed(3, &quality));
+        assert!(!explicit_speaker_mapping_has_weak_requested_speaker(
+            3, &quality
+        ));
+        assert!(!explicit_speaker_mapping_needs_embedding_retry(3, &quality));
     }
 
     #[test]
@@ -4594,6 +4646,77 @@ mod tests {
         assert_eq!(quality.speaker_count, 3);
         assert!(quality.dominant_share > 0.95);
         assert!(!explicit_speaker_mapping_is_collapsed(3, &quality));
+        assert!(!explicit_speaker_mapping_has_weak_requested_speaker(
+            3, &quality
+        ));
+        assert!(!explicit_speaker_mapping_needs_embedding_retry(3, &quality));
+    }
+
+    #[test]
+    fn explicit_speaker_quality_retries_near_empty_requested_speaker() {
+        let mut segments = vec![
+            transcript("host", Some(0.0), Some(437.0)),
+            transcript("guest", Some(437.0), Some(459.1)),
+            transcript("blip", Some(459.1), Some(459.5)),
+        ];
+        segments[0].speaker = Some("Speaker 1".to_string());
+        segments[1].speaker = Some("Speaker 2".to_string());
+        segments[2].speaker = Some("Speaker 3".to_string());
+
+        let quality = mapped_diarization_quality(&segments);
+
+        assert_eq!(quality.speaker_count, 3);
+        assert!((quality.min_speaker_seconds.unwrap_or_default() - 0.4).abs() < FLOAT_TIE_EPSILON);
+        assert!(!explicit_speaker_mapping_is_collapsed(3, &quality));
+        assert!(explicit_speaker_mapping_has_weak_requested_speaker(
+            3, &quality
+        ));
+        assert!(explicit_speaker_mapping_needs_embedding_retry(3, &quality));
+    }
+
+    #[test]
+    fn explicit_mapping_attempt_prefers_non_weak_requested_speakers() {
+        let weak = test_mapping_attempt(
+            vec![
+                turn(0.0, 437.0, 0),
+                turn(437.0, 459.1, 1),
+                turn(459.1, 459.5, 2),
+            ],
+            {
+                let mut segments = vec![
+                    transcript("host", Some(0.0), Some(437.0)),
+                    transcript("guest", Some(437.0), Some(459.1)),
+                    transcript("blip", Some(459.1), Some(459.5)),
+                ];
+                segments[0].speaker = Some("Speaker 1".to_string());
+                segments[1].speaker = Some("Speaker 2".to_string());
+                segments[2].speaker = Some("Speaker 3".to_string());
+                segments
+            },
+            3,
+        );
+        let healthier = test_mapping_attempt(
+            vec![
+                turn(0.0, 426.9, 0),
+                turn(426.9, 436.3, 1),
+                turn(436.3, 445.6, 2),
+            ],
+            {
+                let mut segments = vec![
+                    transcript("host", Some(0.0), Some(426.9)),
+                    transcript("guest", Some(426.9), Some(436.3)),
+                    transcript("jamie", Some(436.3), Some(445.6)),
+                ];
+                segments[0].speaker = Some("Speaker 1".to_string());
+                segments[1].speaker = Some("Speaker 2".to_string());
+                segments[2].speaker = Some("Speaker 3".to_string());
+                segments
+            },
+            3,
+        );
+
+        assert!(is_better_explicit_mapping_attempt(3, &healthier, &weak));
+        assert!(!is_better_explicit_mapping_attempt(3, &weak, &healthier));
     }
 
     #[test]
