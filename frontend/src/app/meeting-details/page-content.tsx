@@ -95,8 +95,10 @@ export default function PageContent({
   // Get model config from ConfigContext
   const { modelConfig, setModelConfig } = useConfig();
   const sourceAttributionEnabled = useSourceAttribution();
-  const hasSavedAudio = Boolean(audioPath);
-  const showSpeakerAttribution = sourceAttributionEnabled && hasSavedAudio;
+  // Audio actions operate on the recording folder. The player/timeline waits for
+  // a resolved media file, which can lag behind freshly saved recordings.
+  const hasRecordingFolder = Boolean(meeting.folder_path);
+  const showSpeakerAttribution = sourceAttributionEnabled && hasRecordingFolder;
 
   // Custom hooks
   const meetingData = useMeetingData({ meeting, summaryData, onMeetingUpdated });
@@ -253,7 +255,7 @@ export default function PageContent({
       transition={{ duration: 0.3, ease: 'easeOut' }}
       className="flex h-full flex-col bg-background"
     >
-      {showSpeakerAttribution && (
+      {showSpeakerAttribution && isAudioReady && (
         <SpeakerLaneTimeline
           segments={segments ?? []}
           totalCount={totalCount}
@@ -285,7 +287,7 @@ export default function PageContent({
           onLoadMore={onLoadMore}
           // Retranscription props
           meetingId={meeting.id}
-          meetingFolderPath={hasSavedAudio ? meeting.folder_path : null}
+          meetingFolderPath={hasRecordingFolder ? meeting.folder_path : null}
           showSpeakerAttribution={showSpeakerAttribution}
           activeTime={isAudioReady ? audioPlayer.currentTime : undefined}
           onSeekToTime={isAudioReady ? handleTimelineSeek : undefined}
