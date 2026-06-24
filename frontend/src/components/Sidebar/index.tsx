@@ -572,7 +572,7 @@ const Sidebar: React.FC = () => {
     },
   ];
   const idleRecordingButtonClass =
-    "border border-primary/30 bg-primary/10 text-sidebar-foreground shadow-sm hover:border-primary/40 hover:bg-primary/20";
+    "border border-primary/40 bg-gradient-to-br from-primary to-primary/70 text-primary-foreground shadow-[0_0_28px_hsl(var(--primary)/0.28)] hover:border-primary/50 hover:shadow-[0_0_36px_hsl(var(--primary)/0.42)]";
 
   return (
     <div className="fixed left-0 top-[var(--titlebar-height)] z-40 h-[calc(100vh-var(--titlebar-height))]">
