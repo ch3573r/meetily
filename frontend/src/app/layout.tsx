@@ -104,7 +104,6 @@ export default function RootLayout({
 }) {
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [onboardingCompleted, setOnboardingCompleted] = useState(false)
-  const [toasterTheme, setToasterTheme] = useState<'light' | 'dark'>('light')
 
   // Import audio state
   const [showDropOverlay, setShowDropOverlay] = useState(false)
@@ -113,22 +112,6 @@ export default function RootLayout({
 
   useEffect(() => {
     installTeamsDetectionDebugBridge()
-  }, [])
-
-  useEffect(() => {
-    const syncToasterTheme = () => {
-      setToasterTheme(document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light')
-    }
-
-    syncToasterTheme()
-
-    const observer = new MutationObserver(syncToasterTheme)
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['data-theme'],
-    })
-
-    return () => observer.disconnect()
   }, [])
 
   useEffect(() => {
@@ -354,7 +337,7 @@ export default function RootLayout({
           </RecordingStateProvider>
         </AnalyticsProvider>
 
-        <Toaster position="bottom-center" richColors closeButton theme={toasterTheme} />
+        <Toaster position="bottom-center" richColors closeButton />
       </body>
     </html>
   )
