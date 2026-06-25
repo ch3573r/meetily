@@ -5051,25 +5051,25 @@ mod tests {
             can_download_embedding: false,
         };
         let mut mapped_segments = vec![
-            transcript("a", Some(0.0), Some(430.0)),
-            transcript("b", Some(430.0), Some(440.0)),
-            transcript("c", Some(440.0), Some(450.0)),
-            transcript("d", Some(450.0), Some(452.0)),
-            transcript("e", Some(452.0), Some(454.0)),
-            transcript("f", Some(454.0), Some(456.0)),
+            transcript("a", Some(0.0), Some(90.0)),
+            transcript("b", Some(90.0), Some(105.0)),
+            transcript("c", Some(105.0), Some(120.0)),
+            transcript("d", Some(120.0), Some(122.0)),
+            transcript("e", Some(122.0), Some(124.0)),
+            transcript("f", Some(124.0), Some(126.0)),
         ];
         for (index, segment) in mapped_segments.iter_mut().enumerate() {
             segment.speaker = Some(format!("Speaker {}", index + 1));
         }
         let quality = mapped_diarization_quality(&mapped_segments);
         let turns = vec![
-            turn(0.0, 420.0, 0),
-            turn(420.0, 435.0, 1),
-            turn(435.0, 450.0, 2),
-            turn(450.0, 451.0, 3),
-            turn(451.0, 452.0, 4),
-            turn(452.0, 453.0, 5),
-            turn(453.0, 454.0, 6),
+            turn(0.0, 90.0, 0),
+            turn(90.0, 105.0, 1),
+            turn(105.0, 120.0, 2),
+            turn(120.0, 121.0, 3),
+            turn(121.0, 122.0, 4),
+            turn(122.0, 123.0, 5),
+            turn(123.0, 124.0, 6),
         ];
         let attempt = DiarizationMappingAttempt {
             profile: DiarizationProfile::new(
