@@ -836,10 +836,29 @@ fn compact_utterance_bounds_for_span(
 ) -> Option<(usize, usize)> {
     let first = words.iter().position(|word| {
         word_midpoint(word) >= span.start_time && word_midpoint(word) < span.end_time
-    })?;
+    });
     let last = words.iter().rposition(|word| {
         word_midpoint(word) >= span.start_time && word_midpoint(word) < span.end_time
-    })?;
+    });
+    let (first, last) = match (first, last) {
+        (Some(first), Some(last)) => (first, last),
+        _ => {
+            let (anchor, distance) = words
+                .iter()
+                .enumerate()
+                .map(|(index, word)| (index, word_distance_to_span(word, span)))
+                .filter(|(_, distance)| distance.is_finite())
+                .min_by(|left, right| {
+                    left.1
+                        .partial_cmp(&right.1)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })?;
+            if distance > SHORT_UTTERANCE_HINT_MAX_SECONDS {
+                return None;
+            }
+            (anchor, anchor)
+        }
+    };
 
     let mut start = first;
     while start > 0 && !word_ends_sentence(&words[start - 1].text) {
@@ -856,6 +875,16 @@ fn compact_utterance_bounds_for_span(
     }
 
     Some((start, end))
+}
+
+fn word_distance_to_span(word: &TranscriptWord, span: TranscriptSpeakerSpan) -> f64 {
+    if word.end >= span.start_time && word.start <= span.end_time {
+        0.0
+    } else if word.end < span.start_time {
+        span.start_time - word.end
+    } else {
+        word.start - span.end_time
+    }
 }
 
 fn is_short_standalone_utterance(text: &str, word_count: usize) -> bool {
