@@ -55,6 +55,16 @@ recordings and migration paths continue to work.
 - Hosted Whisper uses OpenAI-compatible file transcription. The official
   OpenAI endpoint currently limits uploads to 25 MB; larger uploads are reported
   as a size-limit fallback and transcribed locally.
+- MAI-Transcribe uses Azure Speech Fast Transcription with its own Cognitive
+  Services key or Azure Speech credential. Microsoft Graph sign-in/export
+  scopes are not reused for Azure Speech.
+- MAI sentence-level timing is never promoted to word timestamps. If Azure
+  returns a combined-only or single-phrase transcript, ClawScribe can remap the
+  cloud text onto the local VAD speech grid for readable rows, but those row
+  timings are approximate and speaker diarization stays on the conservative
+  path.
+- Cloud transcription calls upload the whole recording file once. They are not
+  split into per-VAD-segment provider calls.
 - Summary generation can be local or external depending on the configured
   provider.
 - Microsoft Graph is used only after Microsoft sign-in and only for calendar,

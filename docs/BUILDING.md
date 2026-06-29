@@ -61,11 +61,15 @@ cd frontend
 
 pnpm run tauri:dev:cpu
 pnpm run tauri:dev:vulkan
+pnpm run tauri:dev:directml
+pnpm run tauri:dev:windows-gpu
 pnpm run tauri:dev:cuda
 pnpm run tauri:dev:openblas
 
 pnpm run tauri:build:cpu
 pnpm run tauri:build:vulkan
+pnpm run tauri:build:directml
+pnpm run tauri:build:windows-gpu
 pnpm run tauri:build:cuda
 pnpm run tauri:build:openblas
 ```
@@ -105,14 +109,22 @@ Frontend:
 
 ```powershell
 cd frontend
-pnpm run lint
+pnpm run test
+pnpm run typecheck
 pnpm run build
+pnpm run verify:icons
 ```
+
+`pnpm run lint` currently invokes `next lint`, but ESLint has not been
+configured in this repository and Next.js prompts to create a new configuration.
+Do not treat lint as a release gate until ESLint is configured deliberately and
+the existing lint debt is paid down or triaged.
 
 Rust workspace:
 
 ```powershell
 cargo check
+cargo test --lib
 ```
 
 The CI validation workflow also guards against reintroducing the removed
@@ -121,6 +133,7 @@ backend directory or stale archived whisper-server package/sample paths.
 Targeted Rust tests:
 
 ```powershell
+cargo test --lib audio::diarization
 cargo test --lib exports::
 ```
 

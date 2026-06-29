@@ -7,7 +7,7 @@ interviews, and long-form audio. It captures microphone and system audio from
 your own session, transcribes speech on device, and turns the result into
 meeting notes, summaries, action items, and export-ready artifacts.
 
-Current version: `0.5.16`
+Current version: `0.5.29`
 
 ClawScribe is based on Meetily Community Edition `0.4.0`. Upstream attribution
 and license details are in [UPSTREAM.md](UPSTREAM.md), [NOTICE.md](NOTICE.md),
@@ -37,6 +37,20 @@ and [LICENSE.md](LICENSE.md).
   per-model validation and CPU fallback where the model supports it.
 - Language selection and retranscription when a better model or language target
   is selected after import.
+
+### Cloud Transcription Beta
+
+- Optional beta-gated cloud retranscription providers can be enabled only after
+  explicit user consent.
+- Hosted Whisper uses OpenAI-compatible file transcription and can return real
+  word timestamps for speaker-diarization alignment.
+- MAI-Transcribe 1.5 uses Azure Speech Fast Transcription credentials separate
+  from Microsoft Graph sign-in. It has sentence-level timing only, so
+  ClawScribe keeps word timestamps empty and maps collapsed output onto the
+  local VAD timing grid as approximate row timing.
+- Cloud calls are whole-file requests. If a cloud request fails or the OpenAI
+  25 MB upload limit is hit, ClawScribe falls back to local transcription and
+  notifies the user.
 
 ### AI Notes
 
@@ -87,6 +101,8 @@ and [LICENSE.md](LICENSE.md).
 | Parakeet | Default fast path. Ships stock v3 int8, SmoothQuant int8, and v2 int8 model options. DirectML builds can use GPU acceleration on supported Windows systems. |
 | Nemotron | Beta multilingual path for NVIDIA Nemotron 3.5 ASR. Ships fp16 and int8 variants; fp16 is CPU-capable, while int8 is intended for DirectML-capable GPU builds. |
 | Whisper | Broad compatibility path through whisper.cpp/whisper-rs with local model management. |
+| Hosted Whisper | Beta cloud retranscription through OpenAI-compatible file transcription. OpenAI-hosted uploads are limited to 25 MB and fall back locally when too large. |
+| MAI-Transcribe | Beta Azure Speech Fast Transcription path. Uses separate Cognitive Services credentials and approximate VAD-row timing when Azure returns collapsed output. |
 
 Model downloads are managed inside the app. The downloader validates expected
 large-file sizes so CDN errors, partial downloads, and LFS pointer stubs do not
@@ -133,6 +149,9 @@ Current boundaries:
   to preserve existing data and integrations.
 - Nemotron remains labeled beta while the DirectML and model-variant behavior is
   still being validated across hardware.
+- Cloud transcription remains beta because provider response shapes, upload
+  limits, and MAI segmentation behavior need live validation across real
+  recordings.
 - Optional cloud AI and export providers must be configured by the user or
   operator. No private endpoint or credential is baked into the app.
 
@@ -179,6 +198,11 @@ cd frontend
 .\scripts\build-windows-release.ps1
 ```
 
+The current published Windows build uses the `windows-gpu` feature set, which
+combines Whisper Vulkan support with DirectML for ONNX/sherpa paths. The Tauri
+updater manifest is published as `latest.json` on the GitHub Release and
+advertises runtime version `0.5.29`.
+
 GPU-specific developer scripts live in `frontend/`:
 
 ```text
@@ -191,7 +215,8 @@ Use those scripts for acceleration-path validation.
 ## Privacy And Credentials
 
 ClawScribe records from the local user session and keeps transcription local
-unless you configure an external summary or export provider.
+unless you explicitly enable a cloud transcription beta provider or configure
+an external summary/export provider.
 
 Contributor rules:
 

@@ -1,5 +1,7 @@
 # ClawScribe Docs
 
+Current shipped version: `0.5.29`.
+
 Current product docs:
 
 - [Architecture](architecture.md)

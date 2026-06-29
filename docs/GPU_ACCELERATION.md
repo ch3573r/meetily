@@ -37,6 +37,7 @@ Whisper acceleration is controlled by Rust features exposed by the Tauri app:
 ```text
 cuda
 vulkan
+windows-gpu
 openblas
 metal
 coreml
@@ -47,10 +48,15 @@ Use the explicit frontend scripts when validating a feature set:
 
 ```powershell
 cd frontend
+pnpm run tauri:dev:windows-gpu
+pnpm run tauri:dev:directml
 pnpm run tauri:dev:vulkan
 pnpm run tauri:dev:cuda
 pnpm run tauri:dev:openblas
 ```
+
+`windows-gpu` is the normal Windows release feature set. It combines Whisper
+Vulkan support with DirectML for ONNX/sherpa paths.
 
 The automatic scripts are useful for normal development, but explicit scripts
 make performance regressions easier to compare.
@@ -106,7 +112,9 @@ temporary override into release behavior without documenting why.
 ## Release Boundary
 
 Windows release artifacts should state which feature set they were built with.
-When publishing a GPU build, smoke test:
+The current Windows release path uses `windows-gpu`; `latest.json` advertises
+the installer runtime version consumed by the updater. When
+publishing a GPU build, smoke test:
 
 1. app startup
 2. model discovery/download validation

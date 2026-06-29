@@ -1,28 +1,35 @@
 # ClawScribe Frontend
 
-A modern desktop application for recording, transcribing, and analyzing meetings with AI assistance. Built with Next.js and Tauri for a native desktop experience.
+The Next.js UI and Tauri desktop shell for ClawScribe `0.5.29`.
+ClawScribe records, transcribes, summarizes, and exports meetings from the
+local desktop app.
 
 ## Features
 
 - Real-time audio recording from both microphone and system audio
-- Live transcription using Whisper ASR (locally running)
+- Local transcription using Whisper, Parakeet, or Nemotron engines depending on
+  the selected model
+- Beta cloud retranscription through Hosted Whisper or Azure Speech
+  MAI-Transcribe when explicitly enabled
 - Native desktop integration using Tauri
 - Speaker diarization support
 - Rich text editor for note-taking
-- Privacy-focused: All processing happens locally
+- Privacy-focused defaults: recording and transcription are local unless a
+  cloud transcription beta provider, external summary provider, export, or
+  OpenClaw provider is configured
 
 ## Prerequisites
 
 ### For macOS:
-- Node.js (v18 or later)
+- Node.js (v20 recommended)
 - Rust (latest stable)
-- pnpm (v8 or later)
+- pnpm (v10 recommended)
 - [Xcode Command Line Tools](https://developer.apple.com/download/all/?q=xcode)
 
 ### For Windows:
-- Node.js (v18 or later)
+- Node.js (v20 recommended)
 - Rust (latest stable)
-- pnpm (v8 or later)
+- pnpm (v10 recommended)
 - Visual Studio Build Tools with C++ development tools
 - Windows 10 or later
 
@@ -94,42 +101,65 @@ A modern desktop application for recording, transcribing, and analyzing meetings
 
 ### For macOS:
 
-Use the provided script to run the app in development mode:
+Use the package scripts to run the app in development mode:
 ```bash
-./clean_run.sh
+pnpm run tauri:dev
 ```
 
 To build a production version:
 ```bash
-./clean_build.sh
+pnpm run tauri:build
 ```
 
-You can specify the log level (info, debug, trace):
+Legacy helper scripts such as `clean_run.sh` and `clean_build.sh` are still in
+the tree, but the package scripts are the current documented path.
+
+GPU-specific helpers are also available:
+
 ```bash
-./clean_run.sh debug
+./dev-gpu.sh
+./build-gpu.sh
 ```
 
 ### For Windows:
 
-Use the provided script to run the app in development mode:
+Use the package scripts to run the app in development mode:
 ```cmd
-clean_run_windows.bat
+pnpm run tauri:dev
 ```
 
 To build a production version:
 ```cmd
-clean_build_windows.bat
-```
-
-You can also use the package scripts directly:
-```bash
-pnpm run tauri:dev
 pnpm run tauri:build
 ```
+
+Windows GPU release-parity builds use the `windows-gpu` feature set:
+
+```cmd
+pnpm run tauri:dev:windows-gpu
+pnpm run tauri:build:windows-gpu
+```
+
+Legacy helper scripts such as `clean_run_windows.bat` and
+`clean_build_windows.bat` are still in the tree, but the package scripts are
+the current documented path.
 
 ## Local Transcription
 
 Current ClawScribe does not require a separate FastAPI service, Docker backend, or manually started whisper-server process. Local transcription is handled by the Rust/Tauri desktop app.
+
+## Cloud Transcription Beta
+
+Cloud retranscription providers are opt-in and beta-gated. Hosted Whisper uses
+OpenAI-compatible file transcription and can provide real word timestamps. The
+OpenAI-hosted endpoint has a 25 MB upload limit; larger recordings fall back to
+local transcription.
+
+MAI-Transcribe uses Azure Speech Fast Transcription with separate Cognitive
+Services credentials. It returns sentence-level timing only, so ClawScribe does
+not fabricate word timestamps. Collapsed MAI output can be remapped to the
+local VAD timing grid for readable rows, but the timing is approximate and
+speaker diarization remains conservative.
 
 For build and acceleration details, see:
 

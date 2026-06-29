@@ -27,7 +27,9 @@ Install these on the Windows build host:
 - Windows 10/11 or Windows Server with WebView2 Runtime.
 - Visual Studio Build Tools 2022 with **Desktop development with C++**.
 - Windows 10/11 SDK from Visual Studio Installer.
-- Node.js 20.
+- Node.js 20 for local parity with the release workflow. GitHub Actions may
+  force JavaScript actions to a newer Node runtime as hosted runner policy
+  changes.
 - pnpm 10.
 - Rust stable with the MSVC target:
 
@@ -85,10 +87,14 @@ If you do not have a Windows build machine, use GitHub Actions instead:
 1. Push this branch to GitHub.
 2. Open **Actions**.
 3. Run **ClawScribe Windows Release** manually.
-4. Use `cpu` for the first build unless you explicitly need GPU acceleration.
-5. Leave `publish=false` for a test artifact, or set `publish=true` only when
+4. For the normal release artifact, use `feature=windows-gpu`.
+5. For a validation-only run, set `check-only=true`; for a publish run, keep
+   `check-only=false`.
+6. Set `build-ref` to the annotated release tag when publishing, for example
+   `v0.5.29`.
+7. Leave `publish=false` for a test artifact, or set `publish=true` only when
    the version, release notes, and updater behavior are ready.
-6. For non-publish runs, download the `clawscribe-windows-<feature>` artifact
+8. For non-publish runs, download the `clawscribe-windows-<feature>` artifact
    from the completed run. For publish runs, use the GitHub Release assets.
 
 The workflow builds on the self-hosted Windows ClawScribe runner, stages the
@@ -99,11 +105,15 @@ use 7-day GitHub Actions artifacts. Publish runs upload installer assets,
 `latest.json`, `SHA256SUMS.txt`, `BUILD-METADATA.txt`, and
 `BUILD-METRICS.json` to the GitHub Release.
 
-The default build uses the `vulkan` feature for the Windows meeting recorder
-target. Override when needed:
+The default local release script uses the `windows-gpu` feature set for the
+Windows meeting recorder target. `windows-gpu` combines Whisper Vulkan support
+with DirectML for ONNX/sherpa paths. Override when needed:
 
 ```powershell
 .\scripts\build-windows-release.ps1 -Feature cpu
+.\scripts\build-windows-release.ps1 -Feature directml
+.\scripts\build-windows-release.ps1 -Feature vulkan
+.\scripts\build-windows-release.ps1 -Feature windows-gpu
 .\scripts\build-windows-release.ps1 -Feature cuda
 .\scripts\build-windows-release.ps1 -Feature openblas
 ```
@@ -121,12 +131,14 @@ frontend\src-tauri\target\release\bundle\BUILD-METRICS.json
 Expected artifact names currently look like:
 
 ```text
-ClawScribe_0.5.13_x64_en-US.msi
-ClawScribe_0.5.13_x64-setup.exe
+ClawScribe_0.5.29_x64_en-US.msi
+ClawScribe_0.5.29_x64-setup.exe
 SHA256SUMS.txt
 BUILD-METADATA.txt
 BUILD-METRICS.json
 ```
+
+Published GitHub Releases also include `latest.json` for updater discovery.
 
 `BUILD-METADATA.txt` records the ClawScribe version, build commit,
 `upstream_base_version`, Codex runtime version, Codex runtime SHA256, source
@@ -138,7 +150,7 @@ elapsed seconds, and release build elapsed seconds.
 
 The release script generates `SHA256SUMS.txt` after a successful installer
 build. Checksum entries are relative to the bundle root, for example
-`msi/ClawScribe_0.5.13_x64_en-US.msi`, so this command verifies cleanly
+`msi/ClawScribe_0.5.29_x64_en-US.msi`, so this command verifies cleanly
 from `frontend\src-tauri\target\release\bundle`:
 
 ```powershell
@@ -207,7 +219,16 @@ ClawScribe build first.
    already downloaded.
 6. Generate a summary for the smoke recording and confirm the meeting detail
    page shows a non-empty summary plus action items.
-7. Optional OpenClaw provider smoke: configure [openclaw-handoff.md](openclaw-handoff.md),
+7. Optional cloud transcription smoke: enable the cloud transcription beta,
+   run a short Hosted Whisper retranscription, and confirm real word timestamps
+   are present when the provider returns them. Then run a short MAI-Transcribe
+   retranscription and confirm rows are saved without word timestamps; if Azure
+   collapses the transcript, verify the VAD timing-grid remap creates readable
+   rows and the UI does not claim local fallback.
+8. Optional cloud fallback smoke: run an oversized Hosted Whisper upload or a
+   deliberately invalid cloud credential and confirm ClawScribe notifies the
+   user and falls back to local transcription without losing the meeting.
+9. Optional OpenClaw provider smoke: configure [openclaw-handoff.md](openclaw-handoff.md),
    set `MEETILY_OPENCLAW_BEARER_TOKEN` as a user environment variable, restart
    `ClawScribe`, select `OpenClaw managed auth`, refresh status, then generate
    a summary and confirm `.openclaw-submitted.json` appears in the recording

@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.5.29
+
+- Added beta-gated cloud transcription providers for whole-file retranscription:
+  Hosted Whisper through OpenAI-compatible file transcription and
+  MAI-Transcribe 1.5 through Azure Speech Fast Transcription.
+- Kept cloud transcription opt-in with explicit consent, separate provider
+  credentials, and local fallback notifications when cloud requests fail.
+- Preserved the diarization provenance invariant: Hosted Whisper word timings
+  are treated as real when returned by the provider, while MAI sentence-level
+  timing never emits fabricated word timestamps.
+- Added the OpenAI-compatible 25 MB upload-size fallback so oversized cloud
+  uploads report a size-limit fallback instead of misleading users toward API
+  key troubleshooting.
+- Remapped collapsed MAI output onto the local VAD speech grid when Azure
+  returns combined-only or single-phrase transcripts, while keeping row timing
+  approximate and speaker diarization on the conservative path.
+- Stabilized the diarization release gate so unreliable speaker mappings are
+  rejected before they overwrite useful labels.
+- `latest.json` advertises runtime version `0.5.29`, so installed `0.5.28`
+  clients can discover this update.
+
 ## 0.5.28
 
 - Fixed interrupted recording recovery so checkpoint-temp audio can still be
