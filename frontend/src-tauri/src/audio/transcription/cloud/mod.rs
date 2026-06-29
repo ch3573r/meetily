@@ -43,6 +43,7 @@ pub(crate) struct CloudTranscriptionOutcome {
 pub enum CloudFallbackReasonCategory {
     Transient,
     AuthConfig,
+    UploadTooLarge,
 }
 
 impl CloudFallbackReasonCategory {
@@ -50,6 +51,7 @@ impl CloudFallbackReasonCategory {
         match self {
             Self::Transient => "transient",
             Self::AuthConfig => "auth_config",
+            Self::UploadTooLarge => "upload_too_large",
         }
     }
 }
@@ -71,6 +73,13 @@ impl CloudTranscriptionError {
     pub fn auth_config(message: impl Into<String>) -> Self {
         Self {
             category: CloudFallbackReasonCategory::AuthConfig,
+            message: message.into(),
+        }
+    }
+
+    pub fn upload_too_large(message: impl Into<String>) -> Self {
+        Self {
+            category: CloudFallbackReasonCategory::UploadTooLarge,
             message: message.into(),
         }
     }
@@ -299,7 +308,11 @@ struct TranscriptionFallbackEvent {
 }
 
 pub fn classify_status(status: reqwest::StatusCode, provider: &str) -> CloudTranscriptionError {
-    if status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error() {
+    if status == reqwest::StatusCode::PAYLOAD_TOO_LARGE {
+        CloudTranscriptionError::upload_too_large(format!(
+            "{provider} cloud transcription upload is too large (HTTP {status})"
+        ))
+    } else if status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error() {
         CloudTranscriptionError::transient(format!(
             "{provider} cloud transcription returned HTTP {status}"
         ))
@@ -394,7 +407,12 @@ mod tests {
             classify_status(reqwest::StatusCode::TOO_MANY_REQUESTS, "provider").category(),
             CloudFallbackReasonCategory::Transient
         );
+        assert_eq!(
+            classify_status(reqwest::StatusCode::PAYLOAD_TOO_LARGE, "provider").category(),
+            CloudFallbackReasonCategory::UploadTooLarge
+        );
         assert!(should_retry_status(reqwest::StatusCode::BAD_GATEWAY));
         assert!(!should_retry_status(reqwest::StatusCode::BAD_REQUEST));
+        assert!(!should_retry_status(reqwest::StatusCode::PAYLOAD_TOO_LARGE));
     }
 }

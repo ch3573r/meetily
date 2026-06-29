@@ -297,6 +297,10 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
                                     placeholder="whisper-1"
                                 />
                             </div>
+                            <p className="mx-1 rounded-md border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
+                                OpenAI file transcription uploads are limited to 25 MB.
+                                Larger recordings fall back to local transcription.
+                            </p>
                         </div>
                     )}
 

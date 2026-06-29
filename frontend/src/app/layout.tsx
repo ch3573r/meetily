@@ -221,6 +221,14 @@ export default function RootLayout({
         return;
       }
 
+      if (reason === 'upload_too_large') {
+        toast.warning('Recording too large for cloud transcription', {
+          description: 'The selected cloud provider rejected the upload size. ClawScribe transcribed locally instead.',
+          duration: 14000,
+        });
+        return;
+      }
+
       toast.warning('Cloud transcription unavailable', {
         description: 'ClawScribe transcribed locally instead. Try again later.',
         duration: 12000,

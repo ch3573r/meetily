@@ -52,6 +52,9 @@ recordings and migration paths continue to work.
 
 - Transcription is local unless a user explicitly selects a cloud transcription
   provider.
+- Hosted Whisper uses OpenAI-compatible file transcription. The official
+  OpenAI endpoint currently limits uploads to 25 MB; larger uploads are reported
+  as a size-limit fallback and transcribed locally.
 - Summary generation can be local or external depending on the configured
   provider.
 - Microsoft Graph is used only after Microsoft sign-in and only for calendar,
