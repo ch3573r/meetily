@@ -105,6 +105,7 @@ frontend/src-tauri/binaries/codex-app-server-runtime/*
 
 # Local agent memory / scratch
 .claude/
+.serena/
 
 # Internal-only docs (plans, QA checklists, scratch) — never published
 docs/internal/
