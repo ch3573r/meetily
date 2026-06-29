@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.30
+
+- Clarified the auto speaker-diarization significant-speaker threshold as a
+  capped threshold rather than a minimum, matching the behavior shipped in
+  `0.5.29`.
+- Added a long-meeting regression test so brief but real speakers are preserved
+  as meaningful diarization lanes instead of being treated as micro-lanes when
+  a dominant speaker lasts several minutes.
+- `latest.json` advertises runtime version `0.5.30`, so installed `0.5.29`
+  clients can discover this update.
+
 ## 0.5.29
 
 - Added beta-gated cloud transcription providers for whole-file retranscription:
