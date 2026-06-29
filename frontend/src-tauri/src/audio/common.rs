@@ -149,6 +149,159 @@ pub(crate) fn create_readable_transcript_segments_with_words(
     create_transcript_segments_with_words(&stitched)
 }
 
+pub(crate) fn split_transcripts_to_timing_grid(
+    transcripts: &[TranscribedSegment],
+    timing_grid: &[(f64, f64)],
+) -> Vec<TranscribedSegment> {
+    let text = transcripts
+        .iter()
+        .map(|segment| segment.text.trim())
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    split_text_to_timing_grid(&text, timing_grid)
+}
+
+pub(crate) fn split_text_to_timing_grid(
+    text: &str,
+    timing_grid: &[(f64, f64)],
+) -> Vec<TranscribedSegment> {
+    let words = text
+        .split_whitespace()
+        .filter(|word| !word.trim().is_empty())
+        .collect::<Vec<_>>();
+    if words.is_empty() {
+        return Vec::new();
+    }
+
+    let mut timings = timing_grid
+        .iter()
+        .copied()
+        .filter(|(start_ms, end_ms)| {
+            start_ms.is_finite() && end_ms.is_finite() && *end_ms > *start_ms
+        })
+        .collect::<Vec<_>>();
+    timings.sort_by(|left, right| {
+        left.0
+            .partial_cmp(&right.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    if timings.is_empty() {
+        return Vec::new();
+    }
+
+    let total_duration_ms = timings
+        .iter()
+        .map(|(start_ms, end_ms)| end_ms - start_ms)
+        .sum::<f64>()
+        .max(1.0);
+    let mut cumulative_duration_ms = 0.0;
+    let mut word_start = 0usize;
+    let mut segments = Vec::new();
+
+    for (index, (start_ms, end_ms)) in timings.iter().enumerate() {
+        if word_start >= words.len() {
+            break;
+        }
+
+        let remaining_rows = timings.len() - index;
+        let remaining_words = words.len() - word_start;
+        let word_end = if index + 1 == timings.len() {
+            words.len()
+        } else if remaining_words <= remaining_rows {
+            word_start + 1
+        } else {
+            cumulative_duration_ms += end_ms - start_ms;
+            let target = ((words.len() as f64 * cumulative_duration_ms) / total_duration_ms).round()
+                as usize;
+            let min_end = word_start + 1;
+            let max_end = words.len() - (remaining_rows - 1);
+            choose_timing_grid_word_boundary(
+                &words,
+                word_start,
+                target.clamp(min_end, max_end),
+                max_end,
+            )
+        };
+
+        let segment_text = words[word_start..word_end].join(" ");
+        if !segment_text.trim().is_empty() {
+            segments.push(TranscribedSegment {
+                text: segment_text,
+                start_ms: *start_ms,
+                end_ms: *end_ms,
+                word_timestamps: None,
+            });
+        }
+        word_start = word_end;
+    }
+
+    if word_start < words.len() {
+        if let Some(last) = segments.last_mut() {
+            let remaining = words[word_start..].join(" ");
+            last.text = join_transcript_text(&last.text, &remaining);
+        }
+    }
+
+    segments
+}
+
+fn choose_timing_grid_word_boundary(
+    words: &[&str],
+    word_start: usize,
+    target: usize,
+    max_end: usize,
+) -> usize {
+    const SENTENCE_BOUNDARY_SEARCH_WORDS: usize = 12;
+
+    let lower = target
+        .saturating_sub(SENTENCE_BOUNDARY_SEARCH_WORDS)
+        .max(word_start + 1);
+    let upper = (target + SENTENCE_BOUNDARY_SEARCH_WORDS).min(max_end);
+    let mut best = None::<(usize, usize)>;
+
+    for candidate in lower..=upper {
+        if ends_with_terminal_punctuation(words[candidate - 1]) {
+            let distance = if candidate > target {
+                candidate - target
+            } else {
+                target - candidate
+            };
+            match best {
+                Some((_, best_distance)) if best_distance <= distance => {}
+                _ => best = Some((candidate, distance)),
+            }
+        }
+    }
+
+    best.map(|(candidate, _)| candidate).unwrap_or(target)
+}
+
+pub(crate) fn speech_segments_to_timing_grid(
+    speech_segments: &[crate::audio::vad::SpeechSegment],
+    max_segment_samples: usize,
+) -> Vec<(f64, f64)> {
+    const MIN_TRANSCRIPT_SEGMENT_SAMPLES: usize = 1_600;
+
+    let mut timing_grid = Vec::new();
+    for segment in speech_segments {
+        let segments = if segment.samples.len() > max_segment_samples {
+            split_segment_at_silence(segment, max_segment_samples)
+        } else {
+            vec![segment.clone()]
+        };
+
+        timing_grid.extend(segments.into_iter().filter_map(|segment| {
+            (segment.samples.len() >= MIN_TRANSCRIPT_SEGMENT_SAMPLES
+                && segment.end_timestamp_ms > segment.start_timestamp_ms)
+                .then_some((segment.start_timestamp_ms, segment.end_timestamp_ms))
+        }));
+    }
+
+    timing_grid
+}
+
 fn stitch_transcript_fragments(transcripts: &[TranscribedSegment]) -> Vec<TranscribedSegment> {
     const MAX_STITCH_GAP_MS: f64 = 1_500.0;
     const MAX_STITCHED_DURATION_MS: f64 = 30_000.0;
@@ -809,6 +962,42 @@ mod tests {
         assert_eq!(segments.len(), 2);
         assert_eq!(segments[0].text, "First complete sentence.");
         assert_eq!(segments[1].text, "Second complete sentence.");
+    }
+
+    #[test]
+    fn split_text_to_timing_grid_preserves_cloud_text_without_word_timestamps() {
+        let segments = split_text_to_timing_grid(
+            "First row has enough words. Second row has enough words. Third row carries the rest.",
+            &[(0.0, 1_000.0), (1_000.0, 2_000.0), (2_000.0, 3_000.0)],
+        );
+
+        assert_eq!(segments.len(), 3);
+        assert_eq!(segments[0].start_ms, 0.0);
+        assert_eq!(segments[1].start_ms, 1_000.0);
+        assert_eq!(segments[2].end_ms, 3_000.0);
+        assert!(segments
+            .iter()
+            .all(|segment| segment.word_timestamps.is_none()));
+        assert_eq!(
+            segments
+                .iter()
+                .map(|segment| segment.text.as_str())
+                .collect::<Vec<_>>()
+                .join(" "),
+            "First row has enough words. Second row has enough words. Third row carries the rest."
+        );
+    }
+
+    #[test]
+    fn split_text_to_timing_grid_prefers_nearby_sentence_boundary() {
+        let segments = split_text_to_timing_grid(
+            "Alpha beta gamma. Delta epsilon zeta eta theta iota kappa.",
+            &[(0.0, 1_000.0), (1_000.0, 3_000.0)],
+        );
+
+        assert_eq!(segments.len(), 2);
+        assert_eq!(segments[0].text, "Alpha beta gamma.");
+        assert_eq!(segments[1].text, "Delta epsilon zeta eta theta iota kappa.");
     }
 
     #[tokio::test]

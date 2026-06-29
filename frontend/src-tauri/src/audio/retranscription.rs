@@ -1,7 +1,8 @@
 // Retranscription module - allows re-processing stored audio with different settings
 
 use super::common::{
-    create_readable_transcript_segments_with_words, split_segment_at_silence,
+    create_readable_transcript_segments_with_words, speech_segments_to_timing_grid,
+    split_segment_at_silence, split_transcripts_to_timing_grid,
     transcript_words_from_token_timestamps, write_transcripts_json, TranscribedSegment,
 };
 use crate::audio::decoder::decode_audio_file;
@@ -51,6 +52,7 @@ impl Drop for RetranscriptionGuard {
 /// retranscription rows do not bridge normal speaker handoffs into long
 /// multi-speaker transcript rows that diarization then has to split later.
 const VAD_REDEMPTION_TIME_MS: u32 = 500;
+const MAX_TRANSCRIPTION_SEGMENT_SAMPLES: usize = 25 * 16000;
 
 /// Progress update emitted during retranscription
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -186,16 +188,31 @@ async fn run_retranscription<R: Runtime>(
             .await
             {
                 Ok(outcome) => {
-                    let duration_seconds = crate::audio::import::validate_audio_file(&audio_path)
-                        .map(|info| info.duration_seconds)
-                        .unwrap_or_else(|_| {
-                            outcome
-                                .segments
-                                .iter()
-                                .map(|segment| segment.end_ms)
-                                .fold(0.0_f64, f64::max)
-                                / 1000.0
-                        });
+                    let mut duration_seconds =
+                        crate::audio::import::validate_audio_file(&audio_path)
+                            .map(|info| info.duration_seconds)
+                            .unwrap_or_else(|_| {
+                                outcome
+                                    .segments
+                                    .iter()
+                                    .map(|segment| segment.end_ms)
+                                    .fold(0.0_f64, f64::max)
+                                    / 1000.0
+                            });
+                    let cloud_segments = if outcome.requires_local_timing_grid {
+                        let (decoded_duration_seconds, timed_segments) =
+                            prepare_cloud_retranscription_timing_grid(
+                                &app,
+                                &meeting_id,
+                                &audio_path,
+                                &outcome.segments,
+                            )
+                            .await?;
+                        duration_seconds = decoded_duration_seconds;
+                        timed_segments
+                    } else {
+                        outcome.segments
+                    };
                     let source_language = super::common::transcription_source_language_hint(
                         Some(&outcome.provider),
                         language.as_deref(),
@@ -206,7 +223,7 @@ async fn run_retranscription<R: Runtime>(
                         &folder_path,
                         &audio_path,
                         duration_seconds,
-                        &outcome.segments,
+                        &cloud_segments,
                         &outcome.provider,
                         &outcome.model,
                         source_language.as_deref(),
@@ -430,18 +447,16 @@ async fn run_retranscription<R: Runtime>(
     // Split very long segments at silence boundaries for better transcription quality.
     // Hard cuts at arbitrary sample positions lose words at boundaries. Instead, scan
     // for the lowest-energy window near the target split point and cut there.
-    const MAX_SEGMENT_SAMPLES: usize = 25 * 16000; // 25 seconds at 16kHz
-
     let mut processable_segments: Vec<crate::audio::vad::SpeechSegment> = Vec::new();
     for segment in &speech_segments {
-        if segment.samples.len() > MAX_SEGMENT_SAMPLES {
+        if segment.samples.len() > MAX_TRANSCRIPTION_SEGMENT_SAMPLES {
             debug!(
                 "Splitting large segment ({:.0}ms, {} samples) at silence boundaries",
                 segment.end_timestamp_ms - segment.start_timestamp_ms,
                 segment.samples.len()
             );
 
-            let sub_segments = split_segment_at_silence(segment, MAX_SEGMENT_SAMPLES);
+            let sub_segments = split_segment_at_silence(segment, MAX_TRANSCRIPTION_SEGMENT_SAMPLES);
             debug!("Split into {} sub-segments", sub_segments.len());
             processable_segments.extend(sub_segments);
         } else {
@@ -611,6 +626,105 @@ async fn run_retranscription<R: Runtime>(
         source_language.as_deref(),
     )
     .await
+}
+
+async fn prepare_cloud_retranscription_timing_grid<R: Runtime>(
+    app: &AppHandle<R>,
+    meeting_id: &str,
+    audio_path: &Path,
+    cloud_segments: &[TranscribedSegment],
+) -> Result<(f64, Vec<TranscribedSegment>)> {
+    emit_progress(
+        app,
+        meeting_id,
+        "decoding",
+        10,
+        "Preparing cloud transcript timing...",
+    );
+
+    if RETRANSCRIPTION_CANCELLED.load(Ordering::SeqCst) {
+        return Err(anyhow!("Retranscription cancelled"));
+    }
+
+    let path_for_decode = audio_path.to_path_buf();
+    let decoded = tokio::task::spawn_blocking(move || decode_audio_file(&path_for_decode))
+        .await
+        .map_err(|e| anyhow!("Decode task panicked: {}", e))??;
+    let duration_seconds = decoded.duration_seconds;
+
+    emit_progress(
+        app,
+        meeting_id,
+        "resampling",
+        15,
+        "Preparing speech timing...",
+    );
+
+    if RETRANSCRIPTION_CANCELLED.load(Ordering::SeqCst) {
+        return Err(anyhow!("Retranscription cancelled"));
+    }
+
+    let audio_samples = tokio::task::spawn_blocking(move || decoded.to_whisper_format())
+        .await
+        .map_err(|e| anyhow!("Resample task panicked: {}", e))?;
+
+    emit_progress(app, meeting_id, "vad", 20, "Detecting speech timing...");
+
+    if RETRANSCRIPTION_CANCELLED.load(Ordering::SeqCst) {
+        return Err(anyhow!("Retranscription cancelled"));
+    }
+
+    let app_for_vad = app.clone();
+    let meeting_id_for_vad = meeting_id.to_string();
+    let speech_segments = tokio::task::spawn_blocking(move || {
+        get_speech_chunks_with_progress(
+            &audio_samples,
+            VAD_REDEMPTION_TIME_MS,
+            |vad_progress, segments_found| {
+                let overall_progress = 20 + (vad_progress as f32 * 0.05) as u32;
+                emit_progress(
+                    &app_for_vad,
+                    &meeting_id_for_vad,
+                    "vad",
+                    overall_progress,
+                    &format!(
+                        "Detecting speech timing... {}% ({} found)",
+                        vad_progress, segments_found
+                    ),
+                );
+
+                !RETRANSCRIPTION_CANCELLED.load(Ordering::SeqCst)
+            },
+        )
+    })
+    .await
+    .map_err(|e| anyhow!("VAD task panicked: {}", e))?
+    .map_err(|e| anyhow!("VAD processing failed: {}", e))?;
+
+    let timing_grid =
+        speech_segments_to_timing_grid(&speech_segments, MAX_TRANSCRIPTION_SEGMENT_SAMPLES);
+    if timing_grid.is_empty() {
+        warn!(
+            "Cloud provider returned collapsed transcript output, but local VAD found no timing grid; preserving cloud transcript as returned"
+        );
+        return Ok((duration_seconds, cloud_segments.to_vec()));
+    }
+
+    let timed_segments = split_transcripts_to_timing_grid(cloud_segments, &timing_grid);
+    if timed_segments.is_empty() {
+        warn!(
+            "Cloud provider returned collapsed transcript output, but text could not be split onto local timing grid; preserving cloud transcript as returned"
+        );
+        return Ok((duration_seconds, cloud_segments.to_vec()));
+    }
+
+    info!(
+        "Applied local VAD timing grid to cloud transcript during retranscription: {} cloud segment(s) -> {} timed row(s)",
+        cloud_segments.len(),
+        timed_segments.len()
+    );
+
+    Ok((duration_seconds, timed_segments))
 }
 
 async fn save_retranscription_transcripts<R: Runtime>(

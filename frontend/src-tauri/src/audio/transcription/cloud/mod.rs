@@ -30,6 +30,7 @@ pub struct CloudTranscriptSegment {
     pub start_seconds: f64,
     pub end_seconds: f64,
     pub words: Option<Vec<CloudTranscriptWord>>,
+    pub requires_local_timing_grid: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -37,6 +38,7 @@ pub(crate) struct CloudTranscriptionOutcome {
     pub provider: String,
     pub model: String,
     pub segments: Vec<TranscribedSegment>,
+    pub requires_local_timing_grid: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -191,6 +193,9 @@ pub(crate) async fn transcribe_whole_file<R: Runtime>(
                     &cloud_segments,
                     CloudWordPolicy::Real,
                 ),
+                requires_local_timing_grid: cloud_segments
+                    .iter()
+                    .any(|segment| segment.requires_local_timing_grid),
             })
         }
         PROVIDER_MAI_TRANSCRIBE => {
@@ -229,6 +234,9 @@ pub(crate) async fn transcribe_whole_file<R: Runtime>(
                     &cloud_segments,
                     CloudWordPolicy::None,
                 ),
+                requires_local_timing_grid: cloud_segments
+                    .iter()
+                    .any(|segment| segment.requires_local_timing_grid),
             })
         }
         _ => Err(CloudTranscriptionError::auth_config(format!(
@@ -369,6 +377,7 @@ mod tests {
                 start_seconds: 1.0,
                 end_seconds: 2.0,
             }]),
+            requires_local_timing_grid: false,
         }];
 
         let mapped = cloud_segments_to_transcribed_segments(&cloud_segments, CloudWordPolicy::None);
@@ -395,6 +404,7 @@ mod tests {
                     end_seconds: 3.0,
                 },
             ]),
+            requires_local_timing_grid: false,
         }];
 
         let mapped = cloud_segments_to_transcribed_segments(&cloud_segments, CloudWordPolicy::Real);

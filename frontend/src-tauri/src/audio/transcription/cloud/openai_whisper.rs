@@ -181,6 +181,7 @@ pub(crate) fn parse_verbose_transcription(
                 start_seconds: segment.start,
                 end_seconds: segment.end,
                 words: (!segment_words.is_empty()).then_some(segment_words),
+                requires_local_timing_grid: false,
             });
         }
     } else if !words.is_empty() {
@@ -207,6 +208,7 @@ pub(crate) fn parse_verbose_transcription(
                     })
                     .collect(),
             ),
+            requires_local_timing_grid: false,
         });
     } else if let Some(text) = payload.text.filter(|text| !text.trim().is_empty()) {
         segments.push(CloudTranscriptSegment {
@@ -214,6 +216,7 @@ pub(crate) fn parse_verbose_transcription(
             start_seconds: 0.0,
             end_seconds: 0.0,
             words: None,
+            requires_local_timing_grid: false,
         });
     }
 

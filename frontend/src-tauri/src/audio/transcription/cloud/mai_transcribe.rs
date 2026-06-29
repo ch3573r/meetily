@@ -156,6 +156,7 @@ fn retry_delay(attempt: usize) -> Duration {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AzureFastTranscriptionResponse {
+    duration_milliseconds: Option<f64>,
     combined_phrases: Option<Vec<AzureCombinedPhrase>>,
     phrases: Option<Vec<AzurePhrase>>,
 }
@@ -177,8 +178,14 @@ pub(crate) struct AzurePhrase {
 pub(crate) fn parse_fast_transcription(
     payload: AzureFastTranscriptionResponse,
 ) -> Result<Vec<CloudTranscriptSegment>, CloudTranscriptionError> {
-    if let Some(phrases) = payload.phrases.filter(|phrases| !phrases.is_empty()) {
-        let segments = phrases
+    let AzureFastTranscriptionResponse {
+        duration_milliseconds,
+        combined_phrases,
+        phrases,
+    } = payload;
+
+    if let Some(phrases) = phrases.filter(|phrases| !phrases.is_empty()) {
+        let mut segments = phrases
             .into_iter()
             .filter(|phrase| !phrase.text.trim().is_empty())
             .map(|phrase| {
@@ -189,25 +196,28 @@ pub(crate) fn parse_fast_transcription(
                     start_seconds,
                     end_seconds,
                     words: None,
+                    requires_local_timing_grid: false,
                 }
             })
             .collect::<Vec<_>>();
         if !segments.is_empty() {
-            ensure_phrase_segmentation_is_usable(&segments)?;
+            mark_single_long_phrase_for_local_timing_grid(&mut segments);
             return Ok(segments);
         }
     }
 
-    if let Some(text) = payload
-        .combined_phrases
+    if let Some(text) = combined_phrases
         .and_then(|phrases| phrases.into_iter().next())
         .map(|phrase| phrase.text)
         .filter(|text| !text.trim().is_empty())
     {
-        return Err(CloudTranscriptionError::provider_output(format!(
-            "Azure Speech returned only combined transcript text without phrase-level timing ({} words). ClawScribe transcribed locally instead.",
-            word_count(&text)
-        )));
+        return Ok(vec![CloudTranscriptSegment {
+            text,
+            start_seconds: 0.0,
+            end_seconds: duration_milliseconds.unwrap_or_default().max(0.0) / 1000.0,
+            words: None,
+            requires_local_timing_grid: true,
+        }]);
     }
 
     Err(CloudTranscriptionError::auth_config(
@@ -215,24 +225,17 @@ pub(crate) fn parse_fast_transcription(
     ))
 }
 
-fn ensure_phrase_segmentation_is_usable(
-    segments: &[CloudTranscriptSegment],
-) -> Result<(), CloudTranscriptionError> {
+fn mark_single_long_phrase_for_local_timing_grid(segments: &mut [CloudTranscriptSegment]) {
     if segments.len() != 1 {
-        return Ok(());
+        return;
     }
 
     let segment = &segments[0];
     let duration_seconds = (segment.end_seconds - segment.start_seconds).max(0.0);
     let words = word_count(&segment.text);
     if duration_seconds >= MAX_SINGLE_PHRASE_SECONDS && words >= MAX_SINGLE_PHRASE_WORDS {
-        return Err(CloudTranscriptionError::provider_output(format!(
-            "Azure Speech returned one transcript phrase for {:.0}s of audio ({} words). ClawScribe transcribed locally instead.",
-            duration_seconds, words
-        )));
+        segments[0].requires_local_timing_grid = true;
     }
-
-    Ok(())
 }
 
 fn word_count(text: &str) -> usize {
@@ -262,6 +265,7 @@ mod tests {
     #[test]
     fn parses_phrase_level_timing_without_words() {
         let payload = AzureFastTranscriptionResponse {
+            duration_milliseconds: Some(2_500.0),
             combined_phrases: None,
             phrases: Some(vec![
                 AzurePhrase {
@@ -283,28 +287,33 @@ mod tests {
         assert_eq!(parsed[0].start_seconds, 1.0);
         assert_eq!(parsed[0].end_seconds, 1.9);
         assert!(parsed.iter().all(|segment| segment.words.is_none()));
+        assert!(parsed
+            .iter()
+            .all(|segment| !segment.requires_local_timing_grid));
     }
 
     #[test]
-    fn rejects_combined_only_transcript_without_phrase_timing() {
+    fn combined_only_transcript_requires_local_timing_grid() {
         let payload = AzureFastTranscriptionResponse {
+            duration_milliseconds: Some(123_000.0),
             combined_phrases: Some(vec![AzureCombinedPhrase {
                 text: "one big combined transcript".to_string(),
             }]),
             phrases: None,
         };
 
-        let error = parse_fast_transcription(payload).unwrap_err();
+        let parsed = parse_fast_transcription(payload).unwrap();
 
-        assert_eq!(
-            error.category(),
-            super::super::CloudFallbackReasonCategory::ProviderOutput
-        );
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].end_seconds, 123.0);
+        assert!(parsed[0].words.is_none());
+        assert!(parsed[0].requires_local_timing_grid);
     }
 
     #[test]
-    fn rejects_single_long_phrase_that_would_collapse_meeting_rows() {
+    fn single_long_phrase_requires_local_timing_grid() {
         let payload = AzureFastTranscriptionResponse {
+            duration_milliseconds: Some(180_000.0),
             combined_phrases: None,
             phrases: Some(vec![AzurePhrase {
                 text: std::iter::repeat("word")
@@ -316,12 +325,10 @@ mod tests {
             }]),
         };
 
-        let error = parse_fast_transcription(payload).unwrap_err();
+        let parsed = parse_fast_transcription(payload).unwrap();
 
-        assert_eq!(
-            error.category(),
-            super::super::CloudFallbackReasonCategory::ProviderOutput
-        );
+        assert_eq!(parsed.len(), 1);
+        assert!(parsed[0].requires_local_timing_grid);
     }
 
     #[tokio::test]
